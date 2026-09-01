@@ -16,9 +16,10 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 // ---- G0.8: SqliteBindingStore (production, over Core SQLite) ----
 
-test('SqliteBindingStore.load: builds a record keyed by bindingKey from Core GET', async () => {
+test('SqliteBindingStore.list/find: reads bindings from Core GET', async () => {
   const bindings = [
     { projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', spatialId: 'n1', entityType: 'artifact', entityId: 'a1' },
+    { projectId: 'p1', canvasId: CANVAS, spatialKind: 'edge', spatialId: 'e1', entityType: 'relation', entityId: 'r1' },
   ] as ProjectionBinding[];
   const http = new HttpClient({
     baseUrl: 'http://core.test',
@@ -28,51 +29,75 @@ test('SqliteBindingStore.load: builds a record keyed by bindingKey from Core GET
     },
   });
   const store = new SqliteBindingStore(http, 'p1');
-  const record = await store.load();
-  assert.equal(Object.keys(record).length, 1);
-  assert.equal(record['p1|c1|node|artifact|a1']?.spatialId, 'n1');
+  const list = await store.list();
+  assert.equal(list.length, 2);
+  const found = await store.find({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', entityType: 'artifact', entityId: 'a1' });
+  assert.equal(found?.spatialId, 'n1');
 });
 
-test('SqliteBindingStore.save: upserts new bindings and deletes removed ones (reconcile)', async () => {
+test('SqliteBindingStore: upsert/delete issue single-row writes (atomic, no snapshot)', async () => {
   const stored = new Map<string, ProjectionBinding>();
-  const puts: unknown[] = [];
-  const deletes: unknown[] = [];
+  const methods: string[] = [];
   const http = new HttpClient({
     baseUrl: 'http://core.test',
     fetch: async (input, init) => {
       const method = init?.method ?? 'GET';
-      if (method === 'GET') return jsonResponse({ ok: true, value: [...stored.values()] });
       const body = JSON.parse((init?.body?.toString() ?? '{}')) as Record<string, unknown>;
+      methods.push(method);
+      if (method === 'GET') return jsonResponse({ ok: true, value: [...stored.values()] });
       if (method === 'PUT') {
         const key = `${body.projectId}|${body.canvasId}|${body.spatialKind}|${body.entityType}|${body.entityId}`;
         stored.set(key, body as unknown as ProjectionBinding);
-        puts.push(body);
         return jsonResponse({ ok: true, value: body });
       }
       if (method === 'DELETE') {
         const key = `${'p1'}|${body.canvasId}|${body.spatialKind}|${body.entityType}|${body.entityId}`;
         stored.delete(key);
-        deletes.push(body);
         return jsonResponse({ ok: true, value: null });
       }
       return jsonResponse({ ok: true, value: null });
     },
   });
   const store = new SqliteBindingStore(http, 'p1');
-  const existing = { projectId: 'p1', canvasId: CANVAS, spatialKind: 'edge', spatialId: 'e-old', entityType: 'relation', entityId: 'rel-x' } as ProjectionBinding;
-  stored.set('p1|c1|edge|relation|rel-x', existing);
+  await store.upsert({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', spatialId: 'n1', entityType: 'artifact', entityId: 'a1' });
+  await store.upsert({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'edge', spatialId: 'e1', entityType: 'relation', entityId: 'r1' });
+  assert.equal(methods.filter((m) => m === 'PUT').length, 2);
+  assert.equal((await store.find({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', entityType: 'artifact', entityId: 'a1' }))?.spatialId, 'n1');
+  await store.delete({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', entityType: 'artifact', entityId: 'a1' });
+  assert.equal(methods.filter((m) => m === 'DELETE').length, 1);
+  assert.equal(await store.find({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', entityType: 'artifact', entityId: 'a1' }), undefined);
+});
 
-  const record: Record<string, ProjectionBinding> = {
-    'p1|c1|node|artifact|a1': { projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', spatialId: 'n1', entityType: 'artifact', entityId: 'a1' },
-  };
-  await store.save(record);
-
-  assert.equal(puts.length, 1);
-  assert.equal(puts[0]?.entityId, 'a1');
-  assert.equal(deletes.length, 1);
-  assert.equal(deletes[0]?.entityId, 'rel-x');
-  assert.equal(stored.has('p1|c1|edge|relation|rel-x'), false);
-  assert.equal(stored.has('p1|c1|node|artifact|a1'), true);
+test('SqliteBindingStore: concurrent upserts never lose each other (no lost-update)', async () => {
+  const stored = new Map<string, ProjectionBinding>();
+  const http = new HttpClient({
+    baseUrl: 'http://core.test',
+    fetch: async (input, init) => {
+      const method = init?.method ?? 'GET';
+      const body = JSON.parse((init?.body?.toString() ?? '{}')) as Record<string, unknown>;
+      if (method === 'GET') return jsonResponse({ ok: true, value: [...stored.values()] });
+      if (method === 'PUT') {
+        await new Promise((r) => setTimeout(r, 2));
+        stored.set(`${body.projectId}|${body.canvasId}|${body.spatialKind}|${body.entityType}|${body.entityId}`, body as unknown as ProjectionBinding);
+        return jsonResponse({ ok: true, value: body });
+      }
+      if (method === 'DELETE') {
+        const key = `${'p1'}|${body.canvasId}|${body.spatialKind}|${body.entityType}|${body.entityId}`;
+        stored.delete(key);
+        return jsonResponse({ ok: true, value: null });
+      }
+      return jsonResponse({ ok: true, value: null });
+    },
+  });
+  const store = new SqliteBindingStore(http, 'p1');
+  await Promise.all([
+    store.upsert({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', spatialId: 'nA', entityType: 'artifact', entityId: 'aA' }),
+    store.upsert({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', spatialId: 'nB', entityType: 'artifact', entityId: 'aB' }),
+  ]);
+  const list = await store.list();
+  assert.equal(list.length, 2);
+  assert.ok(list.some((b) => b.spatialId === 'nA'));
+  assert.ok(list.some((b) => b.spatialId === 'nB'));
 });
 
 // ---- G0.8: ReconciliationRunner orchestrates repair primitives ----

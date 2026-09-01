@@ -1,6 +1,11 @@
 // Projection Binding — the ONLY bridge between LCOS EntityRef and Huabu spatial id.
 // This is projection *identity*, not a second spatial state. It NEVER stores
 // geometry (x/y/width/height/viewport/parentId). Persistent across reload/restart.
+//
+// G0.8a: the store interface is ATOMIC CRUD (list/find/upsert/delete), NOT the
+// old load->save full-snapshot model. bind/unbind issue a single upsert/delete,
+// so concurrent writers can never lose each other's bindings (no lost-update,
+// no spurious delete from a stale snapshot).
 
 export type EntityType = 'artifact' | 'conversation' | 'skill' | 'run' | 'relation';
 
@@ -15,25 +20,38 @@ export interface ProjectionBinding {
   entityId: string;
 }
 
-export type BindingRecord = Record<string, ProjectionBinding>;
+export type BindingKeyInput = Pick<ProjectionBinding, 'projectId' | 'canvasId' | 'spatialKind' | 'entityType' | 'entityId'>;
 
-export function bindingKey(binding: Pick<ProjectionBinding, 'projectId' | 'canvasId' | 'spatialKind' | 'entityType' | 'entityId'>): string {
+/** Atomic key used by the Core projection_bindings primary key. */
+export type BindingKey = Pick<ProjectionBinding, 'canvasId' | 'spatialKind' | 'entityType' | 'entityId'>;
+
+export function bindingKey(binding: BindingKeyInput): string {
   return `${binding.projectId}|${binding.canvasId}|${binding.spatialKind}|${binding.entityType}|${binding.entityId}`;
 }
 
+/** Atomic CRUD contract. Writes are single-key operations (never a full snapshot). */
 export interface BindingStore {
-  load(): Promise<BindingRecord>;
-  save(record: BindingRecord): Promise<void>;
+  /** All bindings currently known (for reconciliation sweeps / inspections). */
+  list(): Promise<ProjectionBinding[]>;
+  find(binding: BindingKeyInput): Promise<ProjectionBinding | undefined>;
+  upsert(binding: ProjectionBinding): Promise<void>;
+  delete(binding: BindingKeyInput): Promise<void>;
 }
 
 /** In-memory default. For tests only — not durable across process restarts. */
 export class MemoryBindingStore implements BindingStore {
-  private record: BindingRecord = {};
-  async load(): Promise<BindingRecord> {
-    return { ...this.record };
+  private record = new Map<string, ProjectionBinding>();
+  async list(): Promise<ProjectionBinding[]> {
+    return [...this.record.values()];
   }
-  async save(record: BindingRecord): Promise<void> {
-    this.record = { ...record };
+  async find(binding: BindingKeyInput): Promise<ProjectionBinding | undefined> {
+    return this.record.get(bindingKey(binding));
+  }
+  async upsert(binding: ProjectionBinding): Promise<void> {
+    this.record.set(bindingKey(binding), binding);
+  }
+  async delete(binding: BindingKeyInput): Promise<void> {
+    this.record.delete(bindingKey(binding));
   }
 }
 
@@ -49,16 +67,37 @@ export class FileBindingStore implements BindingStore {
     private readonly filePath: string,
     private readonly fs: FileSystemLike,
   ) {}
-  async load(): Promise<BindingRecord> {
+
+  private async readAll(): Promise<Map<string, ProjectionBinding>> {
     try {
       const text = await this.fs.readFile(this.filePath, 'utf8');
-      return JSON.parse(text) as BindingRecord;
+      const parsed = JSON.parse(text) as Record<string, ProjectionBinding>;
+      return new Map(Object.entries(parsed));
     } catch {
-      return {};
+      return new Map();
     }
   }
-  async save(record: BindingRecord): Promise<void> {
-    await this.fs.writeFile(this.filePath, JSON.stringify(record, null, 2), 'utf8');
+
+  private async writeAll(record: Map<string, ProjectionBinding>): Promise<void> {
+    const obj = Object.fromEntries(record.entries());
+    await this.fs.writeFile(this.filePath, JSON.stringify(obj, null, 2), 'utf8');
+  }
+
+  async list(): Promise<ProjectionBinding[]> {
+    return [...(await this.readAll()).values()];
+  }
+  async find(binding: BindingKeyInput): Promise<ProjectionBinding | undefined> {
+    return (await this.readAll()).get(bindingKey(binding));
+  }
+  async upsert(binding: ProjectionBinding): Promise<void> {
+    const record = await this.readAll();
+    record.set(bindingKey(binding), binding);
+    await this.writeAll(record);
+  }
+  async delete(binding: BindingKeyInput): Promise<void> {
+    const record = await this.readAll();
+    record.delete(bindingKey(binding));
+    await this.writeAll(record);
   }
 }
 
@@ -72,8 +111,7 @@ export class ProjectionBindingRegistry {
     entityType: EntityType,
     entityId: string,
   ): Promise<ProjectionBinding | undefined> {
-    const record = await this.store.load();
-    return record[bindingKey({ projectId, canvasId, spatialKind, entityType, entityId })];
+    return this.store.find({ projectId, canvasId, spatialKind, entityType, entityId });
   }
 
   async findNode(projectId: string, canvasId: string, entityType: EntityType, entityId: string): Promise<ProjectionBinding | undefined> {
@@ -84,16 +122,14 @@ export class ProjectionBindingRegistry {
     return this.find(projectId, canvasId, 'edge', 'relation', entityId);
   }
 
+  /** Atomically record a single binding (never a full-snapshot write). */
   async bind(binding: ProjectionBinding): Promise<void> {
-    const record = await this.store.load();
-    record[bindingKey(binding)] = binding;
-    await this.store.save(record);
+    await this.store.upsert(binding);
   }
 
-  async unbind(binding: Pick<ProjectionBinding, 'projectId' | 'canvasId' | 'spatialKind' | 'entityType' | 'entityId'>): Promise<void> {
-    const record = await this.store.load();
-    delete record[bindingKey(binding)];
-    await this.store.save(record);
+  /** Atomically remove a single binding. */
+  async unbind(binding: BindingKeyInput): Promise<void> {
+    await this.store.delete(binding);
   }
 
   /** Remove a binding by its entity (node or edge). */
@@ -103,7 +139,6 @@ export class ProjectionBindingRegistry {
 
   /** All bindings currently held by the store (for reconciliation sweeps). */
   async list(): Promise<ProjectionBinding[]> {
-    const record = await this.store.load();
-    return Object.values(record);
+    return this.store.list();
   }
 }

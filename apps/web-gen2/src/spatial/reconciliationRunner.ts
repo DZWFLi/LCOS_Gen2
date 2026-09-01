@@ -33,10 +33,33 @@ export interface ReconciliationDeps {
   bindings: ProjectionBindingRegistry;
 }
 
+function projectionArtifactKind(kind: unknown): ArtifactProjectionSource['kind'] {
+  switch (String(kind)) {
+    case 'image':
+      return 'image';
+    case 'pdf':
+      return 'pdf';
+    case 'presentation':
+      return 'file';
+    case 'markdown':
+      return 'text';
+    default:
+      return 'text'; // 'other' / unknown -> text (safe default)
+  }
+}
+
 function artifactSource(projectId: string, value: unknown): ArtifactProjectionSource | undefined {
-  const artifactId = typeof value === 'string' ? value : typeof value === 'object' && value !== null && 'id' in value ? String((value as { id: unknown }).id) : undefined;
-  if (!artifactId) return undefined;
-  return { projectId, artifactId, kind: 'text', title: artifactId };
+  if (typeof value === 'string') {
+    return value ? { projectId, artifactId: value, kind: 'text', title: value } : undefined;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const artifact = value as { id?: unknown; artifactId?: unknown; title?: unknown; kind?: unknown };
+    const artifactId = String(artifact.id ?? artifact.artifactId ?? '');
+    if (!artifactId) return undefined;
+    const title = typeof artifact.title === 'string' && artifact.title.trim() !== '' ? artifact.title : artifactId;
+    return { projectId, artifactId, kind: projectionArtifactKind(artifact.kind), title };
+  }
+  return undefined;
 }
 
 function toSemanticRelation(relation: {

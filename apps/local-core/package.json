@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
     "pretest": "npm run build --workspace @local-creative-os/domain",
     "test": "vitest run tests --maxWorkers=1",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "test:g0": "vitest run tests/projection-bindings.test.ts --maxWorkers=1"
   },
   "dependencies": {
     "@local-creative-os/contracts": "0.1.0",
