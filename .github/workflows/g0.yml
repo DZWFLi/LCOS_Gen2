@@ -37,6 +37,9 @@ jobs:
         working-directory: apps/local-core
         run: npm run typecheck
 
+      - name: build domain + contracts (vitest resolves package entry via dist/)
+        run: npm run build:domain && npm run build:contracts
+
       - name: test local-core projection bindings (schema v52 migration + CRUD route)
         working-directory: apps/local-core
         run: npm run test:g0
