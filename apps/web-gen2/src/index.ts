@@ -17,7 +17,7 @@ export { CoreArtifactClient } from './backend/artifacts.js';
 export type { ArtifactDetailProjection, ArtifactDetailRevision, ArtifactRunRef } from './backend/artifacts.js';
 
 export { CoreRelationClient } from './backend/relations.js';
-export type { RelationPutResult, RelationDeleteResult } from './backend/relations.js';
+export type { RelationPutResult, RelationDeleteResult, RelationCreateInput, RelationCreateResult } from './backend/relations.js';
 
 export { CoreSearchClient } from './backend/search.js';
 export type { CoreSearchParams, CoreSearchUsedHereTarget } from './backend/search.js';

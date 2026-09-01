@@ -1,10 +1,11 @@
 // Core Relation typed HTTP boundary — faithful to the real route.
-// GET list / GET one / PUT full Relation / DELETE. NO fake createRelation
-// ({kind,from,to}): the real route needs a full Relation (id/projectId/
-// endpoints/kind/createdAt/updatedAt). Whether Core gets a minimal
-// POST /projects/:id/relations is a G0.6 decision, not a frontend one.
+// GET list / GET one / POST minimal create / PUT full Relation / DELETE.
+// G0.6 decided createRelation: Core gains a minimal POST /projects/:id/
+// relations so Core owns id/createdAt/updatedAt/validation/ChangeSet; the
+// frontend only sends source/target/kind/origin (never authors a canonical
+// Relation). PUT still requires a full Relation.
 
-import type { Relation } from '@local-creative-os/domain';
+import type { Relation, RelationEntityType } from '@local-creative-os/domain';
 import { HttpClient } from './client.js';
 import { coreEnvelope, coreRequest } from './coreTypes.js';
 
@@ -17,8 +18,43 @@ export interface RelationDeleteResult {
   changeSetId: string;
 }
 
+export interface RelationCreateInput {
+  sourceEntityType: RelationEntityType;
+  sourceEntityId: string;
+  targetEntityType: RelationEntityType;
+  targetEntityId: string;
+  kind: string;
+}
+
+export interface RelationCreateResult {
+  relation: Relation;
+  changeSetId: string;
+}
+
 export class CoreRelationClient {
   constructor(private readonly http: HttpClient) {}
+
+  /**
+   * POST /projects/:projectId/relations — minimal create. Core generates
+   * id/createdAt/updatedAt/validation/MutationSafety/ChangeSet. The frontend
+   * only supplies the semantic intent (source/target/kind/origin).
+   */
+  createRelation(
+    projectId: string,
+    input: RelationCreateInput,
+    origin?: unknown,
+  ): Promise<RelationCreateResult> {
+    const body = origin === undefined ? input : { ...input, origin };
+    return coreEnvelope<Relation>(
+      this.http,
+      'POST',
+      `/projects/${encodeURIComponent(projectId)}/relations`,
+      { body },
+    ).then((env) => {
+      const meta = (env.meta ?? {}) as { changeSetId?: string };
+      return { relation: env.value, changeSetId: meta.changeSetId ?? '' };
+    });
+  }
 
   /** GET /projects/:projectId/relations -> Relation[]. */
   listRelations(projectId: string): Promise<Relation[]> {

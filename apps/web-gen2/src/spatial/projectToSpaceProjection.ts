@@ -42,17 +42,43 @@ export class ProjectToSpaceProjection {
 
   /**
    * Project each artifact; returns the binding for each, idempotently.
-   * - Existing node binding -> reuse that node (no duplicate node).
+   * - Existing node binding -> verify the Huabu node still exists (INSPECT_NODES).
+   *   If the node was deleted in Huabu, the stale binding is dropped and the
+   *   artifact re-created (never trusts a binding whose node is gone).
    * - New -> CREATE_NODES, extract real nodeId from results[0].nodes[0].nodeId.
    */
   async projectArtifacts(artifacts: ArtifactProjectionSource[]): Promise<ProjectionBinding[]> {
     const out: ProjectionBinding[] = [];
     for (const artifact of artifacts) {
-      const existing = await this.bindings.findNode(artifact.projectId, this.rfs.config.canvasId, 'artifact', artifact.artifactId);
-      const binding = existing ?? (await this.createNode(artifact));
-      out.push(binding);
+      out.push(await this.ensureNode(artifact));
     }
     return out;
+  }
+
+  /** Idempotent projection with stale-binding repair. */
+  private async ensureNode(artifact: ArtifactProjectionSource): Promise<ProjectionBinding> {
+    const existing = await this.bindings.findNode(
+      artifact.projectId,
+      this.rfs.config.canvasId,
+      'artifact',
+      artifact.artifactId,
+    );
+    if (existing) {
+      const res = await this.rfs.query({ type: 'INSPECT_NODES', ids: [existing.spatialId] });
+      const present =
+        res.type === 'INSPECT_NODES' &&
+        res.result.nodes.some((n) => n.id === existing.spatialId);
+      if (present) return existing;
+      // Stale binding: node was removed in Huabu. Drop it and recreate.
+      await this.bindings.unbindByEntity(
+        artifact.projectId,
+        this.rfs.config.canvasId,
+        'node',
+        'artifact',
+        artifact.artifactId,
+      );
+    }
+    return this.createNode(artifact);
   }
 
   private async createNode(artifact: ArtifactProjectionSource): Promise<ProjectionBinding> {

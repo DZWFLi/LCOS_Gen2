@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Relation } from '@local-creative-os/domain'
+import type { Relation, RelationEntityType } from '@local-creative-os/domain'
 import type { MutationSafetyService } from '../mutation-safety-service.js'
 import type { SqliteMetadataRepository } from '../metadata-repository.js'
 import { FORBIDDEN_BROWSER_PATH_FIELDS, isRecord, routeRequireProject, type RouteHttpHelpers } from './route-context.js'
@@ -43,6 +44,25 @@ function isSafeRelationInput(metadata: SqliteMetadataRepository, projectId: stri
     && relationEntityBelongsToProject(metadata, projectId, value.targetEntityType, value.targetEntityId)
 }
 
+const RELATION_ENTITY_TYPES: readonly RelationEntityType[] = ['artifact', 'note', 'scope', 'view', 'workspace']
+
+interface CreateRelationInput {
+  readonly sourceEntityType: RelationEntityType
+  readonly sourceEntityId: string
+  readonly targetEntityType: RelationEntityType
+  readonly targetEntityId: string
+  readonly kind: string
+}
+
+function isValidCreateRelationInput(metadata: SqliteMetadataRepository, projectId: string, value: unknown): value is CreateRelationInput {
+  if (!isRecord(value)) return false
+  if (typeof value.kind !== 'string' || value.kind.trim() === '' || value.kind.length > 80) return false
+  if (!RELATION_ENTITY_TYPES.includes(value.sourceEntityType as RelationEntityType)) return false
+  if (!RELATION_ENTITY_TYPES.includes(value.targetEntityType as RelationEntityType)) return false
+  return relationEntityBelongsToProject(metadata, projectId, value.sourceEntityType, value.sourceEntityId)
+    && relationEntityBelongsToProject(metadata, projectId, value.targetEntityType, value.targetEntityId)
+}
+
 export async function handleRelationsRoute(ctx: RelationsRouteContext): Promise<boolean> {
   const listMatch = /^\/projects\/([^/]+)\/relations$/.exec(ctx.pathname)
   const oneMatch = /^\/projects\/([^/]+)\/relations\/([^/]+)$/.exec(ctx.pathname)
@@ -56,6 +76,35 @@ export async function handleRelationsRoute(ctx: RelationsRouteContext): Promise<
 
   if (listMatch !== null && ctx.method === 'GET') {
     ctx.helpers.sendJson(ctx.response, 200, { ok: true, value: ctx.metadata.getRelations(projectId) })
+    return true
+  }
+
+  // G0.6: minimal relation create — Core generates id/createdAt/updatedAt/validation/ChangeSet.
+  if (listMatch !== null && ctx.method === 'POST') {
+    let raw: unknown
+    try { raw = await ctx.helpers.readJsonBody(ctx.request, ctx.signal) } catch {
+      ctx.helpers.sendJson(ctx.response, 400, ctx.helpers.failure('INVALID_ARGUMENT', 'Request body must be valid JSON.'))
+      return true
+    }
+    if (!isValidCreateRelationInput(ctx.metadata, projectId, raw)) {
+      ctx.helpers.sendJson(ctx.response, 400, ctx.helpers.failure('INVALID_ARGUMENT', 'Relation endpoints and kind must be valid for the project.'))
+      return true
+    }
+    const now = new Date().toISOString()
+    const relation: Relation = {
+      id: `relation-${randomUUID()}` as Relation['id'],
+      projectId: projectId as Relation['projectId'],
+      sourceEntityType: raw.sourceEntityType,
+      sourceEntityId: raw.sourceEntityId,
+      targetEntityType: raw.targetEntityType,
+      targetEntityId: raw.targetEntityId,
+      kind: raw.kind,
+      createdAt: now,
+      updatedAt: now,
+    }
+    const origin = parseProjectEventOrigin((raw as { origin?: unknown }).origin)
+    const changeSet = ctx.mutationSafety.upsertRelation({ projectId, relation, ...(origin === undefined ? {} : { origin }) })
+    ctx.helpers.sendJson(ctx.response, 201, { ok: true, value: relation, meta: { changeSetId: changeSet.id } })
     return true
   }
 

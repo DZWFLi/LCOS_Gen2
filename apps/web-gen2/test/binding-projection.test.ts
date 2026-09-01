@@ -127,7 +127,12 @@ test('project: idempotent reuses existing binding without issuing CREATE_NODES',
   const reg = new ProjectionBindingRegistry(new MemoryBindingStore());
   await reg.bind(nodeBinding());
 
-  const { client } = makeRfs(() => jsonResponse(createdResponse()));
+  const { client } = makeRfs((req) => {
+    if (req.body?.type === 'INSPECT_NODES') {
+      return jsonResponse({ type: 'INSPECT_NODES', result: { count: 1, total: 1, truncated: false, nodes: [{ id: 'node-a1', type: 'note', filename: 'a.md', position: { x: 0, y: 0 }, absolutePosition: { x: 0, y: 0 }, size: { width: 280, height: 220 } }] } });
+    }
+    return jsonResponse(createdResponse());
+  });
   const proj = new ProjectToSpaceProjection(client, reg);
   const out = await proj.projectArtifacts([{ projectId: 'p1', artifactId: 'a1', kind: 'text', title: 'Doc' }]);
 

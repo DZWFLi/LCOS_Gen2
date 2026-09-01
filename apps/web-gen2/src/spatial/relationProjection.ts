@@ -106,6 +106,44 @@ export class RelationProjection {
     });
   }
 
+  /**
+   * Reconciliation: make the Huabu Edge for an existing Core Relation match core.
+   * - No edge binding -> project the edge (CONNECT) + bind it.
+   * - Binding exists but the Huabu edge was deleted -> disconnect stale, re-CONNECT, rebind.
+   * - Binding exists and edge present -> no-op.
+   */
+  async reconcileRelationEdge(
+    relation: SemanticRelation,
+    fromNodeId: string,
+    toNodeId: string,
+  ): Promise<void> {
+    const edgeBinding = await this.bindings.findEdge(this.projectId, this.rfs.config.canvasId, relation.id);
+    if (!edgeBinding) {
+      await this.projectRelation(relation, fromNodeId, toNodeId);
+      return;
+    }
+    const res = await this.rfs.query({ type: 'INSPECT_EDGES', ids: [edgeBinding.spatialId] });
+    const present =
+      res.type === 'INSPECT_EDGES' &&
+      res.result.edges.some((edge) => edge.id === edgeBinding.spatialId);
+    if (present) return;
+    // Stale edge: remove the dead edgeId, re-project, rebind to the fresh edgeId.
+    await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edges: [edgeBinding.spatialId] }]);
+    await this.bindings.unbindByEntity(this.projectId, this.rfs.config.canvasId, 'edge', 'relation', relation.id);
+    await this.projectRelation(relation, fromNodeId, toNodeId);
+  }
+
+  /**
+   * Reconciliation: remove a leftover Huabu Edge whose Core Relation no longer
+   * exists (orphan projection). Disconnects + unbinds. Destructive RFS only.
+   */
+  async removeOrphanRelationEdge(relationId: string): Promise<void> {
+    const edgeBinding = await this.bindings.findEdge(this.projectId, this.rfs.config.canvasId, relationId);
+    if (!edgeBinding) return;
+    await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edges: [edgeBinding.spatialId] }]);
+    await this.bindings.unbindByEntity(this.projectId, this.rfs.config.canvasId, 'edge', 'relation', relationId);
+  }
+
   /** Delete relation from Core AND its Edge projection; repair both sides. */
   async deleteRelation(relationId: string): Promise<void> {
     const edgeBinding = await this.bindings.findEdge(this.projectId, this.rfs.config.canvasId, relationId);
