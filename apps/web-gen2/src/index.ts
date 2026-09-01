@@ -22,6 +22,8 @@ export type { RelationPutResult, RelationDeleteResult, RelationCreateInput, Rela
 export { CoreSearchClient } from './backend/search.js';
 export type { CoreSearchParams, CoreSearchUsedHereTarget } from './backend/search.js';
 
+export { SqliteBindingStore, createProjectionBindingRegistry } from './backend/sqliteBindingStore.js';
+
 export { HuabuRfsClient, RfsContractError } from './spatial/huabuRfsClient.js';
 export type { RfsConfig, SpaceQuery, AgentCanvasCommand, CanvasNodeCreateInput, NodeCreateInputByType, CanvasEdgeRef } from './spatial/huabuRfsClient.js';
 
@@ -33,6 +35,9 @@ export type { ArtifactProjectionSource, ArtifactKind } from './spatial/projectTo
 
 export { RelationProjection } from './spatial/relationProjection.js';
 export type { RelationKind, SemanticRelation, CoreRelationWriter, CoreEntityRef, NodeBindingResolver } from './spatial/relationProjection.js';
+
+export { ReconciliationRunner } from './spatial/reconciliationRunner.js';
+export type { ReconciliationResult, ReconciliationDeps } from './spatial/reconciliationRunner.js';
 
 export {
   HUABU_PROTOCOL_VERSION,

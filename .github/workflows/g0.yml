@@ -1,0 +1,38 @@
+name: Gen2 G0 Closure
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: g0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (root workspace)
+        run: npm install
+
+      - name: typecheck web-gen2
+        working-directory: apps/web-gen2
+        run: npm run typecheck
+
+      - name: test web-gen2
+        working-directory: apps/web-gen2
+        run: npm test
+
+      - name: typecheck local-core
+        working-directory: apps/local-core
+        run: npm run typecheck

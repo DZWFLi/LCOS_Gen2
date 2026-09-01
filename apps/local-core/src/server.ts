@@ -100,6 +100,7 @@ import { handleAttentionRoute } from './routes/attention.js'
 import { handleArtifactsRoute } from './routes/artifacts.js'
 import { handleChangeSetsRoute } from './routes/change-sets.js'
 import { handleRelationsRoute } from './routes/relations.js'
+import { handleSpatialBindingsRoute } from './routes/spatial-bindings.js'
 import { handleRevisionWorkflowsRoute } from './routes/revision-workflows.js'
 import { handleContinuityRoute } from './routes/continuity.js'
 import { handleReceiverRoute } from './routes/receiver.js'
@@ -1498,6 +1499,10 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
       })) return
       if (await handleRelationsRoute({
         method, pathname, request, response, signal: controller.signal, metadata, mutationSafety,
+        helpers: routeHelpers,
+      })) return
+      if (await handleSpatialBindingsRoute({
+        method, pathname, request, response, controller, metadata,
         helpers: routeHelpers,
       })) return
       if (await handleRevisionWorkflowsRoute({

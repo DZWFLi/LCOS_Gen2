@@ -197,6 +197,16 @@ export interface SessionLifecycleRecordV1 {
   readonly updatedAt: string
 }
 
+/** Gen2 identity bridge: LCOS entity ref -> Huabu spatial id. No geometry. */
+export interface ProjectionBindingRecord {
+  readonly projectId: string
+  readonly canvasId: string
+  readonly spatialKind: 'node' | 'edge'
+  readonly spatialId: string
+  readonly entityType: string
+  readonly entityId: string
+}
+
 export class SqliteMetadataRepository {
   readonly databasePath: string
   readonly #database: DatabaseSync
@@ -287,7 +297,8 @@ export class SqliteMetadataRepository {
     if (current === 48) { this.#migrate_049_from_v48(); current = 49 }
     if (current === 49) { this.#migrate_050_from_v49(); current = 50 }
     if (current === 50) { this.#migrate_051_from_v50(); current = 51 }
-    if (current !== 51) throw new Error(`Unsupported metadata schema version ${current}.`)
+    if (current === 51) { this.#migrate_052_from_v51(); current = 52 }
+    if (current !== 52) throw new Error(`Unsupported metadata schema version ${current}.`)
   }
 
   #migrate_037_from_v36(): void {
@@ -551,6 +562,28 @@ export class SqliteMetadataRepository {
       CREATE INDEX IF NOT EXISTS idx_color_pin_memberships_project_target
         ON color_pin_memberships(project_id, target_kind, target_id);
       PRAGMA user_version = 51;
+      COMMIT;
+    `)
+  }
+  #migrate_052_from_v51(): void {
+    // Gen2 G0.8: ProjectionBinding 的 Core SQLite integration table —— LCOS 实体与
+    // Huabu 空间 id 的 identity bridge。只存 identity（project/canvas/spatialKind/
+    // spatialId/entityType/entityId），无 geometry（x/y/width/height/viewport 禁止入表）。
+    // Spatial Truth 在 Huabu；Core 只保存投影身份，跨进程重启后重连。
+    this.#database.exec(`
+      BEGIN;
+      CREATE TABLE IF NOT EXISTS projection_bindings (
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        canvas_id TEXT NOT NULL,
+        spatial_kind TEXT NOT NULL CHECK(spatial_kind IN ('node','edge')),
+        spatial_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(project_id, canvas_id, spatial_kind, entity_type, entity_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_projection_bindings_project ON projection_bindings(project_id);
+      PRAGMA user_version = 52;
       COMMIT;
     `)
   }
@@ -2525,6 +2558,55 @@ export class SqliteMetadataRepository {
 
   upsertRelation(value: Relation): void { this.#upsertRelation(value) }
   deleteRelation(relationId: string): void { this.#database.prepare('DELETE FROM relations WHERE id = ?').run(relationId as SQLInputValue) }
+
+  // ==================== Projection Bindings (schema v52) ====================
+  // Gen2 identity bridge between an LCOS entity ref and a Huabu spatial id.
+  // No geometry — spatial truth lives in Huabu; Core only persists the identity
+  // so bindings survive process restarts.
+
+  getProjectionBindings(projectId: string): ProjectionBindingRecord[] {
+    return (this.#database.prepare('SELECT * FROM projection_bindings WHERE project_id = ? ORDER BY canvas_id, spatial_kind, entity_type, entity_id')
+      .all(projectId as SQLInputValue) as Row[]).map((row) => this.#projectionBinding(row))
+  }
+
+  findProjectionBinding(
+    projectId: string,
+    canvasId: string,
+    spatialKind: string,
+    entityType: string,
+    entityId: string,
+  ): ProjectionBindingRecord | undefined {
+    const row = this.#database.prepare(
+      'SELECT * FROM projection_bindings WHERE project_id = ? AND canvas_id = ? AND spatial_kind = ? AND entity_type = ? AND entity_id = ?',
+    ).get(projectId as SQLInputValue, canvasId, spatialKind, entityType, entityId) as Row | undefined
+    return row === undefined ? undefined : this.#projectionBinding(row)
+  }
+
+  upsertProjectionBinding(value: ProjectionBindingRecord): void {
+    this.#database.prepare(`
+      INSERT INTO projection_bindings (project_id, canvas_id, spatial_kind, spatial_id, entity_type, entity_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id, canvas_id, spatial_kind, entity_type, entity_id)
+      DO UPDATE SET spatial_id = excluded.spatial_id, updated_at = excluded.updated_at
+    `).run(value.projectId, value.canvasId, value.spatialKind, value.spatialId, value.entityType, value.entityId, new Date().toISOString())
+  }
+
+  deleteProjectionBinding(projectId: string, canvasId: string, spatialKind: string, entityType: string, entityId: string): void {
+    this.#database.prepare(
+      'DELETE FROM projection_bindings WHERE project_id = ? AND canvas_id = ? AND spatial_kind = ? AND entity_type = ? AND entity_id = ?',
+    ).run(projectId as SQLInputValue, canvasId, spatialKind, entityType, entityId)
+  }
+
+  #projectionBinding(row: Row): ProjectionBindingRecord {
+    return {
+      projectId: String(row.project_id),
+      canvasId: String(row.canvas_id),
+      spatialKind: String(row.spatial_kind) as ProjectionBindingRecord['spatialKind'],
+      spatialId: String(row.spatial_id),
+      entityType: String(row.entity_type),
+      entityId: String(row.entity_id),
+    }
+  }
 
   // ==================== Presentation Views (schema v21) ====================
 

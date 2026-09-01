@@ -100,4 +100,10 @@ export class ProjectionBindingRegistry {
   async unbindByEntity(projectId: string, canvasId: string, spatialKind: SpatialKind, entityType: EntityType, entityId: string): Promise<void> {
     return this.unbind({ projectId, canvasId, spatialKind, entityType, entityId });
   }
+
+  /** All bindings currently held by the store (for reconciliation sweeps). */
+  async list(): Promise<ProjectionBinding[]> {
+    const record = await this.store.load();
+    return Object.values(record);
+  }
 }
