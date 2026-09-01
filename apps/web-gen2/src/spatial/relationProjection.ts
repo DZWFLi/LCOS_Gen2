@@ -6,7 +6,7 @@
 
 import { HuabuRfsClient } from './huabuRfsClient.js';
 import { ProjectionBindingRegistry } from './projectionBinding.js';
-import type { EdgeStyle } from './types.js';
+import type { AgentRfsEdgeStyle } from './types.js';
 
 export type RelationKind = 'references' | 'derived-from' | 'revises' | 'depends-on' | 'uses' | 'produced-by';
 
@@ -115,7 +115,7 @@ export class RelationProjection {
     }
   }
 
-  private edgeStyleFor(kind: RelationKind): EdgeStyle {
+  private edgeStyleFor(kind: RelationKind): AgentRfsEdgeStyle {
     return { lineType: 'bezier', direction: 'forward', label: kind };
   }
 }

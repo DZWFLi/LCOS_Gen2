@@ -24,10 +24,12 @@ export interface Point {
   y: number;
 }
 
-export interface NodeSize {
+export interface NodeGeometrySize {
   width: number;
-  height?: number;
+  height?: number | 'auto';
 }
+
+export type NodeSize = NodeGeometrySize;
 
 export type Geometry = Point & Partial<NodeSize>;
 
@@ -40,7 +42,7 @@ export type EdgeDirection = (typeof EDGE_DIRECTIONS)[number];
 export const EDGE_STROKE_WIDTHS = [2, 4, 8, 16] as const;
 export type EdgeStrokeWidth = (typeof EDGE_STROKE_WIDTHS)[number];
 
-export interface EdgeStyle {
+export interface PersistedEdgeStyle {
   lineType?: EdgeLineType;
   lineStyle?: EdgeLineStyle;
   stroke?: string;
@@ -48,6 +50,31 @@ export interface EdgeStyle {
   direction?: EdgeDirection;
   label?: string;
   labelSource?: 'auto' | 'user' | 'agent';
+}
+
+export type AgentRfsEdgeStyle = Omit<PersistedEdgeStyle, 'labelSource'>;
+
+export type EdgeStyle = AgentRfsEdgeStyle;
+
+export const NODE_FONT_FAMILIES = ['default', 'serif', 'mono', 'hand'] as const;
+export type NodeFontFamily = (typeof NODE_FONT_FAMILIES)[number];
+export const NODE_FONT_WEIGHTS = ['normal', 'bold'] as const;
+export type NodeFontWeight = (typeof NODE_FONT_WEIGHTS)[number];
+
+export interface NodeStyle {
+  accent?: string | null;
+  fontFamily?: NodeFontFamily;
+  fontWeight?: NodeFontWeight;
+  fontStyle?: string;
+  fontSize?: number;
+  textDecoration?: string;
+}
+
+export interface AgentNodeDataPatch {
+  label?: string;
+  content?: string;
+  src?: string;
+  style?: NodeStyle;
 }
 
 export interface Rect {

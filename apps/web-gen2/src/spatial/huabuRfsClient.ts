@@ -7,10 +7,12 @@ import { HttpClient } from '../backend/client.js';
 import {
   HUABU_PROTOCOL_VERSION,
   type CanvasNodeType,
+  type AgentCreatableNodeType,
+  type AgentNodeDataPatch,
+  type AgentRfsEdgeStyle,
   type Point,
-  type NodeSize,
+  type NodeGeometrySize,
   type Rect,
-  type EdgeStyle,
   type SpaceQueryResponse,
   type RfsExecuteResponse,
   type RfsCapabilitiesResponse,
@@ -70,12 +72,11 @@ export type SpaceQuery =
 // ---------- Commands (AgentCanvasCommand, upstream space-operations.ts) ----------
 
 export type NodeCreateInputByType = {
-  nodeType: CanvasNodeType;
-  data?: { label?: string; content?: string; src?: string; style?: Record<string, unknown> };
+  nodeType: AgentCreatableNodeType;
+  data?: AgentNodeDataPatch;
   position: Point;
-  size?: NodeSize;
+  size?: NodeGeometrySize;
   parentId?: string | null;
-  selectOnCreate?: boolean;
 };
 
 export type CanvasNodeCreateInput = NodeCreateInputByType;
@@ -85,14 +86,14 @@ export type CanvasEdgeRef = string | { source: string; target: string };
 export type AgentCanvasCommand =
   | { type: 'CREATE_NODES'; nodes: CanvasNodeCreateInput[] }
   | { type: 'DELETE_NODES'; nodeIds: string[] }
-  | { type: 'MERGE_NODE_DATA'; patches: { nodeId: string; patch: Record<string, unknown>; expectRev?: string; expectViewRev?: string }[] }
+  | { type: 'MERGE_NODE_DATA'; patches: { nodeId: string; patch: AgentNodeDataPatch; expectRev?: string; expectViewRev?: string }[] }
   | { type: 'SET_NODE_PARENT'; nodeIds: string[]; parentId: string | null }
   | { type: 'DISSOLVE_FRAME'; frameId: string }
-  | { type: 'SET_NODE_GEOMETRY'; items: { nodeId: string; position?: Point; size?: NodeSize }[] }
+  | { type: 'SET_NODE_GEOMETRY'; items: { nodeId: string; position?: Point; size?: NodeGeometrySize }[] }
   | { type: 'REORDER_NODES'; nodeIds: string[]; to: 'top' | 'bottom' | { before: string } | { after: string } }
-  | { type: 'CONNECT_NODES'; edges: { source: string; target: string; style?: EdgeStyle }[] }
+  | { type: 'CONNECT_NODES'; edges: { source: string; target: string; style?: AgentRfsEdgeStyle }[] }
   | { type: 'DISCONNECT_EDGES'; edges: CanvasEdgeRef[] }
-  | { type: 'SET_EDGE_STYLE'; edges: { edge: CanvasEdgeRef; style: Partial<EdgeStyle> }[] }
+  | { type: 'SET_EDGE_STYLE'; edges: { edge: CanvasEdgeRef; style: Partial<AgentRfsEdgeStyle> }[] }
   | { type: 'ALIGN_NODES'; nodeIds: string[]; direction: 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom' }
   | { type: 'DISTRIBUTE_NODES'; nodeIds: string[] }
   | { type: 'SET_FRAME_LAYOUT'; frameId: string; mode: 'free' | 'column' | 'row' | 'grid'; gridCount?: number; gridRowCount?: number; sizing?: 'hug' | 'manual'; cells?: { nodeId: string; column?: number; row?: number }[] }

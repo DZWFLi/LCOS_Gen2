@@ -6,7 +6,7 @@
 
 import { HuabuRfsClient } from './huabuRfsClient.js';
 import { ProjectionBinding, ProjectionBindingRegistry } from './projectionBinding.js';
-import type { CanvasNodeType, Point, NodeSize } from './types.js';
+import type { AgentCreatableNodeType, Point, NodeGeometrySize } from './types.js';
 
 export type ArtifactKind = 'text' | 'image' | 'pdf' | 'file';
 
@@ -18,9 +18,9 @@ export interface ArtifactProjectionSource {
 }
 
 const DEFAULT_POSITION: Point = { x: 0, y: 0 };
-const DEFAULT_SIZE: NodeSize = { width: 280, height: 220 };
+const DEFAULT_SIZE: NodeGeometrySize = { width: 280, height: 220 };
 
-export function huabuNodeTypeFor(kind: ArtifactKind): CanvasNodeType {
+export function huabuNodeTypeFor(kind: ArtifactKind): AgentCreatableNodeType {
   switch (kind) {
     case 'image':
       return 'image';
