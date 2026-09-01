@@ -7,11 +7,12 @@
 import { HuabuRfsClient } from './huabuRfsClient.js';
 import { ProjectionBindingRegistry } from './projectionBinding.js';
 import type { AgentRfsEdgeStyle } from './types.js';
+import type { RelationEntityType } from '@local-creative-os/domain';
 
 export type RelationKind = 'references' | 'derived-from' | 'revises' | 'depends-on' | 'uses' | 'produced-by';
 
 export interface CoreEntityRef {
-  entityType: 'artifact' | 'conversation' | 'skill' | 'run';
+  entityType: RelationEntityType;
   entityId: string;
 }
 

@@ -7,6 +7,21 @@
 export { HttpClient, HttpError } from './backend/client.js';
 export type { HttpClientConfig, RequestOptions, ResponseMode } from './backend/client.js';
 
+export { CoreApiError, coreRequest, coreEnvelope, unwrapCoreValue, toCoreApiError } from './backend/coreTypes.js';
+export type { CoreEnvelope, CoreEnvelopeOk, CoreEnvelopeError } from './backend/coreTypes.js';
+
+export { CoreProjectClient } from './backend/projects.js';
+export type { ProjectListItem } from './backend/projects.js';
+
+export { CoreArtifactClient } from './backend/artifacts.js';
+export type { ArtifactDetailProjection, ArtifactDetailRevision, ArtifactRunRef } from './backend/artifacts.js';
+
+export { CoreRelationClient } from './backend/relations.js';
+export type { RelationPutResult, RelationDeleteResult } from './backend/relations.js';
+
+export { CoreSearchClient } from './backend/search.js';
+export type { CoreSearchParams, CoreSearchUsedHereTarget } from './backend/search.js';
+
 export { HuabuRfsClient, RfsContractError } from './spatial/huabuRfsClient.js';
 export type { RfsConfig, SpaceQuery, AgentCanvasCommand, CanvasNodeCreateInput, NodeCreateInputByType, CanvasEdgeRef } from './spatial/huabuRfsClient.js';
 

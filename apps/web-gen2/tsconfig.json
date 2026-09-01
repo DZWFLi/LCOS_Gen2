@@ -3,6 +3,10 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "paths": {
+      "@local-creative-os/domain": ["../../packages/domain/src/index.ts"],
+      "@local-creative-os/contracts": ["../../packages/contracts/src/index.ts"]
+    },
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": false,

@@ -15,7 +15,8 @@
     "typecheck:web-gen2": "npm run typecheck --workspace @local-creative-os/web-gen2",
     "check:core": "npm run check --workspace @local-creative-os/local-core",
     "test:core": "npm run test --workspace @local-creative-os/local-core",
-    "g0:smoke": "node scripts/g0-rfs-smoke.mjs"
+    "g0:smoke": "node scripts/g0-rfs-smoke.mjs",
+    "g0:core:smoke": "node --import tsx scripts/g0-core-client-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

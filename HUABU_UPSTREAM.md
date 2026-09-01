@@ -6,7 +6,7 @@ file pins exactly which upstream commit the LCOS Gen2 RFS contract mirrors.
 | Field | Value |
 | --- | --- |
 | Repo | [microsoft/Huabu](https://github.com/microsoft/Huabu) |
-| Clone path | `C:\Users\1\Desktop\OS开发\Huabu` |
+| Clone path | `E:\OS开发\Huabu` |
 | **Pin commit SHA** | `58339e269b784728d67730c70bfe7792cae2457d` |
 | Protocol version | `2` |
 | Server default port | `3001` |
