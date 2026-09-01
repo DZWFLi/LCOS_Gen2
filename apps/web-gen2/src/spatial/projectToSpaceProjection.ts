@@ -1,11 +1,12 @@
 // Projection of LCOS Core Domain objects into Huabu Space nodes.
-// One-way: Core -> Huabu. Geometry is Huabu's; only node identity + label +
+// One-way: Core -> Huabu. Geometry lives in Huabu; only node identity + label +
 // type come from Core. Idempotent: an artifact with an existing binding reuses
-// its node instead of creating a duplicate.
+// its node instead of creating a duplicate. No custom metadata embedded in Huabu
+// node data (Huabu RFS `data` is a strict schema: label/content/src/style only).
 
 import { HuabuRfsClient } from './huabuRfsClient.js';
-import { ProjectionBinding, ProjectionBindingRegistry, bindingToNodeMeta } from './projectionBinding.js';
-import type { Geometry, NodeType } from './types.js';
+import { ProjectionBinding, ProjectionBindingRegistry } from './projectionBinding.js';
+import type { CanvasNodeType, Point, NodeSize } from './types.js';
 
 export type ArtifactKind = 'text' | 'image' | 'pdf' | 'file';
 
@@ -16,9 +17,10 @@ export interface ArtifactProjectionSource {
   title: string;
 }
 
-const DEFAULT_SIZE: Geometry = { x: 0, y: 0, width: 280, height: 220 };
+const DEFAULT_POSITION: Point = { x: 0, y: 0 };
+const DEFAULT_SIZE: NodeSize = { width: 280, height: 220 };
 
-export function huabuNodeTypeFor(kind: ArtifactKind): NodeType {
+export function huabuNodeTypeFor(kind: ArtifactKind): CanvasNodeType {
   switch (kind) {
     case 'image':
       return 'image';
@@ -40,47 +42,36 @@ export class ProjectToSpaceProjection {
 
   /**
    * Project each artifact; returns the binding for each, idempotently.
-   * - If a binding already exists -> reuse that node (no duplicate node).
-   * - If not -> create a Huabu node carrying the LCOS entity identity in node meta.
+   * - Existing node binding -> reuse that node (no duplicate node).
+   * - New -> CREATE_NODES, extract real nodeId from results[0].nodes[0].nodeId.
    */
   async projectArtifacts(artifacts: ArtifactProjectionSource[]): Promise<ProjectionBinding[]> {
     const out: ProjectionBinding[] = [];
     for (const artifact of artifacts) {
-      const existing = await this.resolveExisting(artifact);
+      const existing = await this.bindings.findNode(artifact.projectId, this.rfs.config.canvasId, 'artifact', artifact.artifactId);
       const binding = existing ?? (await this.createNode(artifact));
       out.push(binding);
     }
     return out;
   }
 
-  private async resolveExisting(artifact: ArtifactProjectionSource): Promise<ProjectionBinding | undefined> {
-    return this.bindings.resolve('artifact', artifact.artifactId);
-  }
-
   private async createNode(artifact: ArtifactProjectionSource): Promise<ProjectionBinding> {
     const nodeType = huabuNodeTypeFor(artifact.kind);
-    const geometry: Geometry = { ...DEFAULT_SIZE };
     const response = await this.rfs.execute([
       {
         type: 'CREATE_NODES',
         nodes: [
           {
-            type: nodeType,
-            label: artifact.title,
-            geometry,
-            data: bindingToNodeMeta({
-              projectId: artifact.projectId,
-              canvasId: this.rfs.config.canvasId,
-              nodeId: '',
-              entityType: 'artifact',
-              entityId: artifact.artifactId,
-            }),
+            nodeType,
+            data: { label: artifact.title },
+            position: { ...DEFAULT_POSITION },
+            size: { ...DEFAULT_SIZE },
           },
         ],
       },
     ]);
 
-    const nodeId = response.createdNodes?.[0]?.id ?? response.results?.[0]?.nodeId ?? response.results?.[0]?.id;
+    const nodeId = HuabuRfsClient.firstCreatedNodeId(response);
     if (!nodeId) {
       throw new Error(`CREATE_NODES did not return a node id for artifact ${artifact.artifactId}`);
     }
@@ -88,7 +79,8 @@ export class ProjectToSpaceProjection {
     const binding: ProjectionBinding = {
       projectId: artifact.projectId,
       canvasId: this.rfs.config.canvasId,
-      nodeId,
+      spatialKind: 'node',
+      spatialId: nodeId,
       entityType: 'artifact',
       entityId: artifact.artifactId,
     };

@@ -1,10 +1,12 @@
 // Relation projection — the MOST important special boundary.
 // Core Relation is canonical (semantics/business truth); Huabu Edge is ONLY a
-// spatial projection of that relation. Creating a semantic relation must go
-// through Core; Huabu connect gesture is the trigger, never the truth.
+// spatial projection of that relation. Creating a semantic relation ALWAYS goes
+// through Core first; Huabu Edge is projected afterwards. The real Huabu edgeId
+// (server-assigned) is captured and persisted in the relation<->edge binding.
 
 import { HuabuRfsClient } from './huabuRfsClient.js';
-import { ProjectionBinding } from './projectionBinding.js';
+import { ProjectionBindingRegistry } from './projectionBinding.js';
+import type { EdgeStyle } from './types.js';
 
 export type RelationKind = 'references' | 'derived-from' | 'revises' | 'depends-on' | 'uses' | 'produced-by';
 
@@ -20,77 +22,100 @@ export interface SemanticRelation {
   to: CoreEntityRef;
 }
 
+export interface CoreRelationWriteInput {
+  kind: RelationKind;
+  from: CoreEntityRef;
+  to: CoreEntityRef;
+}
+
 export interface CoreRelationWriter {
-  createRelation(input: { kind: RelationKind; from: CoreEntityRef; to: CoreEntityRef }): Promise<{ id: string }>;
+  createRelation(input: CoreRelationWriteInput): Promise<{ id: string }>;
   deleteRelation(relationId: string): Promise<void>;
 }
 
-export interface ConnectGesture {
-  sourceNodeId: string;
-  targetNodeId: string;
-  label?: string;
-}
-
 export interface NodeBindingResolver {
-  (nodeId: string): ProjectionBinding | undefined;
-}
-
-export interface RelationProjectionOptions {
-  edgeIdPrefix?: string;
+  (nodeId: string): { entityType: CoreEntityRef['entityType']; entityId: string } | undefined;
 }
 
 export class RelationProjection {
   constructor(
     private readonly rfs: HuabuRfsClient,
     private readonly core: CoreRelationWriter,
-    private readonly opts: RelationProjectionOptions = {},
+    private readonly bindings: ProjectionBindingRegistry,
+    private readonly projectId: string,
   ) {}
 
-  private edgeIdFor(relationId: string): string {
-    return `${this.opts.edgeIdPrefix ?? 'edge'}-${relationId}`;
-  }
-
-  /** Project an existing Core Relation into a Huabu Edge (Core -> Huabu). */
-  async projectRelation(relation: SemanticRelation, fromBinding: ProjectionBinding, toBinding: ProjectionBinding): Promise<void> {
-    await this.rfs.execute([
-      {
-        type: 'CONNECT_NODES',
-        connections: [
-          {
-            source: fromBinding.nodeId,
-            target: toBinding.nodeId,
-            style: { label: relation.kind, lineType: 'bezier', direction: 'forward' },
-          },
-        ],
-      },
-    ]);
-  }
-
   /**
-   * Huabu connect gesture -> Core semantic Relation mutation -> then the Edge is
-   * already present in Huabu (the gesture created it); we only ensure Core is the
-   * canonical truth. NEVER let a pure Huabu CONNECT define a business relation.
+   * Huabu connect intent -> Core createRelation -> RFS CONNECT_NODES -> capture
+   * real edgeId -> persist relation<->edge binding.
+   * Core write is definitive: if Core rejects, no Edge is created.
    */
-  async onConnectGesture(gesture: ConnectGesture, resolver: NodeBindingResolver): Promise<{ relationId: string; edgeId: string }> {
+  async onConnectGesture(
+    gesture: { sourceNodeId: string; targetNodeId: string; label?: string },
+    resolver: NodeBindingResolver,
+  ): Promise<{ relationId: string; edgeId: string }> {
     const source = resolver(gesture.sourceNodeId);
     const target = resolver(gesture.targetNodeId);
     if (!source || !target) {
       throw new Error('Cannot resolve a binding for one endpoint of the connect gesture');
     }
     const kind = (gesture.label as RelationKind | undefined) ?? 'references';
-    const relation = await this.core.createRelation({
-      kind,
-      from: { entityType: source.entityType, entityId: source.entityId },
-      to: { entityType: target.entityType, entityId: target.entityId },
+
+    // 1) Core is canonical -> must succeed first.
+    const relation = await this.core.createRelation({ kind, from: source, to: target });
+
+    // 2) Project to Huabu Edge; capture the server-assigned edgeId.
+    const response = await this.rfs.execute([
+      { type: 'CONNECT_NODES', edges: [{ source: gesture.sourceNodeId, target: gesture.targetNodeId, style: this.edgeStyleFor(kind) }] },
+    ]);
+    const edgeId = HuabuRfsClient.firstCreatedEdgeId(response);
+    if (!edgeId) {
+      // RFS write failed: Core relation is still canonical -> mark projection
+      // missing; a reconciliation pass repairs it.
+      throw new Error(`CONNECT_NODES did not return an edge id for relation ${relation.id}`);
+    }
+
+    // 3) Persist relation<->edge binding.
+    await this.bindings.bind({
+      projectId: this.projectId,
+      canvasId: this.rfs.config.canvasId,
+      spatialKind: 'edge',
+      spatialId: edgeId,
+      entityType: 'relation',
+      entityId: relation.id,
     });
-    return { relationId: relation.id, edgeId: this.edgeIdFor(relation.id) };
+
+    return { relationId: relation.id, edgeId };
   }
 
-  /** Remove relation from Core and its Edge projection from Huabu. */
-  async deleteRelation(relation: SemanticRelation, edgeId?: string): Promise<void> {
-    await this.core.deleteRelation(relation.id);
-    if (edgeId) {
-      await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edgeIds: [edgeId] }]);
+  /** Project an already-existing Core Relation into a Huabu Edge (Core -> Huabu). */
+  async projectRelation(relation: SemanticRelation, fromNodeId: string, toNodeId: string): Promise<void> {
+    const response = await this.rfs.execute([
+      { type: 'CONNECT_NODES', edges: [{ source: fromNodeId, target: toNodeId, style: this.edgeStyleFor(relation.kind) }] },
+    ]);
+    const edgeId = HuabuRfsClient.firstCreatedEdgeId(response);
+    if (!edgeId) return;
+    await this.bindings.bind({
+      projectId: this.projectId,
+      canvasId: this.rfs.config.canvasId,
+      spatialKind: 'edge',
+      spatialId: edgeId,
+      entityType: 'relation',
+      entityId: relation.id,
+    });
+  }
+
+  /** Delete relation from Core AND its Edge projection; repair both sides. */
+  async deleteRelation(relationId: string): Promise<void> {
+    const edgeBinding = await this.bindings.findEdge(this.projectId, this.rfs.config.canvasId, relationId);
+    await this.core.deleteRelation(relationId);
+    if (edgeBinding) {
+      await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edges: [edgeBinding.spatialId] }]);
+      await this.bindings.unbindByEntity(this.projectId, this.rfs.config.canvasId, 'edge', 'relation', relationId);
     }
+  }
+
+  private edgeStyleFor(kind: RelationKind): EdgeStyle {
+    return { lineType: 'bezier', direction: 'forward', label: kind };
   }
 }

@@ -1,9 +1,23 @@
-// Huabu RFS client — the formal Spatial Port for Gen2.
-// LCOS does NOT touch Huabu Space persistence internals; all spatial
-// read/write goes through `/api/rfs/:canvasId/{query,execute,capabilities,download}`.
+// Huabu RFS client — the formal Spatial Port for LCOS Gen2.
+// Mirrors upstream microsoft/Huabu protocol v2 (packages/shared/src/types/api/
+// space-operations.ts + packages/shared/src/types/canvas/command.ts) exactly for
+// the transport surface. No guessing. No second spatial runtime.
 
-import { HttpClient, HttpError } from '../backend/client.js';
-import type { Geometry, HuabuNodeInput } from './types.js';
+import { HttpClient } from '../backend/client.js';
+import {
+  HUABU_PROTOCOL_VERSION,
+  type CanvasNodeType,
+  type Point,
+  type NodeSize,
+  type Rect,
+  type EdgeStyle,
+  type SpaceQueryResponse,
+  type RfsExecuteResponse,
+  type RfsCapabilitiesResponse,
+  type EdgeLineType,
+  type EdgeLineStyle,
+  type EdgeDirection,
+} from './types.js';
 
 export interface RfsConfig {
   canvasId: string;
@@ -12,60 +26,85 @@ export interface RfsConfig {
   fetch?: typeof fetch;
 }
 
-export type Rect = { x: number; y: number; width: number; height: number };
+// ---------- Queries (SpaceQuery, upstream space-operations.ts) ----------
 
-export type RfsQuery =
-  | { type: 'GET_SPACE_OUTLINE' }
-  | { type: 'INSPECT_NODES'; ids?: string[]; byType?: string[]; nearNode?: string; connectedTo?: string; inRect?: Rect }
-  | { type: 'INSPECT_EDGES'; ids?: string[]; connectedTo?: string; inRect?: Rect }
-  | { type: 'SEARCH'; query: string; tier?: 'meta' | 'content' | 'conversation' }
-  | { type: 'SNAPSHOT_NODES'; ids: string[] };
+export type SpaceQuery =
+  | { type: 'GET_SPACE_OUTLINE'; includePreviews?: boolean; includeStyle?: boolean }
+  | {
+      type: 'INSPECT_NODES';
+      ids?: string[];
+      byType?: CanvasNodeType | CanvasNodeType[];
+      byParent?: string | null;
+      labelPattern?: string;
+      inRect?: Rect;
+      nearNode?: { id: string; maxDistance?: number; maxCount?: number; sameParent?: boolean };
+      nearPoint?: { x: number; y: number; maxDistance?: number; maxCount?: number };
+      inSameClusterAs?: string;
+      connectedTo?: { id: string; depth?: 1 | 2 };
+      sort?: 'distance' | 'reading-order' | 'area';
+      limit?: number;
+    }
+  | {
+      type: 'INSPECT_EDGES';
+      ids?: string[];
+      connectedTo?: string;
+      bySource?: string;
+      byTarget?: string;
+      between?: { a: string; b: string };
+      byDirection?: EdgeDirection | EdgeDirection[];
+      byLineStyle?: EdgeLineStyle | EdgeLineStyle[];
+      byLineType?: EdgeLineType | EdgeLineType[];
+      byLabel?: string;
+      limit?: number;
+    }
+  | {
+      type: 'SEARCH';
+      query: string;
+      limit?: number;
+      nodeTypes?: string[];
+      nodeId?: string;
+      fields?: Array<'label' | 'summary' | 'keywords' | 'content' | 'conversation'>;
+    }
+  | { type: 'SNAPSHOT_NODES'; nodeIds: string[]; maxPixels?: number; strokeSubsets?: { nodeId: string; strokeIds: string[] }[] };
 
-export type RfsCommand =
-  | { type: 'CREATE_NODES'; nodes: HuabuNodeInput[] }
+// ---------- Commands (AgentCanvasCommand, upstream space-operations.ts) ----------
+
+export type NodeCreateInputByType = {
+  nodeType: CanvasNodeType;
+  data?: { label?: string; content?: string; src?: string; style?: Record<string, unknown> };
+  position: Point;
+  size?: NodeSize;
+  parentId?: string | null;
+  selectOnCreate?: boolean;
+};
+
+export type CanvasNodeCreateInput = NodeCreateInputByType;
+
+export type CanvasEdgeRef = string | { source: string; target: string };
+
+export type AgentCanvasCommand =
+  | { type: 'CREATE_NODES'; nodes: CanvasNodeCreateInput[] }
   | { type: 'DELETE_NODES'; nodeIds: string[] }
-  | { type: 'MERGE_NODE_DATA'; changes: Array<{ id: string; data?: Record<string, unknown> }> }
-  | { type: 'SET_NODE_PARENT'; changes: Array<{ id: string; parentId: string | null }> }
-  | { type: 'SET_NODE_GEOMETRY'; changes: Array<{ id: string } & Geometry> }
-  | { type: 'CONNECT_NODES'; connections: Array<{ source: string; target: string; style?: Record<string, unknown> }> }
-  | { type: 'DISCONNECT_EDGES'; edgeIds: string[] }
-  | { type: 'SET_EDGE_STYLE'; changes: Array<{ edgeId: string; style: Record<string, unknown> }> }
-  | { type: 'ALIGN_NODES'; changes: Array<{ ids: string[]; axis: 'x' | 'y' | 'both'; anchor?: string }> }
-  | { type: 'DISTRIBUTE_NODES'; changes: Array<{ ids: string[]; axis: 'x' | 'y' | 'both' }> }
-  | { type: 'SET_FRAME_LAYOUT'; changes: Array<{ id: string; layoutMode: 'free' | 'column' | 'row' | 'grid' }> };
+  | { type: 'MERGE_NODE_DATA'; patches: { nodeId: string; patch: Record<string, unknown>; expectRev?: string; expectViewRev?: string }[] }
+  | { type: 'SET_NODE_PARENT'; nodeIds: string[]; parentId: string | null }
+  | { type: 'DISSOLVE_FRAME'; frameId: string }
+  | { type: 'SET_NODE_GEOMETRY'; items: { nodeId: string; position?: Point; size?: NodeSize }[] }
+  | { type: 'REORDER_NODES'; nodeIds: string[]; to: 'top' | 'bottom' | { before: string } | { after: string } }
+  | { type: 'CONNECT_NODES'; edges: { source: string; target: string; style?: EdgeStyle }[] }
+  | { type: 'DISCONNECT_EDGES'; edges: CanvasEdgeRef[] }
+  | { type: 'SET_EDGE_STYLE'; edges: { edge: CanvasEdgeRef; style: Partial<EdgeStyle> }[] }
+  | { type: 'ALIGN_NODES'; nodeIds: string[]; direction: 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom' }
+  | { type: 'DISTRIBUTE_NODES'; nodeIds: string[] }
+  | { type: 'SET_FRAME_LAYOUT'; frameId: string; mode: 'free' | 'column' | 'row' | 'grid'; gridCount?: number; gridRowCount?: number; sizing?: 'hug' | 'manual'; cells?: { nodeId: string; column?: number; row?: number }[] }
+  | { type: 'SET_PORTAL_NODE_PINS'; updates: { sourceCanvasId: string; sourceNodeIds: string[]; pinned: boolean }[] };
 
-export interface RfsExecuteResult {
-  id?: string;
-  nodeId?: string;
-  edgeId?: string;
-  status?: string;
-}
-
-export interface RfsExecuteResponse {
-  fromVersion?: number;
-  toVersion?: number;
-  results?: RfsExecuteResult[];
-  revisions?: Array<{ nodeId: string; version?: number }>;
-  affected?: unknown;
-  conflicts?: Array<{ reason: 'not-read' | 'stale'; nodeId?: string; entityId?: string }>;
-  createdNodes?: Array<{ id: string }>;
-  createdEdges?: Array<{ id: string }>;
-}
-
-export interface RfsCapabilitiesResponse {
-  protocolVersion?: string;
-  permissions?: unknown;
-  queryTypes?: string[];
-  commandTypes?: string[];
-  limits?: { maxCommands?: number };
-  links?: Record<string, string>;
-}
-
-export interface RfsQueryResponse {
-  nodes?: Array<{ id: string; type: string; position?: { x: number; y: number }; size?: { width: number; height: number }; label?: string; data?: Record<string, unknown> }>;
-  edges?: Array<{ id: string; source: string; target: string; style?: Record<string, unknown> }>;
-  hits?: Array<{ id: string; score?: number; snippet?: string; ref?: unknown }>;
-  outline?: unknown;
+export class RfsContractError extends Error {
+  readonly reason: string;
+  constructor(reason: string) {
+    super(`RFS contract error: ${reason}`);
+    this.name = 'RfsContractError';
+    this.reason = reason;
+  }
 }
 
 export class HuabuRfsClient {
@@ -85,29 +124,63 @@ export class HuabuRfsClient {
     return `${this.config.baseUrl}/api/rfs/${this.config.canvasId}`;
   }
 
+  /** Fetch capabilities and fail-fast if protocol v2 is not satisfied. */
+  async assertProtocol(): Promise<RfsCapabilitiesResponse> {
+    const caps = await this.capabilities();
+    if (caps.protocolVersion !== HUABU_PROTOCOL_VERSION) {
+      throw new RfsContractError(
+        `protocolVersion mismatch: expected ${HUABU_PROTOCOL_VERSION}, got ${caps.protocolVersion}`,
+      );
+    }
+    return caps;
+  }
+
   async capabilities(): Promise<RfsCapabilitiesResponse> {
-    return this.http.get<RfsCapabilitiesResponse>(`${this.rfsUrl}/capabilities`);
+    return this.http.getJson<RfsCapabilitiesResponse>(`${this.rfsUrl}/capabilities`);
   }
 
-  async query<Q extends RfsQuery>(query: Q): Promise<RfsQueryResponse> {
-    return this.http.post<RfsQueryResponse>(`${this.rfsUrl}/query`, query);
+  async query<Q extends SpaceQuery>(query: Q): Promise<SpaceQueryResponse & { type: Q['type'] }> {
+    const res = await this.http.postJson<SpaceQueryResponse>(`${this.rfsUrl}/query`, query);
+    return res as SpaceQueryResponse & { type: Q['type'] };
   }
 
-  async execute(commands: RfsCommand[]): Promise<RfsExecuteResponse> {
-    return this.http.post<RfsExecuteResponse>(`${this.rfsUrl}/execute`, { commands });
-  }
-
-  async skillDoc(): Promise<string> {
-    return this.http.get<string>(`${this.rfsUrl}/skill`);
-  }
-
-  async download(relativePath: string, signal?: AbortSignal): Promise<Blob> {
-    const res = await this.http.get<Blob>(`${this.rfsUrl}/download/${relativePath}`, signal);
+  /** Execute commands. Throws on any command whose `applied !== true`. */
+  async execute(commands: AgentCanvasCommand[]): Promise<RfsExecuteResponse> {
+    const res = await this.http.postJson<RfsExecuteResponse>(`${this.rfsUrl}/execute`, { commands });
+    for (const result of res.results ?? []) {
+      if (result.applied !== true) {
+        throw new RfsContractError(
+          `command ${result.index} (${result.type}) not applied: ${result.reason ?? 'unknown'}`,
+        );
+      }
+    }
     return res;
   }
 
-  /** Convenience: read the whole outline (nodes + edges) of a Space. */
-  async outline(): Promise<RfsQueryResponse> {
+  /** Execute but return raw response without throwing on per-command failure. */
+  async executeRelaxed(commands: AgentCanvasCommand[]): Promise<RfsExecuteResponse> {
+    return this.http.postJson<RfsExecuteResponse>(`${this.rfsUrl}/execute`, { commands });
+  }
+
+  async skillDoc(): Promise<string> {
+    return this.http.getText(`${this.rfsUrl}/skill`);
+  }
+
+  async download(relativePath: string, signal?: AbortSignal): Promise<Blob> {
+    return this.http.getBlob(`${this.rfsUrl}/download/${relativePath}`, signal);
+  }
+
+  /** Extract the first created node id from a CREATE result (protocol v2). */
+  static firstCreatedNodeId(response: RfsExecuteResponse): string | undefined {
+    return response.results?.[0]?.nodes?.[0]?.nodeId;
+  }
+
+  /** Extract the first created edge id from a CONNECT result (protocol v2). */
+  static firstCreatedEdgeId(response: RfsExecuteResponse): string | undefined {
+    return response.results?.[0]?.edges?.[0]?.edgeId;
+  }
+
+  async outline(): Promise<SpaceQueryResponse & { type: 'GET_SPACE_OUTLINE' }> {
     return this.query({ type: 'GET_SPACE_OUTLINE' });
   }
 }

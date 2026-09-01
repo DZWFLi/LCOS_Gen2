@@ -5,31 +5,39 @@
 // projection adapters. No surface/owner/projection runtime. No geometry in Core.
 
 export { HttpClient, HttpError } from './backend/client.js';
-export type { HttpClientConfig, RequestOptions } from './backend/client.js';
+export type { HttpClientConfig, RequestOptions, ResponseMode } from './backend/client.js';
 
-export { HuabuRfsClient } from './spatial/huabuRfsClient.js';
-export type {
-  RfsConfig,
-  RfsQuery,
-  RfsCommand,
-  RfsExecuteResponse,
-  RfsCapabilitiesResponse,
-  RfsQueryResponse,
-} from './spatial/huabuRfsClient.js';
+export { HuabuRfsClient, RfsContractError } from './spatial/huabuRfsClient.js';
+export type { RfsConfig, SpaceQuery, AgentCanvasCommand, CanvasNodeCreateInput, NodeCreateInputByType, CanvasEdgeRef } from './spatial/huabuRfsClient.js';
 
-export {
-  ProjectionBindingRegistry,
-  MemoryBindingStore,
-  bindingToNodeMeta,
-  nodeMetaToBinding,
-  entityKey,
-} from './spatial/projectionBinding.js';
-export type { ProjectionBinding, EntityType, BindingStore } from './spatial/projectionBinding.js';
+export { ProjectionBindingRegistry, MemoryBindingStore, FileBindingStore, bindingKey } from './spatial/projectionBinding.js';
+export type { ProjectionBinding, EntityType, SpatialKind, BindingStore, FileSystemLike } from './spatial/projectionBinding.js';
 
 export { ProjectToSpaceProjection, huabuNodeTypeFor } from './spatial/projectToSpaceProjection.js';
 export type { ArtifactProjectionSource, ArtifactKind } from './spatial/projectToSpaceProjection.js';
 
 export { RelationProjection } from './spatial/relationProjection.js';
-export type { RelationKind, SemanticRelation, ConnectGesture, CoreRelationWriter, CoreEntityRef } from './spatial/relationProjection.js';
+export type { RelationKind, SemanticRelation, CoreRelationWriter, CoreEntityRef, NodeBindingResolver } from './spatial/relationProjection.js';
 
-export type { NodeType, HuabuNode, HuabuEdge } from './spatial/types.js';
+export {
+  HUABU_PROTOCOL_VERSION,
+  CANVAS_NODE_TYPES,
+  AGENT_CREATABLE_NODE_TYPES,
+} from './spatial/types.js';
+export type {
+  CanvasNodeType,
+  Point,
+  NodeSize,
+  Geometry,
+  EdgeStyle,
+  Rect,
+  SpaceQueryResponse,
+  SpaceNodeResult,
+  SpaceOutlineResult,
+  InspectNodesResult,
+  InspectEdgesResult,
+  SearchResult,
+  SnapshotNodesResult,
+  RfsExecuteResponse,
+  RfsCapabilitiesResponse,
+} from './spatial/types.js';
