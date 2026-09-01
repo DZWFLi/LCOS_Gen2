@@ -3,8 +3,6 @@
 // fallback as the LAST resort (NOT the primary). Cooldown prevents duplicate runs;
 // mutation triggers are debounced so a burst of mutations coalesces into one sweep.
 
-import type { ReconciliationRunner } from '../spatial/reconciliationRunner.js';
-
 export type ReconcileTrigger = 'project-open' | 'mutation' | 'reconnect' | 'periodic';
 
 export interface HostLifecycleReconcilerOptions {
@@ -37,6 +35,11 @@ export class HostLifecycleReconciler {
     this.cooldownMs = options.cooldownMs ?? 500;
     this.debounceMs = options.debounceMs ?? 300;
     this.observer = observer;
+  }
+
+  /** The project this reconciler is bound to. */
+  getProjectId(): string {
+    return this.projectId;
   }
 
   /** True if an actual sweep ran; false if throttled (cooldown/in-flight). */
