@@ -1,0 +1,23 @@
+{
+  "name": "@local-creative-os/local-core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --pretty false",
+    "dev": "npm run build && node dist/index.js",
+    "start": "node dist/index.js",
+    "lint": "oxlint src tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "pretest": "npm run build --workspace @local-creative-os/domain",
+    "test": "vitest run tests --maxWorkers=1",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@local-creative-os/contracts": "0.1.0",
+    "@local-creative-os/domain": "0.1.0",
+    "@napi-rs/canvas": "0.1.100",
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^4.10.38"
+  }
+}

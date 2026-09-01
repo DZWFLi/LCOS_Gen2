@@ -1,0 +1,74 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.vite-dev*.log
+.codex-runtime/
+.workbuddy/
+public/dev-test-report.json
+apps/local-core/.data/
+# Disposable artifact from an early Phase 2 Lite cwd-path validation.
+apps/local-core/apps/local-core/.data/
+
+# Local handoff package; its contents are tracked as source documents.
+Local_Creative_OS_Codex_Development_Package_20260719_073944.zip
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Test evidence and screenshots (not source code)
+.playwright-cli/
+/test-results/
+前端测试/
+后端搭建/
+/*.png
+/*.jpg
+
+# LCOS generated runtime and Python test artifacts
+.runtime/
+.data/
+.pytest_cache/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# 本地调试残留
+.tmp/
+pnpm-lock.yaml
+
+# 一次性调试脚本与测试产物（不进入公开仓库）
+launch-test*.mjs
+mcp-diagnose.mjs
+boot-evidence.mjs
+e2e-evidence.zip
+e2e-evidence/
+evidence/
+playwright-report/
+apps/desktop/resources/runtime.stale-*/
+
+# Huabu audit reference (shallow clone)
+.research/
+
+# Electron Desktop generated artifacts
+apps/desktop/resources/runtime/
+apps/desktop/out/
+tools/light-bridge-kernel/dist-desktop/
+tools/light-bridge-kernel/.desktop-build/
