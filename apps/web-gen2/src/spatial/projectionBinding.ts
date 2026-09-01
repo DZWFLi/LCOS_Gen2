@@ -7,7 +7,20 @@
 // so concurrent writers can never lose each other's bindings (no lost-update,
 // no spurious delete from a stale snapshot).
 
-export type EntityType = 'artifact' | 'conversation' | 'skill' | 'run' | 'relation';
+// EntityType is the SAME binding model for every Core entity that can enter space
+// (artifact/conversation/skill/run) plus the Core relation endpoint kinds
+// (note/scope/view/workspace). We do NOT create a per-kind Binding type — a single
+// ProjectionBinding carries whatever entityType the consumer projects.
+export type EntityType =
+  | 'artifact'
+  | 'conversation'
+  | 'skill'
+  | 'run'
+  | 'relation'
+  | 'note'
+  | 'scope'
+  | 'view'
+  | 'workspace';
 
 export type SpatialKind = 'node' | 'edge';
 
