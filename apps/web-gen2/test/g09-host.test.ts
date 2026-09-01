@@ -6,6 +6,7 @@ import { ProjectToSpaceProjection } from '../src/spatial/projectToSpaceProjectio
 import { HostLifecycleReconciler } from '../src/host/lifecycleReconciler.js';
 import { connectSemantic, ConnectIntentError } from '../src/host/hostConnectIntent.js';
 import { Gen2Host } from '../src/host/projectionFacade.js';
+import { createHostSeam } from '../src/host/hostSeam.js';
 import { HttpClient } from '../src/backend/client.js';
 import { CoreRelationClient } from '../src/backend/relations.js';
 
@@ -197,4 +198,15 @@ test('Gen2Host: wire nodeIdFor + connect through Core Relation -> Edge', async (
   assert.equal(result.changeSetId, 'cs-h');
   assert.ok(result.edgeBinding?.spatialId, 'edge binding returned');
   assert.equal(await host.nodeIdFor('artifact', 'a1'), 'node-a');
+});
+
+test('createHostSeam: wires SemanticConnectIntent to Gen2Host.connect (Core Relation -> Edge)', async () => {
+  const fakeHost = { connect: async (from: unknown, to: unknown, kind: unknown) => ({ relationId: 'rel-s', changeSetId: 'cs-s', edgeBinding: { spatialId: 'edge-s' } }) } as never as Gen2Host;
+  const seam = createHostSeam(fakeHost);
+  const r = await seam.connectIntent.onConnect({ entityType: 'artifact', entityId: 'a1' }, { entityType: 'artifact', entityId: 'a2' });
+  assert.equal(r.relationId, 'rel-s');
+  assert.equal(r.changeSetId, 'cs-s');
+  assert.equal(r.edgeId, 'edge-s');
+  assert.equal(seam.extraRenderers.length, 0);
+  assert.equal(seam.overlays.length, 0);
 });

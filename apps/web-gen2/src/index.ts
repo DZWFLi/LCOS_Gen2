@@ -48,6 +48,9 @@ export type { ConnectIntentDeps, SemanticConnectResult } from './host/hostConnec
 export { Gen2Host } from './host/projectionFacade.js';
 export type { Gen2HostDeps } from './host/projectionFacade.js';
 
+export { createHostSeam } from './host/hostSeam.js';
+export type { HostSeam, SemanticConnectIntent, LcosRendererDescriptor, LcosOverlayDescriptor } from './host/hostSeam.js';
+
 export {
   HUABU_PROTOCOL_VERSION,
   CANVAS_NODE_TYPES,
