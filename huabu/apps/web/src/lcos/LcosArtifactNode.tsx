@@ -2,11 +2,14 @@
 // proof. Registered into the Huabu Canvas seam under the `lcos/artifact` key
 // via the host extension (see useLcosCanvasProps).
 //
-// A02: wraps in Huabu's NodeWrapper (resize/selection/fill/toolbar slots all
-// reused) and consumes the NodeWrapper presentation context to resolve the
-// shared adaptive density (mark / summary / working / reading) — the first
-// real consumer of the presentation protocol. Full species morphology is
-// Phase B.
+// A02 fix (GPT review): the presentation context consumer MUST live INSIDE
+// the NodeWrapper subtree — the LcosNodePresentationProvider is rendered by
+// NodeWrapper, and a consumer above it (like this component) would always
+// read `undefined` and freeze at the fallback density. The body therefore
+// renders as a child component (`LcosArtifactBody`) so it sits below the
+// provider and receives the live adaptive input (world size × zoom, phase).
+//
+// Full species morphology is Phase B.
 
 import React from 'react';
 import type { NodeProps } from '@xyflow/react';
@@ -29,6 +32,26 @@ export const LcosArtifactNode: React.FC<NodeProps> = ({
       ? ((data as { label?: string }).label as string)
       : id;
 
+  return (
+    <NodeWrapper
+      id={id}
+      data={data as BaseNodeData}
+      type={'lcos/artifact'}
+      selected={selected}
+      resizable
+      keepAspectRatio={false}
+      className="transition-all duration-200"
+    >
+      {/* Consumer lives INSIDE the NodeWrapper subtree: the presentation
+          provider is mounted by NodeWrapper, so only descendants receive
+          the adaptive input. */}
+      <LcosArtifactBody id={id} label={label} />
+    </NodeWrapper>
+  );
+};
+
+/** Reads the presentation context BELOW the NodeWrapper provider. */
+function LcosArtifactBody({ id, label }: { id: string; label: string }) {
   const presentation = useLcosNodePresentation();
   const density = presentation
     ? resolvePresentationDensity({
@@ -42,11 +65,11 @@ export const LcosArtifactNode: React.FC<NodeProps> = ({
       })
     : 'working'; // no adaptive data (e.g. preview outside the canvas)
 
-  let body: React.ReactNode;
   if (density === 'mark') {
     // Identity dot only — the honest level for a tiny node.
-    body = (
+    return (
       <div
+        data-lcos-node={id}
         data-lcos-density={density}
         style={{
           width: '100%',
@@ -67,10 +90,13 @@ export const LcosArtifactNode: React.FC<NodeProps> = ({
         />
       </div>
     );
-  } else if (density === 'summary') {
+  }
+
+  if (density === 'summary') {
     // One line of identity.
-    body = (
+    return (
       <div
+        data-lcos-node={id}
         data-lcos-density={density}
         style={{
           width: '100%',
@@ -94,10 +120,13 @@ export const LcosArtifactNode: React.FC<NodeProps> = ({
         </span>
       </div>
     );
-  } else if (density === 'working') {
+  }
+
+  if (density === 'working') {
     // Identity + kind line.
-    body = (
+    return (
       <div
+        data-lcos-node={id}
         data-lcos-density={density}
         style={{
           width: '100%',
@@ -113,31 +142,18 @@ export const LcosArtifactNode: React.FC<NodeProps> = ({
         <div style={{ fontSize: 11, color: '#5b7bb8' }}>LCOS · artifact</div>
       </div>
     );
-  } else {
-    // reading: the full card.
-    body = (
-      <div
-        data-lcos-density={density}
-        style={{ width: '100%', height: '100%', overflow: 'hidden' }}
-      >
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#1e40af' }}>
-          LCOS · {label}
-        </div>
-      </div>
-    );
   }
 
+  // reading: the full card.
   return (
-    <NodeWrapper
-      id={id}
-      data={data as BaseNodeData}
-      type={'lcos/artifact'}
-      selected={selected}
-      resizable
-      keepAspectRatio={false}
-      className="transition-all duration-200"
+    <div
+      data-lcos-node={id}
+      data-lcos-density={density}
+      style={{ width: '100%', height: '100%', overflow: 'hidden' }}
     >
-      <div data-lcos-node={id}>{body}</div>
-    </NodeWrapper>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#1e40af' }}>
+        LCOS · {label}
+      </div>
+    </div>
   );
-};
+}

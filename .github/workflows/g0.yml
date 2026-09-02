@@ -43,3 +43,40 @@ jobs:
       - name: test local-core projection bindings (schema v52 migration + CRUD route)
         working-directory: apps/local-core
         run: npm run test:g0
+
+  huabu-vendored:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: huabu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: huabu/pnpm-lock.yaml
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: shared — typecheck
+        run: npm run typecheck
+        working-directory: packages/shared
+
+      - name: shared — tests
+        run: npm test
+        working-directory: packages/shared
+
+      - name: web — typecheck
+        run: npm run typecheck
+        working-directory: apps/web
+
+      # lcos suites only: the full web suite carries a known-stale upstream
+      # test file (blockFingerprintParity) unrelated to the vendored seam.
+      - name: web — lcos seam + renderer tests
+        run: npx vitest run src/lcos-seam src/lcos
+        working-directory: apps/web
