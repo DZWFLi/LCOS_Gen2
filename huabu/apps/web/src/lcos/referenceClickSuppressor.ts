@@ -31,6 +31,9 @@ export function handleReferenceClickSuppression(event: {
   stopImmediatePropagation?(): void;
 }): boolean {
   if (Date.now() - lastReferencePickAt > PICK_SUPPRESS_WINDOW_MS) return false;
+  // Shift is the explicit multi-selection signal and ALWAYS wins — even within
+  // the pick window, never swallow a Shift click (or multi-select silently breaks).
+  if (event.shiftKey === true) return false;
   const target = event.target as Element | null;
   if (!target || typeof target.closest !== 'function') return false;
   if (!target.closest('.react-flow__node')) return false;

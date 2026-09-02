@@ -9,7 +9,7 @@ import {
 } from './referenceClickSuppressor';
 
 type FakeClick = Parameters<typeof handleReferenceClickSuppression>[0];
-function fakeClick(insideNode: boolean): FakeClick {
+function fakeClick(insideNode: boolean, opts: { shiftKey?: boolean } = {}): FakeClick {
   const target = {
     closest: (sel: string) =>
       insideNode && sel === '.react-flow__node' ? {} : null,
@@ -19,6 +19,7 @@ function fakeClick(insideNode: boolean): FakeClick {
     preventDefault: vi.fn(),
     stopPropagation: vi.fn(),
     stopImmediatePropagation: vi.fn(),
+    shiftKey: opts.shiftKey ?? false,
   } as unknown as FakeClick;
 }
 
@@ -38,6 +39,13 @@ describe('reference click suppressor', () => {
     const click = fakeClick(true);
     expect(handleReferenceClickSuppression(click)).toBe(false);
     vi.useRealTimers();
+  });
+
+  it('never swallows a Shift click, even inside the pick window', () => {
+    markReferencePickCompleted();
+    const click = fakeClick(true, { shiftKey: true });
+    expect(handleReferenceClickSuppression(click)).toBe(false);
+    expect(click.preventDefault).not.toHaveBeenCalled();
   });
 
   it('lets clicks on non-node targets through', () => {
