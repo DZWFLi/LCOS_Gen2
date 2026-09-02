@@ -97,6 +97,9 @@ export type {
 export { SurfaceRegistry } from './spatial/surfacePort.js';
 export type { SurfaceDescriptor, SurfacePort, SurfacePorts, SurfaceCapability, SurfaceKeyName } from './spatial/surfacePort.js';
 
+export { descriptorFor, familiesFor } from './presentation/rendererRegistry.js';
+export type { RendererFamily, PresentationSpecies, PresentationDescriptor, NodeCapability, CoreEntityRefLoose } from './presentation/rendererRegistry.js';
+
 export {
   HUABU_PROTOCOL_VERSION,
   CANVAS_NODE_TYPES,
