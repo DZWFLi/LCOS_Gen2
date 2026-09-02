@@ -7,9 +7,10 @@
 //   - recognizers: pointer recognizers appended to Huabu's router chain (A03)
 //   - connectIntent: a semantic connect handler (from/to/kind -> Core Relation ->
 //     Huabu Edge), wired to Gen2Host.connect
-// Framework-agnostic: renderers/overlays are opaque (the host app supplies React
-// nodes); the contract stays type-checked without pulling React into the
-// boundary. The React glue lives in integration/huabu/LcosCanvasAdapter.tsx.
+// Framework-agnostic: renderers/overlays/recognizers are opaque (the host app
+// supplies React/DOM values); the contract stays type-checked without pulling
+// React into the boundary. The React glue lives in
+// integration/huabu/LcosCanvasAdapter.tsx.
 
 import type { Gen2Host } from './projectionFacade.js';
 import type { CoreEntityRef } from '../spatial/relationProjection.js';
@@ -31,6 +32,11 @@ export interface LcosOverlayDescriptor {
   node: unknown;
 }
 
+/** Opaque pointer recognizer supplied by the host app (Huabu PointerRecognizer). */
+export interface LcosRecognizerDescriptor {
+  recognizer: unknown;
+}
+
 export interface SemanticConnectIntent {
   kind: RelationKind;
   /** Returns the created Core relation id + the projected Huabu edge id. */
@@ -40,27 +46,31 @@ export interface SemanticConnectIntent {
 export interface HostSeam {
   extraRenderers: LcosRendererDescriptor[];
   overlays: LcosOverlayDescriptor[];
+  recognizers: LcosRecognizerDescriptor[];
   connectIntent: SemanticConnectIntent;
 }
 
-/** Optional injections when building the seam (A01: renderer registration). */
+/** Optional injections when building the seam (A01: renderer registration; A03: recognizers). */
 export interface HostSeamOptions {
   /** Renderer descriptors to expose via the seam (e.g. `lcos/artifact`). */
   readonly renderers?: readonly LcosRendererDescriptor[];
   /** Keyed overlay descriptors to render above the canvas. */
   readonly overlays?: readonly LcosOverlayDescriptor[];
+  /** Pointer recognizers to append to Huabu's canvas pointer router. */
+  readonly recognizers?: readonly LcosRecognizerDescriptor[];
 }
 
 /**
  * Build the seam the Huabu Canvas fork consumes, wiring the connect-intent to
- * Gen2Host.connect (Core Relation -> Huabu Edge). Renderers/overlays are
- * supplied by the host app via the descriptors; this factory wires the
- * semantic path.
+ * Gen2Host.connect (Core Relation -> Huabu Edge). Renderers/overlays/
+ * recognizers are supplied by the host app via the descriptors; this factory
+ * wires the semantic path.
  */
 export function createHostSeam(host: Gen2Host, options: HostSeamOptions = {}): HostSeam {
   return {
     extraRenderers: [...(options.renderers ?? [])],
     overlays: [...(options.overlays ?? [])],
+    recognizers: [...(options.recognizers ?? [])],
     connectIntent: {
       kind: 'references',
       onConnect: async (from, to) => {

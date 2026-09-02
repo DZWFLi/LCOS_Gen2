@@ -49,7 +49,7 @@ export { Gen2Host } from './host/projectionFacade.js';
 export type { Gen2HostDeps } from './host/projectionFacade.js';
 
 export { createHostSeam } from './host/hostSeam.js';
-export type { HostSeam, HostSeamOptions, SemanticConnectIntent, LcosRendererDescriptor, LcosOverlayDescriptor } from './host/hostSeam.js';
+export type { HostSeam, HostSeamOptions, SemanticConnectIntent, LcosRendererDescriptor, LcosOverlayDescriptor, LcosRecognizerDescriptor } from './host/hostSeam.js';
 
 export { hostExtensionFromSeam } from './integration/huabu/LcosCanvasAdapter.js';
 export type { HuabuCanvasHostExtension, HuabuCanvasHostOverlay } from './integration/huabu/LcosCanvasAdapter.js';
@@ -61,7 +61,7 @@ export { pointerModifiersOf, isAdditiveSelection, isReferencePick, isAdditiveSel
 export type { PointerModifiers } from './interaction/pointerIntent.js';
 
 export { sameEntityRef, createReferenceControllerState, openComposerReferences, toggleReference, removeReference, orderedReferences } from './interaction/referenceController.js';
-export type { ReferenceControllerState } from './interaction/referenceController.js';
+export type { ReferenceControllerState, EntityRefLike } from './interaction/referenceController.js';
 
 export {
   HUABU_PROTOCOL_VERSION,

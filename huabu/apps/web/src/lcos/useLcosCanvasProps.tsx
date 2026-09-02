@@ -1,15 +1,18 @@
 // React hook that wires LCOS into a Huabu Canvas instance through the single
-// `hostExtension` seam (Phase A01). The extension is built ONCE per project via
-// the Gen2 HostSeam -> LcosCanvasAdapter glue, so the renderer map reference is
-// stable across renders (React Flow re-initializes when `nodeTypes` identity
-// changes every frame).
+// `hostExtension` seam. The extension is built ONCE per project via the
+// Gen2 HostSeam -> LcosCanvasAdapter glue, so the renderer map and recognizer
+// array references are stable across renders (React Flow re-initializes when
+// `nodeTypes` identity churns; the pointer router re-installs — dropping
+// in-flight gestures — when `recognizers` identity churns).
 //
 // The projection inside the effect is the spike's label-idempotent vertical:
 // read the project's Core graph via Gen2Host, add artifacts as Huabu nodes
 // under the external `lcos/artifact` renderer, connect Core relations as
-// native Huabu edges. The binding-based canonical path (ProjectionBinding +
-// RFS + reconciliation) is the Phase A10/A11 follow-up; this hook keeps the
-// vertical alive end-to-end while the seam is formalized.
+// native Huabu edges, and (A03) register each projected node's Core entity
+// ref so the reference-pick recognizer can toggle draft references. The
+// binding-based canonical path (ProjectionBinding + RFS + reconciliation) is
+// the Phase A10/A11 follow-up; this hook keeps the vertical alive end-to-end
+// while the seam is formalized.
 
 import { useEffect, useMemo } from 'react';
 
@@ -22,6 +25,8 @@ import type { CanvasHostExtension } from '@/lcos-seam/types';
 import useCanvasStore from '@/store/canvasStore';
 
 import { LcosArtifactNode } from './LcosArtifactNode';
+import { createLcosRecognizers } from './lcosRecognizers';
+import { useLcosReferenceStore } from './lcosReferenceState';
 import { createLcosHost, readLcosHostConfig } from './lcosHost';
 
 export interface LcosCanvasProps {
@@ -54,9 +59,8 @@ function noteLabelOf(node: { data?: { label?: unknown } }): string {
 
 export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
   // Stable per project: built once through the Gen2 seam adapter so the
-  // renderer map reference never changes across renders (React Flow warns
-  // and re-initializes when nodeTypes identity churns). connectIntent wiring
-  // lands in A05; host lifecycle reuse (single host instance) in A10/A11.
+  // renderer map / recognizer array references never change across renders.
+  // connectIntent wiring lands in A05; host lifecycle reuse in A10/A11.
   const hostExtension = useMemo(() => {
     const cfg = readLcosHostConfig(
       import.meta.env as Record<string, string | undefined>,
@@ -68,20 +72,18 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     });
     const seam = createHostSeam(rt.host, {
       renderers: [{ nodeType: 'lcos/artifact', renderer: LcosArtifactNode }],
+      recognizers: createLcosRecognizers().map((recognizer) => ({
+        recognizer,
+      })),
     });
-    return hostExtensionFromSeam(seam);
+    return hostExtensionFromSeam(seam) as CanvasHostExtension;
   }, [projectId]);
 
   const canvasId = useCanvasStore((state) => state.canvasId);
   const isLoading = useCanvasStore((state) => state.isLoading);
 
   useEffect(() => {
-    // Wait for a real canvas to be open AND fully loaded before projecting —
-    // the store starts with an empty canvasId and flips to the routed id after
-    // load, but `loadCanvas` sets `canvasId` *before* it hydrates `nodes`. We
-    // must not read `nodes` until `isLoading` flips false, otherwise the
-    // idempotency "already present" check races against an empty store and
-    // re-adds a duplicate set of artifact notes.
+    // Wait for a real canvas to be open AND fully loaded before projecting.
     if (!canvasId || isLoading) return;
     const cfg = readLcosHostConfig(
       import.meta.env as Record<string, string | undefined>,
@@ -100,10 +102,13 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
           ? (graph.relations as RelationLike[])
           : [];
 
-        // 1) Project artifacts -> nodes (idempotent by label, external renderer).
+        // 1) Project artifacts -> nodes (idempotent by label, external
+        //    renderer). A03: register the Core entity ref per node id so the
+        //    reference-pick recognizer can toggle draft references.
         const present = new Set(
           useCanvasStore.getState().nodes.map(noteLabelOf),
         );
+        const registerRef = useLcosReferenceStore.getState().registerNodeEntity;
         const inputs = artifacts
           .filter((item) => {
             const title = artifactTitle(item);
@@ -117,9 +122,27 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
               x: 80 + (i % 4) * 260,
               y: 60 + Math.floor(i / 4) * 220,
             },
+            lcosEntityRef: {
+              entityType: 'artifact',
+              entityId: String(item.id ?? ''),
+            },
           }));
         if (inputs.length > 0) {
+          // addNodes assigns node ids synchronously via CREATE_NODES; map
+          // labels back to ids right after the store settles the batch.
+          const before = new Set(useCanvasStore.getState().nodes.map((n) => n.id));
           useCanvasStore.getState().addNodes(inputs);
+          // Resolve the new node ids (created since the snapshot) and
+          // register their entity refs by label match.
+          const after = useCanvasStore.getState().nodes;
+          const labelToRef = new Map(
+            inputs.map((input) => [input.data.label, input.lcosEntityRef]),
+          );
+          for (const node of after) {
+            if (before.has(node.id)) continue;
+            const ref = labelToRef.get(noteLabelOf(node));
+            if (ref) registerRef(node.id, ref);
+          }
         }
 
         // 2) Project relations -> edges. Resolve each Core relation's endpoint

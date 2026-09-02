@@ -9,23 +9,35 @@
 // None of the three may ever be silently derived from another. Reference
 // order is part of the input semantics — serialization must preserve it
 // (no Set-based round-trips).
+//
+// The controller is generic over the entity-ref shape: it only ever compares
+// `entityType` + `entityId`. The canonical CoreEntityRef (domain's closed
+// RelationEntityType union) is the default; host apps whose refs carry a
+// wider entityType (e.g. the Huabu bridge's structural string view) pass
+// their own minimal shape.
 
 import type { CoreEntityRef } from '../spatial/relationProjection.js';
 
+/** Minimal entity identity the controller compares. */
+export interface EntityRefLike {
+  readonly entityType: string;
+  readonly entityId: string;
+}
+
 /** Identity comparison for entity refs (type + id, nothing else). */
-export function sameEntityRef(a: CoreEntityRef, b: CoreEntityRef): boolean {
+export function sameEntityRef<T extends EntityRefLike>(a: T, b: T): boolean {
   return a.entityType === b.entityType && a.entityId === b.entityId;
 }
 
 /** State of one composer's reference list. */
-export interface ReferenceControllerState {
+export interface ReferenceControllerState<T extends EntityRefLike = CoreEntityRef> {
   readonly composerId: string;
-  readonly orderedEntityRefs: readonly CoreEntityRef[];
+  readonly orderedEntityRefs: readonly T[];
 }
 
-export function createReferenceControllerState(
+export function createReferenceControllerState<T extends EntityRefLike = CoreEntityRef>(
   composerId: string,
-): ReferenceControllerState {
+): ReferenceControllerState<T> {
   return { composerId, orderedEntityRefs: [] };
 }
 
@@ -34,10 +46,10 @@ export function createReferenceControllerState(
  * (preserving the order of the rest), append at the END if absent.
  * Idempotent per entity (no duplicates), order-preserving, pure.
  */
-export function toggleReference(
-  state: ReferenceControllerState,
-  ref: CoreEntityRef,
-): ReferenceControllerState {
+export function toggleReference<T extends EntityRefLike>(
+  state: ReferenceControllerState<T>,
+  ref: T,
+): ReferenceControllerState<T> {
   const at = state.orderedEntityRefs.findIndex((x) => sameEntityRef(x, ref));
   if (at >= 0) {
     return {
@@ -53,10 +65,10 @@ export function toggleReference(
  * from the canvas — the pending draft must drop it, but Core entity deletion
  * is a separate, explicit action).
  */
-export function removeReference(
-  state: ReferenceControllerState,
-  ref: CoreEntityRef,
-): ReferenceControllerState {
+export function removeReference<T extends EntityRefLike>(
+  state: ReferenceControllerState<T>,
+  ref: T,
+): ReferenceControllerState<T> {
   return {
     ...state,
     orderedEntityRefs: state.orderedEntityRefs.filter(
@@ -66,9 +78,9 @@ export function removeReference(
 }
 
 /** Ordered read for serialization — always a fresh array, order preserved. */
-export function orderedReferences(
-  state: ReferenceControllerState,
-): readonly CoreEntityRef[] {
+export function orderedReferences<T extends EntityRefLike>(
+  state: ReferenceControllerState<T>,
+): readonly T[] {
   return [...state.orderedEntityRefs];
 }
 
@@ -77,8 +89,8 @@ export function orderedReferences(
  * (A04 test: "opening Composer does not copy selection"). This helper makes
  * the empty start explicit at the call site.
  */
-export function openComposerReferences(
+export function openComposerReferences<T extends EntityRefLike = CoreEntityRef>(
   composerId: string,
-): ReferenceControllerState {
-  return createReferenceControllerState(composerId);
+): ReferenceControllerState<T> {
+  return createReferenceControllerState<T>(composerId);
 }

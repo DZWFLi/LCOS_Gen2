@@ -21,6 +21,33 @@ test('hostExtensionFromSeam: empty seam collapses to a stock extension', () => {
   assert.equal(ext.recognizers, undefined);
 });
 
+test('hostExtensionFromSeam: recognizer descriptors pass through as opaque entries', () => {
+  const recognizerA = { id: 'lcos/reference-pick' };
+  const recognizerB = { id: 'lcos/other' };
+  const ext = hostExtensionFromSeam(
+    bareSeam({
+      recognizers: [{ recognizer: recognizerA }, { recognizer: recognizerB }],
+    }),
+  );
+  assert.equal(ext.recognizers?.length, 2);
+  assert.equal(ext.recognizers?.[0], recognizerA);
+  assert.equal(ext.recognizers?.[1], recognizerB);
+});
+
+test('hostExtensionFromSeam: recognizer entries without a string id are dropped', () => {
+  const good = { id: 'lcos/reference-pick' };
+  const ext = hostExtensionFromSeam(
+    bareSeam({ recognizers: [{ recognizer: good }, { recognizer: {} }, { recognizer: null }] }),
+  );
+  assert.equal(ext.recognizers?.length, 1);
+  assert.equal(ext.recognizers?.[0], good);
+});
+
+test('hostExtensionFromSeam: empty recognizer list collapses to undefined (stock router)', () => {
+  const ext = hostExtensionFromSeam(bareSeam({ recognizers: [] }));
+  assert.equal(ext.recognizers, undefined);
+});
+
 test('hostExtensionFromSeam: renderer descriptors become a nodeTypes record', () => {
   const rendererA = { tag: 'A' };
   const rendererB = { tag: 'B' };
