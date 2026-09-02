@@ -6,26 +6,26 @@ import assert from 'node:assert/strict';
 
 import {
   SurfaceRegistry,
-  type SurfacePort,
+  type SurfaceDescriptor,
   type SurfacePorts,
   type SurfaceKeyName,
   type SurfaceCapability,
 } from '../src/spatial/surfacePort.js';
 
-function port(key: SurfaceKeyName, canvasId: string, caps: SurfaceCapability[]): SurfacePort {
+function port(key: SurfaceKeyName, canvasId: string, caps: SurfaceCapability[]): SurfaceDescriptor {
   return {
     key,
     label: key,
     canvasId,
-    hasCapability: (c) => caps.includes(c),
+    capabilities: new Set(caps),
   };
 }
 
-function registryFor(projectId: string, byKey: (k: SurfaceKeyName) => SurfacePort): SurfaceRegistry {
+function registryFor(projectId: string, byKey: (k: SurfaceKeyName) => SurfaceDescriptor): SurfaceRegistry {
   return new SurfaceRegistry({ portFor: byKey }, projectId);
 }
 
-const distinct = (k: SurfaceKeyName): SurfacePort => {
+const distinct = (k: SurfaceKeyName): SurfaceDescriptor => {
   // 构造与 project 'p1' 组合后的独立 canvasId，满足 F-SURFACE §10 分布
   const toCanvas: Record<SurfaceKeyName, string> = {
     main: 'p1-main-canvas',
@@ -57,7 +57,7 @@ test('fails closed when two surfaces collide on the same canvasId', () => {
 });
 
 test('hasCapability reflects the surface descriptor capabilities', () => {
-  const byKey = (k: SurfaceKeyName): SurfacePort => {
+  const byKey = (k: SurfaceKeyName): SurfaceDescriptor => {
     const caps: SurfaceCapability[] =
       k === 'main' ? ['place-artifact', 'compose-run', 'open-work-view'] :
       k === 'context' ? ['inspect-context'] :

@@ -15,8 +15,6 @@
 //
 // 本模块纯逻辑、可测：不含任何 DOM/React/网络。
 
-import type { SurfaceKey } from '../host/hostConnectIntent.js';
-
 /** 现场 key。Phase A 具名冻结三个一等现场；未来通过 registry 扩展。 */
 export type SurfaceKeyName = 'main' | 'context' | 'workflow';
 
@@ -53,11 +51,6 @@ export interface SurfacePorts {
   readonly workflow: SurfacePort;
 }
 
-export type SurfaceRegistryDeps = {
-  /** 组装一个现场端口。Phase A 各现场共用同一 Huabu runtime，仅 canvasId 不同。 */
-  readonly portFor: (key: SurfaceKeyName) => SurfacePort;
-};
-
 function harnessedPort(descriptor: SurfaceDescriptor): SurfacePort {
   return {
     key: descriptor.key,
@@ -66,6 +59,11 @@ function harnessedPort(descriptor: SurfaceDescriptor): SurfacePort {
     hasCapability: (cap) => descriptor.capabilities.has(cap),
   };
 }
+
+export type SurfaceRegistryDeps = {
+  /** 组装一个现场 descriptor。Phase A 各现场共用同一 Huabu runtime，仅 canvasId 不同。 */
+  readonly portFor: (key: SurfaceKeyName) => SurfaceDescriptor;
+};
 
 /**
  * 现场注册表：把 key 解析成当前已装载的现场端口。projectId 相同、key 不同
@@ -79,9 +77,9 @@ export class SurfaceRegistry {
     readonly projectId: string,
   ) {
     this.ports = {
-      main: this.deps.portFor('main'),
-      context: this.deps.portFor('context'),
-      workflow: this.deps.portFor('workflow'),
+      main: harnessedPort(this.deps.portFor('main')),
+      context: harnessedPort(this.deps.portFor('context')),
+      workflow: harnessedPort(this.deps.portFor('workflow')),
     };
     this.assertDistinctCanvas();
   }
