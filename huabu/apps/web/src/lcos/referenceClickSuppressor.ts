@@ -29,6 +29,7 @@ export function handleReferenceClickSuppression(event: {
   preventDefault(): void;
   stopPropagation(): void;
   stopImmediatePropagation?(): void;
+  shiftKey?: boolean;
 }): boolean {
   if (Date.now() - lastReferencePickAt > PICK_SUPPRESS_WINDOW_MS) return false;
   // Shift is the explicit multi-selection signal and ALWAYS wins — even within

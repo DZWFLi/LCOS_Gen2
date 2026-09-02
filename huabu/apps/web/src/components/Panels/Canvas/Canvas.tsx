@@ -678,6 +678,24 @@ export const Canvas: React.FC<CanvasProps> = ({
     [onConnect, setConnectPicker],
   );
 
+  // A05: when a semantic connectIntent is installed, prefer Core-first for
+  // endpoints that carry a Core entity binding; anything else falls back to
+  // the native Huabu connect, so native nodes keep working unchanged.
+  const handleNodeConnect = useCallback(
+    async (connection: Parameters<typeof onConnect>[0]) => {
+      const intent = hostExtension?.connectIntent;
+      if (intent && connection.source && connection.target) {
+        try {
+          await intent.onConnectNodes(connection.source, connection.target, canvasId ?? "");
+          return; // semantic edge projected by the host; skip native connect
+        } catch {
+          // endpoint(s) without a Core binding -> fall back to native below
+        }
+      }
+      onConnect(connection);
+    },
+    [hostExtension?.connectIntent, canvasId, onConnect],
+  );
   const handleConnectedKindPick = useCallback(
     (nodeKind: ConnectedNodeKind) => {
       // Read-then-act rather than acting inside a `setState` updater:
@@ -1504,7 +1522,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
+        onConnect={handleNodeConnect}
         onConnectEnd={onConnectEnd}
         // A port is also the "create a connected node" button, so a plain
         // click on one has to reach `onConnectEnd`. React Flow only starts

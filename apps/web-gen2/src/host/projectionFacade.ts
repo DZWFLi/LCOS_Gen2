@@ -86,6 +86,18 @@ export class Gen2Host {
     return binding?.spatialId;
   }
 
+  /**
+   * Reverse map a Huabu node id back to its Core entity ref (A05 connect seam:
+   * the gesture yields node ids; the seam translates them to create a relation).
+   */
+  async resolveNode(nodeId: string): Promise<{ entityType: CoreEntityRef['entityType']; entityId: string } | undefined> {
+    const ref = await this.bindings.findNodeRef(this.deps.projectId, this.canvasId, nodeId);
+    if (!ref) return undefined;
+    // EntityType is wider than RelationEntityType (adds 'run'); the bindings
+    // surface is an approximate project key, so narrow it at the host edge.
+    return { entityType: ref.entityType as CoreEntityRef['entityType'], entityId: ref.entityId };
+  }
+
   /** Project artifacts into Huabu nodes (idempotent, stale-binding repair). */
   async projectArtifacts(sources: ArtifactProjectionSource[]) {
     return this.nodeProjector.projectArtifacts(sources);

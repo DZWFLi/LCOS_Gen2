@@ -36,6 +36,14 @@ export interface HuabuCanvasHostExtension {
   readonly nodeTypes?: Readonly<Record<string, ComponentType<unknown>>>;
   readonly overlays?: readonly HuabuCanvasHostOverlay[];
   readonly recognizers?: readonly HuabuCanvasHostRecognizer[];
+  /** Optional semantic connect (node-id based, domain-free). */
+  readonly connectIntent?: {
+    onConnectNodes(
+      fromNodeId: string,
+      toNodeId: string,
+      surface: string,
+    ): Promise<{ edgeId?: string }>;
+  };
 }
 
 /**
@@ -71,5 +79,11 @@ export function hostExtensionFromSeam(seam: HostSeam): HuabuCanvasHostExtension 
           }))
         : undefined,
     recognizers: recognizers.length > 0 ? recognizers : undefined,
+    connectIntent: seam.connectIntent
+      ? {
+          onConnectNodes: (fromNodeId, toNodeId, surface) =>
+            seam.connectIntent.onConnectNodes(fromNodeId, toNodeId, surface),
+        }
+      : undefined,
   };
 }

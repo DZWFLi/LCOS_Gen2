@@ -28,6 +28,20 @@ export interface CanvasHostOverlay {
   readonly node: ReactNode;
 }
 
+/**
+ * Semantic connect seam, node-id based and deliberately domain-free: the
+ * canvas gesture only knows Huabu node ids, and the host app resolves them
+ * back to Core entities (A05). Returns the ready edge id when a semantic edge
+ * was projected (undefined if the edge binding is not captured yet).
+ */
+export interface CanvasHostConnectIntent {
+  onConnectNodes(
+    fromNodeId: string,
+    toNodeId: string,
+    surface: string,
+  ): Promise<{ edgeId?: string }>;
+}
+
 /** A pointer recognizer wired into the canvas pointer router. */
 export type CanvasHostRecognizer = PointerRecognizer<
   PointerEvent,
@@ -45,4 +59,6 @@ export interface CanvasHostExtension {
   readonly overlays?: readonly CanvasHostOverlay[];
   /** Extra pointer recognizers appended to the router's recognizer chain. */
   readonly recognizers?: readonly CanvasHostRecognizer[];
+  /** Optional semantic connect: a node-id connect gesture -> Core relation -> edge. */
+  readonly connectIntent?: CanvasHostConnectIntent;
 }

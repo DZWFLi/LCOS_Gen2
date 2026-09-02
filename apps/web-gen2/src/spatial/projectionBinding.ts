@@ -135,6 +135,23 @@ export class ProjectionBindingRegistry {
     return this.find(projectId, canvasId, 'edge', 'relation', entityId);
   }
 
+  /**
+   * Reverse lookup: from a Huabu spatial node id back to the Core entity ref
+   * it projects. Used by the A05 semantic-connect seam to translate a
+   * gesture's node ids into entity refs before creating a Core relation.
+   * Scans list() — fine for the canvas-scope graph; a spatialId index can
+   * replace it later without changing callers.
+   */
+  async findNodeRef(projectId: string, canvasId: string, nodeId: string): Promise<{ entityType: EntityType; entityId: string } | undefined> {
+    const all = await this.store.list();
+    for (const binding of all) {
+      if (binding.projectId === projectId && binding.canvasId === canvasId && binding.spatialKind === 'node' && binding.spatialId === nodeId) {
+        return { entityType: binding.entityType, entityId: binding.entityId };
+      }
+    }
+    return undefined;
+  }
+
   /** Atomically record a single binding (never a full-snapshot write). */
   async bind(binding: ProjectionBinding): Promise<void> {
     await this.store.upsert(binding);
