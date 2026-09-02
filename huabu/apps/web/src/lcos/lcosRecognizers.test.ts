@@ -120,14 +120,30 @@ describe('reference-pick recognizer (A03)', () => {
     expect(recognizer.canClaim(withShiftOnly, ctx)).toBe(false);
   });
 
-  it('native (unregistered) nodes fall through untouched — onDown passes', () => {
+  it('native (unregistered) nodes ARE referenceable — canvas identity, claim + toggle (user ruling, option A)', () => {
     mockHitNode.current = 'native-node';
     const recognizer = createReferencePickRecognizer();
 
     const event = fakeEvent({ ctrlKey: true });
     expect(recognizer.canClaim(event, ctx)).toBe(true);
-    expect(recognizer.onDown(event, ctx)).toBe('pass');
-    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(recognizer.onDown(event, ctx)).toBe('claim');
+    expect(event.preventDefault).toHaveBeenCalled();
+    recognizer.onUp?.(fakeEvent({ ctrlKey: true }), ctx);
+
+    const refs = useLcosReferenceStore.getState().orderedNodeReferences();
+    expect(refs).toEqual([{ entityType: 'note', entityId: 'native-node' }]);
+  });
+
+  it('a second Ctrl+click on the same native node un-references it (toggle parity)', () => {
+    mockHitNode.current = 'native-node';
+    const recognizer = createReferencePickRecognizer();
+
+    recognizer.onDown(fakeEvent({ ctrlKey: true }), ctx);
+    recognizer.onUp?.(fakeEvent({ ctrlKey: true }), ctx);
+    recognizer.onDown(fakeEvent({ pointerId: 2, ctrlKey: true }), ctx);
+    recognizer.onUp?.(fakeEvent({ pointerId: 2, ctrlKey: true }), ctx);
+
+    expect(useLcosReferenceStore.getState().orderedNodeReferences()).toEqual([]);
   });
 
   it('a drag beyond the slop cancels the pick — no phantom reference on Ctrl+drag', () => {

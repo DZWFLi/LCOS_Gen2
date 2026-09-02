@@ -48,10 +48,18 @@ export function createReferencePickRecognizer(): PointerRecognizer<
       isReferencePick(pointerModifiersOf(event)),
     onDown: (event) => {
       const nodeId = nodeIdAtScreenPoint(event.clientX, event.clientY);
-      // Nodes without a registered LCOS entity fall through untouched —
-      // native Huabu nodes keep their default Ctrl/Cmd behaviour.
-      if (!nodeId || !useLcosReferenceStore.getState().nodeEntityRefs.has(nodeId)) {
-        return 'pass';
+      // No node under the pointer → nothing to reference.
+      if (!nodeId) return 'pass';
+      // Native Huabu nodes are referenceable too (user ruling, option A):
+      // register a canvas identity (note:<nodeId>) on first pick. Run
+      // submission fail-closes later if Core does not recognize the ref —
+      // identity gating belongs to the submit boundary, not the gesture.
+      const store = useLcosReferenceStore.getState();
+      if (!store.nodeEntityRefs.has(nodeId)) {
+        store.registerNodeEntity(nodeId, {
+          entityType: 'note',
+          entityId: nodeId,
+        });
       }
       activePointerId = event.pointerId;
       startClient = { x: event.clientX, y: event.clientY };
