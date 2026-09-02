@@ -8,6 +8,10 @@
 // open a second taxonomy picker — if the target is ambiguous the preview says
 // what WILL happen, and the user moves onto a specific container/slot to
 // commit.
+//
+// dwellMs starts at 420ms per the A06 task card: the Huabu pointer router and
+// desktop event rhythm differ, and touch/silky feel is judged after real drag
+// sessions — the token is a single knob (was 520ms in Gen1).
 
 /** A point in the coordinate system the caller gives us (px by default). */
 export type SurfacePoint = { readonly x: number; readonly y: number };
@@ -52,12 +56,12 @@ export type SemanticDropState =
 
 /**
  * Tokens re-scaled for Huabu (screen/desktop events differ from Gen1's).
- * `navigationWidthPx` = reserved edge band that maps to the left-dock.
+ * `edgeScrollBand` = the reserved edge band that maps to the left-dock.
  */
 export const DROP_INTENT_TOKENS = {
   edgeScrollBand: 128,
   dwellBand: 56,
-  dwellMs: 520,
+  dwellMs: 420,
   dwellRadius: 10,
   cancelDistance: 16,
 } as const;
@@ -131,6 +135,7 @@ export function confirmDrop(state: SemanticDropState, transactionId: string): Se
   return state.status === 'preview' ? { status: 'committing', transactionId } : state;
 }
 
-export function failDrop(state: SemanticDropState, reason: string, recoverable: boolean): SemanticDropState {
+/** Fail the drop. State-independent override — it always ends in `failed`. */
+export function failDrop(_state: SemanticDropState, reason: string, recoverable: boolean): SemanticDropState {
   return { status: 'failed', reason, recoverable };
 }

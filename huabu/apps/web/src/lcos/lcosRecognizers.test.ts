@@ -1,15 +1,18 @@
-// A03 regression tests — the reference-pick recognizer must follow the
-// frozen Gen1 pointer grammar through the Huabu router contract.
+// A03 + A06 regression tests — the reference-pick and semantic-drop
+// recognizers must follow the frozen gestures through the Huabu router
+// contract.
 //
-// Fake pointer events carry only what the recognizer reads (pointerType,
+// Fake pointer events carry only what a recognizer reads (pointerType,
 // button, isPrimary, modifiers, client coords, pointerId, preventDefault /
-// stopPropagation spies). The router context is the minimal subset the
-// recognizer touches (interactivityLocked).
+// stopPropagation spies). The router context is the minimal subset a
+// recognizer touches (interactivityLocked for the picker; wrapper bounding
+// rect for the drop driver).
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
-import { createReferencePickRecognizer } from './lcosRecognizers';
+import { createReferencePickRecognizer, createDropRecognizer, acquireDrop } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
+import { useLcosDropStore } from './lcosDropState';
 
 interface FakeEvent {
   pointerId: number;
@@ -55,12 +58,30 @@ vi.mock('@/handler/canvasNodeAtPoint', () => ({
   nodeIdAtScreenPoint: (_x: number, _y: number) => mockHitNode.current,
 }));
 
+// A06 drop recognizer reads ctx.wrapper.getBoundingClientRect() for the
+// screen-space surface the dwell anchors are judged against.
+const dropWrapper = {
+  getBoundingClientRect: () => ({
+    left: 0,
+    right: 1200,
+    top: 0,
+    bottom: 800,
+    width: 1200,
+    height: 800,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  }),
+} as unknown as HTMLDivElement;
+const dropCtx = { wrapper: dropWrapper } as never;
+
 const REF_A = { entityType: 'artifact', entityId: 'a1' };
 const REF_B = { entityType: 'artifact', entityId: 'b2' };
 
 beforeEach(() => {
   mockHitNode.current = null;
   useLcosReferenceStore.getState().reset();
+  useLcosDropStore.getState().reset();
 });
 
 describe('reference-pick recognizer (A03)', () => {
@@ -188,5 +209,39 @@ describe('reference-pick recognizer (A03)', () => {
     const lockedCtx = { interactivityLocked: true } as never;
 
     expect(recognizer.canClaim(fakeEvent({ ctrlKey: true }), lockedCtx)).toBe(false);
+  });
+});
+
+describe('semantic-drop recognizer (A06)', () => {
+  it('is a pure observer: never claims a pointer, never invents a payload', () => {
+    const recognizer = createDropRecognizer();
+    expect(recognizer.canClaim(fakeEvent(), ctx)).toBe(false);
+    expect(recognizer.onDown(fakeEvent(), ctx)).toBe('pass');
+  });
+
+  it('acquireDrop starts a drop with a real payload', () => {
+    expect(useLcosDropStore.getState().state.status).toBe('idle');
+    acquireDrop({ kind: 'text', value: 'hello' });
+    expect(useLcosDropStore.getState().state.status).toBe('tracking');
+  });
+
+  it('observes pointer movement into the dwell band, then cancels on release', () => {
+    acquireDrop({ kind: 'object', entityType: 'artifact', entityId: 'a1' });
+    const recognizer = createDropRecognizer();
+
+    recognizer.observe?.onDown?.(fakeEvent(), dropCtx);
+    // move into the bottom dwell band -> dwell (bounds read from the wrapper).
+    recognizer.observe?.onMove?.(fakeEvent({ clientX: 400, clientY: 795 }), dropCtx);
+    expect(useLcosDropStore.getState().state.status).toBe('dwell');
+
+    recognizer.observe?.onUp?.(fakeEvent({ clientX: 400, clientY: 795 }), dropCtx);
+    expect(useLcosDropStore.getState().state.status).toBe('idle');
+  });
+
+  it('ignores movement when no drop is in flight (idle observer is passive)', () => {
+    const recognizer = createDropRecognizer();
+    recognizer.observe?.onDown?.(fakeEvent(), dropCtx);
+    recognizer.observe?.onMove?.(fakeEvent({ clientX: 400, clientY: 795 }), dropCtx);
+    expect(useLcosDropStore.getState().state.status).toBe('idle');
   });
 });

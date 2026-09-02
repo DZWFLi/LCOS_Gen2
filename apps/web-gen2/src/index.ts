@@ -64,6 +64,26 @@ export { sameEntityRef, createReferenceControllerState, openComposerReferences, 
 export type { ReferenceControllerState, EntityRefLike } from './interaction/referenceController.js';
 
 export {
+  idleDrop,
+  beginDrop,
+  advanceDropIntent,
+  anchoringAt,
+  inDropPreviewCarryZone,
+  completeDropDwell,
+  dropDwellRemainingMs,
+  confirmDrop,
+  failDrop,
+  DROP_INTENT_TOKENS,
+} from './interaction/semanticDropMachine.js';
+export type {
+  SemanticDropState,
+  DropPayload,
+  DropDestination,
+  DropBounds,
+  SurfacePoint,
+} from './interaction/semanticDropMachine.js';
+
+export {
   HUABU_PROTOCOL_VERSION,
   CANVAS_NODE_TYPES,
   AGENT_CREATABLE_NODE_TYPES,

@@ -1,5 +1,5 @@
-// LCOS pointer recognizers (Phase A03) — typed intent recognizers injected
-// into Huabu's canvas pointer router via hostExtension.recognizers.
+// LCOS pointer recognizers (Phase A03 + A06) — typed intent recognizers
+// injected into Huabu's canvas pointer router via hostExtension.recognizers.
 //
 // Design rules (Phase A task card):
 //   - Recognizers produce INTENT, never mutate Core/canvas truth directly.
@@ -9,13 +9,20 @@
 //   - Mouse only: touch/pen gestures keep their Huabu owners.
 //   - Reference picking only applies to nodes PROJECTED by LCOS (the
 //     nodeEntityRefs map); native Huabu nodes are untouched.
+//
+// A06: the semantic-drop recognizer is a PURE OBSERVER ("observe" only, never
+// claims a pointer). It never invents a payload — a drop only begins when a
+// data source calls `acquireDrop(payload)`; the recognizer then advances the
+// machine from pointer position and cancels on release.
 
 import { isReferencePick, pointerModifiersOf } from '@local-creative-os/web-gen2';
+import type { DropPayload } from '@local-creative-os/web-gen2';
 
 import { nodeIdAtScreenPoint } from '@/handler/canvasNodeAtPoint';
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
 import type { PointerRecognizer } from '@/handler/pointerRouter';
 
+import { useLcosDropStore } from './lcosDropState';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import {
   installReferenceClickSuppressor,
@@ -110,6 +117,73 @@ export function createReferencePickRecognizer(): PointerRecognizer<
 }
 
 /**
+ * Acquire a payload and begin a spatial drop (Phase A06 acquisition entry).
+ * Called by data sources — native file drop, object drag, assembly pick —
+ * once an actual payload is in hand; the recognizer never invents one.
+ */
+export function acquireDrop(payload: DropPayload): void {
+  useLcosDropStore.getState().begin(payload);
+}
+
+/**
+ * Semantic-drop recognizer: positional driver for an in-flight drop. Pure
+ * observer — it never claims a pointer (so it never fights node drag /
+ * selection) and only advances the machine while a drop with a payload is
+ * active in the store. On pointer release it cancels any uncommitted
+ * tracking/dwell/preview.
+ */
+export function createDropRecognizer(): PointerRecognizer<
+  PointerEvent,
+  CanvasPointerRouterContext
+> {
+  let activePointerId: number | null = null;
+
+  return {
+    id: 'lcos/drop',
+    canClaim: () => false,
+    onDown: () => 'pass' as const,
+    observe: {
+      onDown: (event) => {
+        if (event.pointerType !== 'mouse') return;
+        if (useLcosDropStore.getState().state.status === 'idle') return;
+        activePointerId = event.pointerId;
+      },
+      onMove: (event, ctx) => {
+        if (event.pointerId !== activePointerId) return;
+        const rect = ctx.wrapper.getBoundingClientRect();
+        useLcosDropStore.getState().setBounds({
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        });
+        useLcosDropStore.getState().advance(
+          { x: event.clientX - rect.left, y: event.clientY - rect.top },
+          false,
+          Date.now(),
+        );
+      },
+      onUp: (event) => {
+        if (event.pointerId !== activePointerId) return;
+        activePointerId = null;
+        const status = useLcosDropStore.getState().state.status;
+        if (status === 'tracking' || status === 'dwell' || status === 'preview') {
+          useLcosDropStore.getState().cancel();
+        }
+      },
+      onCancel: (event) => {
+        if (event.pointerId !== activePointerId) return;
+        activePointerId = null;
+        const status = useLcosDropStore.getState().state.status;
+        if (status !== 'idle' && status !== 'committing' && status !== 'failed') {
+          useLcosDropStore.getState().cancel();
+        }
+      },
+    },
+  };
+}
+
+/**
  * All LCOS recognizers for the canvas host extension, in claim order.
  * Each entry is a fresh instance — the array itself is memoized once per
  * host by the caller (useLcosCanvasProps) so the router never re-installs
@@ -120,5 +194,5 @@ export function createLcosRecognizers(): readonly PointerRecognizer<
   CanvasPointerRouterContext
 >[] {
   installReferenceClickSuppressor();
-  return [createReferencePickRecognizer()];
+  return [createReferencePickRecognizer(), createDropRecognizer()];
 }

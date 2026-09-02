@@ -26,6 +26,7 @@ import useCanvasStore from '@/store/canvasStore';
 
 import { LcosArtifactNode } from './LcosArtifactNode';
 import { LcosComposerShell } from './LcosComposerShell';
+import { LcosDropPreview } from './LcosDropPreview';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { createLcosHost, readLcosHostConfig } from './lcosHost';
@@ -61,7 +62,6 @@ function noteLabelOf(node: { data?: { label?: unknown } }): string {
 export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
   // Stable per project: built once through the Gen2 seam adapter so the
   // renderer map / recognizer array references never change across renders.
-  // connectIntent wiring lands in A05; host lifecycle reuse in A10/A11.
   const hostExtension = useMemo(() => {
     const cfg = readLcosHostConfig(
       import.meta.env as Record<string, string | undefined>,
@@ -73,7 +73,10 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     });
     const seam = createHostSeam(rt.host, {
       renderers: [{ nodeType: 'lcos/artifact', renderer: LcosArtifactNode }],
-      overlays: [{ key: 'lcos/composer', node: <LcosComposerShell /> }],
+      overlays: [
+        { key: 'lcos/composer', node: <LcosComposerShell /> },
+        { key: 'lcos/drop-preview', node: <LcosDropPreview /> },
+      ],
       recognizers: createLcosRecognizers().map((recognizer) => ({
         recognizer,
       })),
