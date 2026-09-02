@@ -7,11 +7,13 @@
 //
 // It renders nothing until a preview exists — no Santa-tree chrome on idle.
 
+import { overlayZ } from '@local-creative-os/web-gen2';
 import React from 'react';
+
+import { useLcosDropStore } from './lcosDropState';
 
 import type { DropPayload } from '@local-creative-os/web-gen2';
 
-import { useLcosDropStore } from './lcosDropState';
 
 const ACCENT = '#2e90ff';
 
@@ -63,7 +65,7 @@ export const LcosDropPreview: React.FC = () => {
         boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
         pointerEvents: 'none',
         whiteSpace: 'nowrap',
-        zIndex: 30,
+        zIndex: overlayZ('drop-preview'),
       }}
     >
       {payloadAction(payload)} → {label}

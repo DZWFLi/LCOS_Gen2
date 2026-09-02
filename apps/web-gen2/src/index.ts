@@ -84,6 +84,17 @@ export type {
 } from './interaction/semanticDropMachine.js';
 
 export {
+  compactRestingOverlays,
+  visibleOverlays,
+  overlayZ,
+  overlayLayers,
+} from './interaction/overlayArbitration.js';
+export type {
+  OverlayKind,
+  OverlayInput,
+} from './interaction/overlayArbitration.js';
+
+export {
   HUABU_PROTOCOL_VERSION,
   CANVAS_NODE_TYPES,
   AGENT_CREATABLE_NODE_TYPES,

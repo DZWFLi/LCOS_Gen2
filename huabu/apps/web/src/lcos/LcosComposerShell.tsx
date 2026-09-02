@@ -10,9 +10,11 @@
 // hides entirely when the draft is empty AND the input is unfocused
 // (no Christmas tree).
 
+import { overlayZ } from '@local-creative-os/web-gen2';
 import React, { useState } from 'react';
 
 import { useLcosReferenceStore } from './lcosReferenceState';
+
 import type { CoreEntityRefLike } from './referenceBridge';
 
 const ACCENT = '#2e90ff';
@@ -43,6 +45,7 @@ export const LcosComposerShell: React.FC = () => {
   };
 
   return (
+    /* eslint-disable-next-line jsx-a11y/no-static-element-interactions */
     <div
       data-lcos-composer=""
       style={{
@@ -59,7 +62,7 @@ export const LcosComposerShell: React.FC = () => {
         border: `1px solid ${ACCENT}44`,
         boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
         pointerEvents: 'auto',
-        zIndex: 40,
+        zIndex: overlayZ('composer'),
         width: 360,
         maxWidth: '80vw',
         boxSizing: 'border-box',

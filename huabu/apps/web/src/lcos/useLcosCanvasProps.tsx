@@ -14,22 +14,22 @@
 // the Phase A10/A11 follow-up; this hook keeps the vertical alive end-to-end
 // while the seam is formalized.
 
-import { useEffect, useMemo } from 'react';
 
 import {
   createHostSeam,
   hostExtensionFromSeam,
 } from '@local-creative-os/web-gen2';
+import { useEffect, useMemo } from 'react';
 
-import type { CanvasHostExtension } from '@/lcos-seam/types';
 import useCanvasStore from '@/store/canvasStore';
 
 import { LcosArtifactNode } from './LcosArtifactNode';
-import { LcosComposerShell } from './LcosComposerShell';
-import { LcosDropPreview } from './LcosDropPreview';
+import { createLcosHost, readLcosHostConfig } from './lcosHost';
+import { LcosHostOverlay } from './LcosHostOverlay';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
-import { createLcosHost, readLcosHostConfig } from './lcosHost';
+
+import type { CanvasHostExtension } from '@/lcos-seam/types';
 
 export interface LcosCanvasProps {
   hostExtension?: CanvasHostExtension;
@@ -73,10 +73,7 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     });
     const seam = createHostSeam(rt.host, {
       renderers: [{ nodeType: 'lcos/artifact', renderer: LcosArtifactNode }],
-      overlays: [
-        { key: 'lcos/composer', node: <LcosComposerShell /> },
-        { key: 'lcos/drop-preview', node: <LcosDropPreview /> },
-      ],
+      overlays: [{ key: 'lcos/host-overlay', node: <LcosHostOverlay /> }],
       recognizers: createLcosRecognizers().map((recognizer) => ({
         recognizer,
       })),
@@ -197,7 +194,7 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     })();
     // Run once a canvas is open AND fully loaded (canvasId + isLoading are both
     // store-backed, so projection is guaranteed to see the hydrated canvas).
-  }, [canvasId, isLoading, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canvasId, isLoading, projectId]);  
 
   return { hostExtension };
 }
