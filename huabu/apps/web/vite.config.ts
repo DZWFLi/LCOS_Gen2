@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 import { readFileSync } from 'node:fs';
@@ -159,7 +159,7 @@ export default defineConfig(({ mode }) => {
         // LCOS: same-origin path to Local Core. Rewrite the prefix so the Core
         // receives its canonical `/projects/...` routes without the proxy prefix.
         '/lcos-core': {
-          target: 'http://127.0.0.1:43130',
+          target: 'http://127.0.0.1:43121',
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/lcos-core/, ''),
         },

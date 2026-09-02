@@ -18,7 +18,9 @@
     "g0:smoke": "node scripts/g0-rfs-smoke.mjs",
     "g0:core:smoke": "node --import tsx scripts/g0-core-client-smoke.mjs",
     "test:web-gen2": "npm run test --workspace @local-creative-os/web-gen2",
-    "g0:fullclosure": "node --import tsx scripts/g0-fullclosure-smoke.mjs"
+    "g0:fullclosure": "node --import tsx scripts/g0-fullclosure-smoke.mjs",
+    "dev": "powershell -ExecutionPolicy Bypass -File scripts/dev-all.ps1",
+    "dev:stop": "powershell -ExecutionPolicy Bypass -File scripts/dev-stop.ps1"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
