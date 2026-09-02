@@ -60,3 +60,38 @@ export async function connectSemantic(
 
   return { relationId: created.relation.id, changeSetId: created.changeSetId, edgeBinding };
 }
+
+// --- A05: semantic connect kind resolution (F-ROOT-05 semantic connect) ---
+// The Core relation kind is decided from the connect GESTURE CONTEXT (ports,
+// surface, entity capability), never hardcoded by the host seam. Phase A only
+// resolves to kinds Core already knows (RelationKind is a closed union); GUI
+// lines never invent new kinds. Context/Workflow-specific port mappings land
+// in Phase C.
+
+/** Which surface the connect gesture happened on (a canvas instance id today). */
+export type SurfaceKey = string;
+
+export interface ConnectIntentContext {
+  readonly from: CoreEntityRef;
+  readonly to: CoreEntityRef;
+  readonly fromPort?: string;
+  readonly toPort?: string;
+  readonly surface: SurfaceKey;
+}
+
+export type ConnectResolution =
+  | { readonly ok: true; readonly kind: RelationKind }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Purely resolve a connect context to a Core relation kind.
+ *
+ * Phase A: we have no port->kind semantics yet, so any gesture currently
+ * resolves to the neutral `references` fallback. The context shape is the
+ * frozen seam (ports/surface) so Phase C port-mapping resolvers slot in
+ * without touching the call sites. A resolution that returns ok:false refuses
+ * the connect BEFORE any Core mutation (no orphan relation / edge).
+ */
+export function resolveConnectKind(_ctx: ConnectIntentContext): ConnectResolution {
+  return { ok: true, kind: 'references' };
+}

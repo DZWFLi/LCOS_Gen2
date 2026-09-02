@@ -108,6 +108,7 @@ test('createHostSeam: injected renderers/overlays are exposed on the seam', () =
   assert.equal(seam.extraRenderers[0]?.nodeType, 'lcos/artifact');
   assert.equal(seam.overlays.length, 1);
   assert.equal(seam.overlays[0]?.key, 'lcos/test');
-  // connectIntent stays wired (kind fallback until A05 capability resolution).
-  assert.equal(seam.connectIntent.kind, 'references');
+  // connectIntent is wired as a resolver of the gesture context (A05): no
+  // hardcoded relation kind on the seam — onConnect resolves it per connect.
+  assert.equal(typeof seam.connectIntent.onConnect, 'function');
 });

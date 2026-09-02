@@ -13,8 +13,7 @@
 // integration/huabu/LcosCanvasAdapter.tsx.
 
 import type { Gen2Host } from './projectionFacade.js';
-import type { CoreEntityRef } from '../spatial/relationProjection.js';
-import type { RelationKind } from '../spatial/relationProjection.js';
+import { resolveConnectKind, type ConnectIntentContext } from './hostConnectIntent.js';
 
 export type LcosNodeTypeName = string;
 
@@ -38,9 +37,12 @@ export interface LcosRecognizerDescriptor {
 }
 
 export interface SemanticConnectIntent {
-  kind: RelationKind;
-  /** Returns the created Core relation id + the projected Huabu edge id. */
-  onConnect(from: CoreEntityRef, to: CoreEntityRef): Promise<{ relationId: string; changeSetId: string; edgeId: string | undefined }>;
+  /**
+   * Semantic connect: given the gesture context (endpoints + optional ports +
+   * surface), RESOLVE the Core relation kind (never hardcoded here — A05),
+   * create the Core relation first, then project the Huabu edge.
+   */
+  onConnect(ctx: ConnectIntentContext): Promise<{ relationId: string; changeSetId: string; edgeId: string | undefined }>;
 }
 
 export interface HostSeam {
@@ -72,9 +74,12 @@ export function createHostSeam(host: Gen2Host, options: HostSeamOptions = {}): H
     overlays: [...(options.overlays ?? [])],
     recognizers: [...(options.recognizers ?? [])],
     connectIntent: {
-      kind: 'references',
-      onConnect: async (from, to) => {
-        const result = await host.connect(from, to, 'references');
+      onConnect: async (ctx) => {
+        const resolution = resolveConnectKind(ctx);
+        if (!resolution.ok) {
+          throw new Error(`Connect refused: ${resolution.reason}`);
+        }
+        const result = await host.connect(ctx.from, ctx.to, resolution.kind);
         return { relationId: result.relationId, changeSetId: result.changeSetId, edgeId: result.edgeBinding?.spatialId };
       },
     },
