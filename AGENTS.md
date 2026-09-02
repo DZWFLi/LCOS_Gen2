@@ -1,6 +1,7 @@
 # AGENTS.md — LCOS Gen2 施工代理纪律（最高优先级）
 
-> 本文件对在本仓库及 `E:\OS开发\Huabu`（施工宿主）上干活的所有 agent（GLM/GPT/Codex/Trae/人类协作者）生效。
+> 本文件对在本仓库上干活的所有 agent（GLM/GPT/Codex/Trae/人类协作者）生效。
+> **施工宿主 = 本仓库 `huabu/`（Huabu vendor 树，见 `HUABU_UPSTREAM.md`）**；`E:\OS开发\Huabu` 独立 clone 已退役为只读上游参照，不得在其上施工。
 > 钦定日期：2026-09-02（用户原文）。与 TRAE 项目记忆中的「Gen2 施工纪律 SOP」为同一份内容。
 
 ## 施工纪律 SOP（每个任务开始前必须重新过一遍，"继续"≠跳过检查）
@@ -49,7 +50,7 @@
 
 ## 施工落点纪律
 
-- LCOS 新代码收进 Huabu `apps/web/src/lcos/`（不散进 Huabu 原目录）；Huabu 原文件只做 6 处薄接缝（Canvas.tsx / NodeWrapper.tsx / previewWorkspace model+renderer / MainLayout.tsx / CanvasPage|CenterArea.tsx / pointerRouter 透传）。
+- LCOS 新代码收进 `huabu/apps/web/src/lcos/` 与 `huabu/apps/web/src/lcos-seam/`（中立 seam 契约；不散进 Huabu 原目录）；Huabu 原文件只做 6 处薄接缝（Canvas.tsx / NodeWrapper.tsx / previewWorkspace model+renderer / MainLayout.tsx / CanvasPage|CenterArea.tsx / pointerRouter 透传）。
 - Gen2 侧：`apps/web-gen2/src/{host,interaction,presentation,integration}/`；`packages/shared/canvas-engine` 不得出现 LCOS 领域语义。
 - 旧 LCOS 只迁纯逻辑（dropIntentMachine / pointerInteractionLanguage / commandDraft / presentationHierarchy / mindMapLayout / layoutQuality / spatialOverlayPlacement 等），旧 Canvas/相机/selection/overlay host 全部退休。
 - QA 阶梯（禁"static gate PASS = 完成"）：source conformance → type/lint/unit → browser interaction smoke → screenshot/visual smoke → canonical persistence/reload → cross-surface parity。
