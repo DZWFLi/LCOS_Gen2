@@ -57,6 +57,12 @@ export type { HuabuCanvasHostExtension, HuabuCanvasHostOverlay } from './integra
 export { resolvePresentationDensity, projectScreenSize, SCREEN_DENSITY_THRESHOLDS } from './presentation/nodePresentation.js';
 export type { PresentationDensity, InteractionPhase, ExplicitPresentationMode, NodePresentationInput } from './presentation/nodePresentation.js';
 
+export { pointerModifiersOf, isAdditiveSelection, isReferencePick, isAdditiveSelectionExclusively } from './interaction/pointerIntent.js';
+export type { PointerModifiers } from './interaction/pointerIntent.js';
+
+export { sameEntityRef, createReferenceControllerState, openComposerReferences, toggleReference, removeReference, orderedReferences } from './interaction/referenceController.js';
+export type { ReferenceControllerState } from './interaction/referenceController.js';
+
 export {
   HUABU_PROTOCOL_VERSION,
   CANVAS_NODE_TYPES,
