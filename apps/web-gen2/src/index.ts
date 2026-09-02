@@ -54,6 +54,9 @@ export type { HostSeam, HostSeamOptions, SemanticConnectIntent, LcosRendererDesc
 export { hostExtensionFromSeam } from './integration/huabu/LcosCanvasAdapter.js';
 export type { HuabuCanvasHostExtension, HuabuCanvasHostOverlay } from './integration/huabu/LcosCanvasAdapter.js';
 
+export { resolvePresentationDensity, projectScreenSize, SCREEN_DENSITY_THRESHOLDS } from './presentation/nodePresentation.js';
+export type { PresentationDensity, InteractionPhase, ExplicitPresentationMode, NodePresentationInput } from './presentation/nodePresentation.js';
+
 export {
   HUABU_PROTOCOL_VERSION,
   CANVAS_NODE_TYPES,
