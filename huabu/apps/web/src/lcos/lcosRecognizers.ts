@@ -17,6 +17,10 @@ import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterCo
 import type { PointerRecognizer } from '@/handler/pointerRouter';
 
 import { useLcosReferenceStore } from './lcosReferenceState';
+import {
+  installReferenceClickSuppressor,
+  markReferencePickCompleted,
+} from './referenceClickSuppressor';
 
 /**
  * Ctrl/Cmd+click on an LCOS-projected node toggles it in the ordered draft
@@ -89,6 +93,10 @@ export function createReferencePickRecognizer(): PointerRecognizer<
       event.stopPropagation();
       if (pendingNodeId !== null) {
         useLcosReferenceStore.getState().toggleNodeReference(pendingNodeId);
+        // React Flow selection listens to the trailing CLICK event, which
+        // pointer-level stopPropagation cannot cancel — swallow it here or
+        // the node also gets selected (looks like Ctrl became the select key).
+        markReferencePickCompleted();
       }
       activePointerId = null;
       pendingNodeId = null;
@@ -111,5 +119,6 @@ export function createLcosRecognizers(): readonly PointerRecognizer<
   PointerEvent,
   CanvasPointerRouterContext
 >[] {
+  installReferenceClickSuppressor();
   return [createReferencePickRecognizer()];
 }

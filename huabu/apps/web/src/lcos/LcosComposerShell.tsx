@@ -1,38 +1,35 @@
-// Reference Strip (Phase A04) — the visible face of the composer draft's
-// ordered references. Rendered as a canvas-level host overlay (bottom-center
-// pill row) so it follows the "Composer references are explicit and ordered"
-// rule: entries appear in pick order, each removable with one click, and the
-// strip hides completely when the draft is empty (no Christmas tree).
+// Compact Composer shell (Phase A04, reshaped by user ruling 2026-09-02) —
+// the visible home of the composer draft: the ordered Reference chips and
+// the prompt input live in ONE compact bottom-center card, per the frozen
+// F-COMPOSER shape (references are part of the composer, not a free-floating
+// canvas strip).
 //
-// Phase A scope: read-only presentation + per-item removal. The full
-// Composer (prompt/receiver/target) lands with C06; this strip is the A04
-// "GUI consumer" of the reference controller.
+// Phase A scope: chips (pick-ordered, per-chip removal) + a real single-line
+// prompt input (no submit logic yet — the full composer state machine,
+// receiver, and voice land with C06, which takes over this shell). The shell
+// hides entirely when the draft is empty AND the input is unfocused
+// (no Christmas tree).
 
-import React from 'react';
+import React, { useState } from 'react';
 
 import { useLcosReferenceStore } from './lcosReferenceState';
 import type { CoreEntityRefLike } from './referenceBridge';
 
 const ACCENT = '#2e90ff';
 
-export const LcosReferenceStrip: React.FC = () => {
-  // Stable slice selectors only: orderedNodeReferences() allocates a fresh
-  // array per call, which makes zustand's shallow equality see a change on
-  // every store notification and loops React into "Maximum update depth
-  // exceeded". Subscribe to the raw draft slice instead and derive display
-  // data in the render body.
+export const LcosComposerShell: React.FC = () => {
   const orderedEntityRefs = useLcosReferenceStore(
     (state) => state.draft.orderedEntityRefs,
   );
   const nodeEntityRefs = useLcosReferenceStore(
     (state) => state.nodeEntityRefs,
   );
+  const [prompt, setPrompt] = useState('');
+  const [focused, setFocused] = useState(false);
 
-  if (orderedEntityRefs.length === 0) return null;
+  const hasChips = orderedEntityRefs.length > 0;
+  if (!hasChips && !focused && prompt === '') return null;
 
-  // Resolve labels from the FIRST node carrying this entity; fall back to the
-  // id-based label when the projection is gone (entity deleted from canvas
-  // but still in the draft until removed).
   const labelOf = (ref: CoreEntityRefLike, index: number): string => {
     for (const [, entityRef] of nodeEntityRefs) {
       if (
@@ -47,44 +44,79 @@ export const LcosReferenceStrip: React.FC = () => {
 
   return (
     <div
-      data-lcos-reference-strip=""
+      data-lcos-composer=""
       style={{
         position: 'absolute',
         bottom: 56,
         left: '50%',
         transform: 'translateX(-50%)',
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
         gap: 6,
-        padding: '6px 10px',
-        borderRadius: 999,
-        background: 'rgba(255, 255, 255, 0.92)',
+        padding: '8px 10px',
+        borderRadius: 12,
+        background: 'rgba(255, 255, 255, 0.95)',
         border: `1px solid ${ACCENT}44`,
         boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
         pointerEvents: 'auto',
         zIndex: 40,
+        width: 360,
         maxWidth: '80vw',
-        overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
+      onMouseDown={(e) => e.stopPropagation()}
     >
-      <span
+      {hasChips && (
+        <div
+          data-lcos-reference-strip=""
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#1e40af',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {`引用 (${orderedEntityRefs.length})`}
+          </span>
+          {orderedEntityRefs.map((ref, index) => (
+            <ReferenceChip
+              key={`${ref.entityType}:${ref.entityId}`}
+              label={labelOf(ref, index)}
+              onRemove={() => removeRef(ref)}
+            />
+          ))}
+        </div>
+      )}
+      <input
+        data-lcos-composer-input=""
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={
+          hasChips
+            ? '输入指令，引用已就绪…'
+            : '输入指令，或按住 Ctrl 点击对象加入引用…'
+        }
         style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: '#1e40af',
-          whiteSpace: 'nowrap',
-          paddingRight: 4,
+          width: '100%',
+          boxSizing: 'border-box',
+          border: 'none',
+          outline: 'none',
+          fontSize: 13,
+          color: '#191919',
+          background: 'transparent',
+          padding: '2px 0',
         }}
-      >
-        References ({orderedEntityRefs.length})
-      </span>
-      {orderedEntityRefs.map((ref, index) => (
-        <ReferenceChip
-          key={`${ref.entityType}:${ref.entityId}`}
-          label={labelOf(ref, index)}
-          onRemove={() => removeRef(ref)}
-        />
-      ))}
+      />
     </div>
   );
 };
@@ -130,7 +162,7 @@ const ReferenceChip: React.FC<{ label: string; onRemove: () => void }> = ({
     {label}
     <button
       type="button"
-      aria-label={`Remove reference ${label}`}
+      aria-label={`移除引用 ${label}`}
       onClick={onRemove}
       style={{
         all: 'unset',

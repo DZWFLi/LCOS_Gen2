@@ -25,7 +25,7 @@ import type { CanvasHostExtension } from '@/lcos-seam/types';
 import useCanvasStore from '@/store/canvasStore';
 
 import { LcosArtifactNode } from './LcosArtifactNode';
-import { LcosReferenceStrip } from './LcosReferenceStrip';
+import { LcosComposerShell } from './LcosComposerShell';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { createLcosHost, readLcosHostConfig } from './lcosHost';
@@ -73,7 +73,7 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     });
     const seam = createHostSeam(rt.host, {
       renderers: [{ nodeType: 'lcos/artifact', renderer: LcosArtifactNode }],
-      overlays: [{ key: 'lcos/reference-strip', node: <LcosReferenceStrip /> }],
+      overlays: [{ key: 'lcos/composer', node: <LcosComposerShell /> }],
       recognizers: createLcosRecognizers().map((recognizer) => ({
         recognizer,
       })),
