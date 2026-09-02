@@ -1582,6 +1582,19 @@ export const Canvas: React.FC<CanvasProps> = ({
           pendingNodeType ? false : !isNotMouse && tool === 'select'
         }
         selectionMode={SelectionMode.Partial}
+        // Frozen Gen1 pointer grammar (user ruling): Shift is the ONLY
+
+        // multi-selection key. React Flow's default multiSelectionKeyCode is
+
+        // Meta/Control (which made Ctrl silently multi-select, colliding with
+
+        // the LCOS reference-pick gesture) — force it to Shift so Ctrl/Cmd
+
+        // stays exclusively LCOS reference picking and Shift gets true
+
+        // additive selection with its native highlight.
+
+        multiSelectionKeyCode={'Shift'}
         onSelectionStart={handleSelectionStart}
         onSelectionEnd={handleSelectionEnd}
         nodesDraggable={
