@@ -94,6 +94,9 @@ export type {
   OverlayInput,
 } from './interaction/overlayArbitration.js';
 
+export { SurfaceRegistry } from './spatial/surfacePort.js';
+export type { SurfaceDescriptor, SurfacePort, SurfacePorts, SurfaceCapability, SurfaceKeyName } from './spatial/surfacePort.js';
+
 export {
   HUABU_PROTOCOL_VERSION,
   CANVAS_NODE_TYPES,
