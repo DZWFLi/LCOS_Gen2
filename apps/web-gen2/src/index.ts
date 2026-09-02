@@ -98,6 +98,9 @@ export { SurfaceRegistry } from './spatial/surfacePort.js';
 export type { SurfaceDescriptor, SurfacePort, SurfacePorts, SurfaceCapability, SurfaceKeyName } from './spatial/surfacePort.js';
 
 export { descriptorFor, familiesFor } from './presentation/rendererRegistry.js';
+
+export { createLcosHostRuntime, DOCK_GAP_REGISTRY } from './host/createLcosHostRuntime.js';
+export type { LcosEndpointConfig, LcosHostRuntime, CreateLcosRuntimeDeps, PhaseCDock, DockGapRegistry } from './host/createLcosHostRuntime.js';
 export type { RendererFamily, PresentationSpecies, PresentationDescriptor, NodeCapability, CoreEntityRefLoose } from './presentation/rendererRegistry.js';
 
 export {
