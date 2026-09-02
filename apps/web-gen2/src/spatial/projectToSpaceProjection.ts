@@ -75,6 +75,16 @@ export class ProjectToSpaceProjection {
     return this.ensureEntityNode(input);
   }
 
+  /**
+   * Remove a projection whose Core entity no longer exists. Deletes the Huabu
+   * node and unbinds the node binding, so reconciliation converges the spatial
+   * truth back toward Core truth. Mirrors RelationProjection.removeOrphanRelationEdge.
+   */
+  async removeOrphanNode(binding: ProjectionBinding): Promise<void> {
+    await this.rfs.execute([{ type: 'DELETE_NODES', nodeIds: [binding.spatialId] }]);
+    await this.bindings.unbindByEntity(binding.projectId, binding.canvasId, 'node', binding.entityType, binding.entityId);
+  }
+
   private async ensureEntityNode(input: SpaceEntityProjectionSource): Promise<ProjectionBinding> {
     const existing = await this.bindings.findNode(input.projectId, this.rfs.config.canvasId, input.entityType, input.entityId);
     if (existing) {

@@ -20,6 +20,7 @@ export interface ReconciliationResult {
   relationsScanned: number;
   reconciledEdges: number;
   removedOrphanEdges: number;
+  removedOrphanNodes: number;
   skippedRelations: number;
 }
 
@@ -129,6 +130,27 @@ export class ReconciliationRunner {
       }
     }
 
+    // Prune orphan node bindings: an artifact-projected node whose Core artifact
+    // no longer exists is stale spatial truth -> delete the Huabu node + unbind.
+    const coreArtifactIds = new Set(
+      rawArtifacts
+        .map((a) => String((a as { id?: unknown }).id ?? (a as { artifactId?: unknown }).artifactId ?? ''))
+        .filter((id) => id !== ''),
+    );
+    let removedOrphanNodes = 0;
+    for (const binding of bindings) {
+      if (
+        binding.projectId === projectId &&
+        binding.canvasId === canvasId &&
+        binding.spatialKind === 'node' &&
+        binding.entityType === 'artifact' &&
+        !coreArtifactIds.has(binding.entityId)
+      ) {
+        await this.deps.nodeProjector.removeOrphanNode(binding);
+        removedOrphanNodes += 1;
+      }
+    }
+
     return {
       projectId,
       canvasId,
@@ -137,6 +159,7 @@ export class ReconciliationRunner {
       relationsScanned: relations.length,
       reconciledEdges,
       removedOrphanEdges,
+      removedOrphanNodes,
       skippedRelations,
     };
   }
