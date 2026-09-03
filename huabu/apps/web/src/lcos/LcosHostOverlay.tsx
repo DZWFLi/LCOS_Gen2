@@ -13,6 +13,8 @@
 import { visibleOverlays } from '@local-creative-os/web-gen2';
 import React from 'react';
 
+import useCanvasStore from '@/store/canvasStore';
+
 import { LcosComposerShell } from './LcosComposerShell';
 import { LcosDropPreview } from './LcosDropPreview';
 import { useLcosDropStore } from './lcosDropState';
@@ -22,6 +24,13 @@ const has = (kinds: readonly string[], kind: string): boolean =>
 
 export const LcosHostOverlay: React.FC = () => {
   const dropStatus = useLcosDropStore((s) => s.state.status);
+  // 真实 selection（审计 §7：仲裁输入必须来自真实 store，不硬编码 false）。
+  // resize/hover 相位是 NodeWrapper 局部 owner（overlayInteractionPriority 已反映），
+  // 不在此重复订阅；actionArc/workView 待 B 阶段接 surface store。
+  const hasSelection = useCanvasStore(
+    (state) => state.nodes.some((node) => node.selected === true),
+  );
+  const isNodeDragging = useCanvasStore((state) => state.nodes.some((node) => node.dragging === true));
 
   const dropActive =
     dropStatus === 'tracking' ||
@@ -30,9 +39,9 @@ export const LcosHostOverlay: React.FC = () => {
   const dropPreview = dropStatus === 'preview';
 
   const visible = visibleOverlays({
-    dragging: dropActive,
+    dragging: isNodeDragging || dropActive,
     resizing: false,
-    selected: false,
+    selected: hasSelection,
     hovered: false,
     // 拖拽/落位时 composer 让道；其余时刻交还给 composer 自决（非 empty draft 即开）。
     composerOpen: !dropActive,

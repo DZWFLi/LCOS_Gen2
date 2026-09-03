@@ -13,6 +13,7 @@
 import { HuabuRfsClient } from './huabuRfsClient.js';
 import { ProjectionBinding, ProjectionBindingRegistry, type EntityType } from './projectionBinding.js';
 import type { AgentCreatableNodeType, Point, NodeGeometrySize } from './types.js';
+import { resolveVisualFamily, huabuNodeTypeForFamily, type VisualFamilySource } from '../presentation/visualFamily.js';
 
 export type ArtifactKind = 'text' | 'image' | 'pdf' | 'file';
 
@@ -29,10 +30,35 @@ export interface SpaceEntityProjectionSource {
   entityId: string;
   kind: ArtifactKind;
   title: string;
+  /** B00-R2: Core metadata consumed by the visual family resolver (never title guesses). */
+  mimeType?: string;
+  sourceKind?: string;
+  sourceRunId?: string;
+  managed?: boolean;
 }
 
 const DEFAULT_POSITION: Point = { x: 0, y: 0 };
 const DEFAULT_SIZE: NodeGeometrySize = { width: 280, height: 220 };
+
+
+/**
+ * B00-R4: visual-family -> Huabu NATIVE node type (adoption registry).
+ * Reads Core metadata (kind + MIME), never title/suffix. Returns only
+ * Huabu built-ins; no lcos/* synonyms.
+ */
+export function huabuNodeTypeForPresentation(
+  source: Pick<SpaceEntityProjectionSource, 'kind'> & Partial<VisualFamilySource>,
+): AgentCreatableNodeType {
+  const family = resolveVisualFamily({
+    entityType: source.entityType,
+    artifactKind: source.kind,
+    mimeType: source.mimeType,
+    sourceKind: source.sourceKind,
+    sourceRunId: source.sourceRunId,
+    managed: source.managed,
+  });
+  return huabuNodeTypeForFamily(family) as AgentCreatableNodeType;
+}
 
 export function huabuNodeTypeFor(kind: ArtifactKind): AgentCreatableNodeType {
   switch (kind) {
@@ -98,7 +124,7 @@ export class ProjectToSpaceProjection {
   }
 
   private async createEntityNode(input: SpaceEntityProjectionSource): Promise<ProjectionBinding> {
-    const nodeType = huabuNodeTypeFor(input.kind);
+    const nodeType = huabuNodeTypeForPresentation(input);
     const response = await this.rfs.execute([
       {
         type: 'CREATE_NODES',

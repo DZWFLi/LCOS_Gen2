@@ -99,6 +99,11 @@ export type { SurfaceDescriptor, SurfacePort, SurfacePorts, SurfaceCapability, S
 
 export { descriptorFor, familiesFor } from './presentation/rendererRegistry.js';
 
+export { resolveVisualFamily, huabuNodeTypeForFamily } from './presentation/visualFamily.js';
+export type { LcosVisualFamily, VisualFamilySource } from './presentation/visualFamily.js';
+
+export { huabuNodeTypeForPresentation } from './spatial/projectToSpaceProjection.js';
+
 export { createLcosHostRuntime, DOCK_GAP_REGISTRY } from './host/createLcosHostRuntime.js';
 export type { LcosEndpointConfig, LcosHostRuntime, CreateLcosRuntimeDeps, PhaseCDock, DockGapRegistry } from './host/createLcosHostRuntime.js';
 export type { RendererFamily, PresentationSpecies, PresentationDescriptor, NodeCapability, CoreEntityRefLoose } from './presentation/rendererRegistry.js';
