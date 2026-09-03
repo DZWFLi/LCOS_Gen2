@@ -32,6 +32,7 @@ import { LcosHostOverlay } from './LcosHostOverlay';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
+import { installReferenceClickSuppressor } from './referenceClickSuppressor';
 
 export interface LcosCanvasProps {
   hostExtension?: CanvasHostExtension;
@@ -39,6 +40,7 @@ export interface LcosCanvasProps {
 
 export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
   const runtimeRef = useRef<LcosHostRuntime | null>(null);
+  const suppressorDisposeRef = useRef<(() => void) | null>(null);
   const [hostExtension, setHostExtension] = useState<CanvasHostExtension | undefined>(undefined);
 
   const canvasId = useCanvasStore((state) => state.canvasId);
@@ -56,6 +58,9 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     );
     const rt = createLcosRuntime({ ...cfg, projectId });
     runtimeRef.current = rt;
+    // click suppressor 归 runtime 生命周期（审计 §4.4）——安装一次，卸载时 dispose。
+    suppressorDisposeRef.current?.();
+    suppressorDisposeRef.current = installReferenceClickSuppressor();
     // seam 的 connect provider 指向同一个 runtime 对象（host getter 恒取当前 host）。
     const seam: HostSeam = createHostSeam(() => rt.host, {
       overlays: [{ key: 'lcos/host-overlay', node: <LcosHostOverlay /> }],
@@ -72,6 +77,8 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     return () => {
       runtimeRef.current?.dispose();
       runtimeRef.current = null;
+      suppressorDisposeRef.current?.();
+      suppressorDisposeRef.current = null;
     };
   }, []);
 

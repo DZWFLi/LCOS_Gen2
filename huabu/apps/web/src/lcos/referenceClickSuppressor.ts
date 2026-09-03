@@ -44,15 +44,23 @@ export function handleReferenceClickSuppression(event: {
   return true;
 }
 
-/** Install the document-level capture listener once (idempotent). */
-export function installReferenceClickSuppressor(): void {
-  if (suppressorInstalled || typeof document === 'undefined') return;
+/**
+ * Install the document-level capture listener once (idempotent). Audit §4.4:
+ * returns a dispose so the listener is tied to the host runtime lifecycle,
+ * never left dangling as a module global.
+ */
+export function installReferenceClickSuppressor(): () => void {
+  if (suppressorInstalled || typeof document === 'undefined') return () => undefined;
   suppressorInstalled = true;
-  document.addEventListener(
-    'click',
-    (event) => {
-      handleReferenceClickSuppression(event);
-    },
-    { capture: true },
-  );
+  const handler = (event: Event) => {
+    handleReferenceClickSuppression(event);
+  };
+  document.addEventListener('click', handler, { capture: true });
+  let disposed = false;
+  return function uninstall() {
+    if (disposed) return;
+    disposed = true;
+    document.removeEventListener('click', handler, { capture: true });
+    suppressorInstalled = false;
+  };
 }

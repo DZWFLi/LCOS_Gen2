@@ -24,10 +24,7 @@ import type { PointerRecognizer } from '@/handler/pointerRouter';
 
 import { useLcosDropStore } from './lcosDropState';
 import { useLcosReferenceStore } from './lcosReferenceState';
-import {
-  installReferenceClickSuppressor,
-  markReferencePickCompleted,
-} from './referenceClickSuppressor';
+import { markReferencePickCompleted } from './referenceClickSuppressor';
 
 /**
  * Ctrl/Cmd+click on an LCOS-projected node toggles it in the ordered draft
@@ -191,6 +188,5 @@ export function createLcosRecognizers(): readonly PointerRecognizer<
   PointerEvent,
   CanvasPointerRouterContext
 >[] {
-  installReferenceClickSuppressor();
   return [createReferencePickRecognizer(), createDropRecognizer()];
 }

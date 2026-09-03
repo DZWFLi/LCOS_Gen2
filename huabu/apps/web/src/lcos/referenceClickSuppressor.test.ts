@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   handleReferenceClickSuppression,
+  installReferenceClickSuppressor,
   markReferencePickCompleted,
 } from './referenceClickSuppressor';
 
@@ -52,5 +53,22 @@ describe('reference click suppressor', () => {
     markReferencePickCompleted();
     const click = fakeClick(false);
     expect(handleReferenceClickSuppression(click)).toBe(false);
+  });
+
+  it('install returns a dispose that removes the document listener (runtime lifecycle, audit 4.4)', () => {
+    const addSpy = vi.spyOn(document, 'addEventListener');
+    const removeSpy = vi.spyOn(document, 'removeEventListener');
+    const uninstall = installReferenceClickSuppressor();
+    expect(addSpy).toHaveBeenCalledWith('click', expect.any(Function), { capture: true });
+    // idempotent: second install does not add again until the first is disposed
+    installReferenceClickSuppressor();
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    uninstall();
+    expect(removeSpy).toHaveBeenCalledWith('click', expect.any(Function), { capture: true });
+    // after dispose the module re-arms on next install
+    installReferenceClickSuppressor();
+    expect(addSpy).toHaveBeenCalledTimes(2);
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 });
