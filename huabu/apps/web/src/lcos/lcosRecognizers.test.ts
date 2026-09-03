@@ -141,22 +141,40 @@ describe('reference-pick recognizer (A03)', () => {
     expect(recognizer.canClaim(withShiftOnly, ctx)).toBe(false);
   });
 
-  it('native (unregistered) nodes ARE referenceable — canvas identity, claim + toggle (user ruling, option A)', () => {
+  it('native (unregistered) node without a Core binding is REFUSED — fail-close, no note:<id> fabrication (audit P0-3)', () => {
     mockHitNode.current = 'native-node';
     const recognizer = createReferencePickRecognizer();
 
+    // canClaim may still be true (gesture shape), but onDown must fail-close:
+    // the node has no ProjectionBinding-derived Core ref -> no claim, no toggle.
     const event = fakeEvent({ ctrlKey: true });
-    expect(recognizer.canClaim(event, ctx)).toBe(true);
-    expect(recognizer.onDown(event, ctx)).toBe('claim');
-    expect(event.preventDefault).toHaveBeenCalled();
-    recognizer.onUp?.(fakeEvent({ ctrlKey: true }), ctx);
-
-    const refs = useLcosReferenceStore.getState().orderedNodeReferences();
-    expect(refs).toEqual([{ entityType: 'note', entityId: 'native-node' }]);
+    expect(recognizer.onDown(event, ctx)).toBe('pass');
+    expect(useLcosReferenceStore.getState().orderedNodeReferences()).toEqual([]);
+    expect(useLcosReferenceStore.getState().nodeEntityRefs.has('native-node')).toBe(false);
   });
 
-  it('a second Ctrl+click on the same native node un-references it (toggle parity)', () => {
+  it('a BOUND native node is referenceable — binding-derived identity, claim + toggle', () => {
+    // binding-derived cache (P0-5): reference store holds a real CoreEntityRef
     mockHitNode.current = 'native-node';
+    useLcosReferenceStore.getState().registerNodeEntity('native-node', {
+      entityType: 'artifact',
+      entityId: 'art-native',
+    });
+    const recognizer = createReferencePickRecognizer();
+
+    const event = fakeEvent({ ctrlKey: true });
+    expect(recognizer.onDown(event, ctx)).toBe('claim');
+    recognizer.onUp?.(fakeEvent({ ctrlKey: true }), ctx);
+    const refs = useLcosReferenceStore.getState().orderedNodeReferences();
+    expect(refs).toEqual([{ entityType: 'artifact', entityId: 'art-native' }]);
+  });
+
+  it('a second Ctrl+click on the same BOUND native node un-references it (toggle parity)', () => {
+    mockHitNode.current = 'native-node';
+    useLcosReferenceStore.getState().registerNodeEntity('native-node', {
+      entityType: 'artifact',
+      entityId: 'art-native',
+    });
     const recognizer = createReferencePickRecognizer();
 
     recognizer.onDown(fakeEvent({ ctrlKey: true }), ctx);

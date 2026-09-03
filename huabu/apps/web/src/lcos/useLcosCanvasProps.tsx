@@ -29,6 +29,7 @@ import type { CanvasHostExtension } from '@/lcos-seam/types';
 import useCanvasStore from '@/store/canvasStore';
 
 import { LcosHostOverlay } from './LcosHostOverlay';
+import { useLcosReferenceStore } from './lcosReferenceState';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
 
@@ -81,9 +82,23 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     const rt = runtimeRef.current;
     if (!rt) return;
     rt.retarget({ canvasId });
-    void rt.host.reconcile('project-open').catch((error: unknown) => {
-      console.warn('[lcos] project-open reconcile failed', error);
-    });
+    void (async () => {
+      try {
+        await rt.host.reconcile('project-open');
+        // P0-5: identity cache derives from ProjectionBinding — reconcile just
+        // established/refreshed the bindings, so re-sync the reference index.
+        const bindings = await rt.host.listNodeBindings();
+        useLcosReferenceStore.getState().resetNodeEntities();
+        for (const binding of bindings) {
+          useLcosReferenceStore.getState().registerNodeEntity(
+            binding.spatialId,
+            { entityType: binding.entityType, entityId: binding.entityId },
+          );
+        }
+      } catch (error) {
+        console.warn('[lcos] project-open reconcile failed', error);
+      }
+    })();
   }, [canvasId, isLoading, projectId]);
 
   return { hostExtension };

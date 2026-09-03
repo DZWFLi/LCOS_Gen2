@@ -30,6 +30,8 @@ export interface LcosReferenceState {
   draft: ReferenceControllerState<CoreEntityRefLike>;
 
   registerNodeEntity(nodeId: string, ref: CoreEntityRefLike): void;
+  /** Clear the whole binding-derived node->ref cache (re-sync after reconcile). */
+  resetNodeEntities(): void;
   forgetNode(nodeId: string): void;
   /** Toggle one node's entity in the ordered draft references. */
   toggleNodeReference(nodeId: string): boolean;
@@ -43,6 +45,9 @@ export interface LcosReferenceState {
 export const useLcosReferenceStore = create<LcosReferenceState>((set, get) => ({
   nodeEntityRefs: new Map(),
   draft: createReferenceControllerState<CoreEntityRefLike>('canvas-draft'),
+
+  resetNodeEntities: () =>
+    set({ nodeEntityRefs: new Map() }),
 
   registerNodeEntity: (nodeId, ref) => {
     set((state) => {

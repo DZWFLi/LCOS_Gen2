@@ -61,16 +61,14 @@ export function createReferencePickRecognizer(): PointerRecognizer<
       const nodeId = nodeIdAtScreenPoint(event.clientX, event.clientY);
       // No node under the pointer → nothing to reference.
       if (!nodeId) return 'pass';
-      // Native Huabu nodes are referenceable too (user ruling, option A):
-      // register a canvas identity (note:<nodeId>) on first pick. Run
-      // submission fail-closes later if Core does not recognize the ref —
-      // identity gating belongs to the submit boundary, not the gesture.
+      // Audit P0-3/P0-5: only nodes with a REAL CoreEntityRef (derived from
+      // ProjectionBinding) are referenceable. A native node without a binding
+      // is refused here — never fabricate note:<nodeId> — the adoption/adapter
+      // path (B00-R2b / Core adoption) is the only way to give it an identity.
       const store = useLcosReferenceStore.getState();
       if (!store.nodeEntityRefs.has(nodeId)) {
-        store.registerNodeEntity(nodeId, {
-          entityType: 'note',
-          entityId: nodeId,
-        });
+        console.warn('[lcos] refusing to reference node without Core binding: ' + nodeId + ' (fail-close)');
+        return 'pass';
       }
       activePointerId = event.pointerId;
       startClient = { x: event.clientX, y: event.clientY };
