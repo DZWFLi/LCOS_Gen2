@@ -31,13 +31,18 @@ export interface LcosEndpointConfig {
 
 export interface LcosHostRuntime {
   readonly host: Gen2Host;
-  /** 切换 project：销毁旧 host 资源（reconciler timer），创建绑定到新 project 的 host。 */
-  switchProject(projectId: string): void;
+  /** 当前装配的 canvas identity（host 的 RFS 目标），供宿主判断是否需重定向。 */
+  readonly canvasId: string;
+  readonly projectId: string;
+  /**
+   * 在同一个 session 内重新装配配置（画布就绪 / 切 project 后调用）。
+   * 只销毁旧 host 的 reconciler timer 并用新配置重建一个 host，宿主侧
+   * 持有的 seam/extension 引用保持不变。无变化的调用是 no-op。
+   */
+  retarget(next: { projectId?: string; canvasId?: string }): void;
   /** 卸载/切项目：彻底清理 reconciler timer 与引用。 */
   dispose(): void;
   readonly disposed: boolean;
-  /** 当前绑定 project（runtime 自己记住，不依赖 host 内部反射）。 */
-  readonly projectId: string;
 }
 
 /** A10 端口缺口登记 —— 只登记，不实现。 */
@@ -78,6 +83,7 @@ export function createLcosHostRuntime(
 ): LcosHostRuntime {
   let host: Gen2Host = deps.build(config, initialProjectId);
   let projectId = initialProjectId;
+  let canvasId = config.canvasId;
   let disposed = false;
 
   const runtime: LcosHostRuntime = {
@@ -90,12 +96,18 @@ export function createLcosHostRuntime(
     get projectId() {
       return projectId;
     },
-    switchProject(next: string) {
+    get canvasId() {
+      return canvasId;
+    },
+    retarget(next: { projectId?: string; canvasId?: string }) {
       if (disposed) return;
-      if (next === projectId) return;
+      const wantProject = next.projectId ?? projectId;
+      const wantCanvas = next.canvasId ?? canvasId;
+      if (wantProject === projectId && wantCanvas === canvasId) return;
       disposeHost(host);
-      host = deps.build(config, next);
-      projectId = next;
+      host = deps.build({ ...config, canvasId: wantCanvas }, wantProject);
+      projectId = wantProject;
+      canvasId = wantCanvas;
     },
     dispose() {
       if (disposed) return;

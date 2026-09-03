@@ -49,8 +49,24 @@ export interface SemanticConnectIntent {
    * projects the edge. Returns the ready Huabu edge id (undefined if a
    * binding/uist already projected it but the edge binding isn't captured).
    */
-  onConnectNodes(fromNodeId: string, toNodeId: string, surface: SurfaceKey): Promise<{ edgeId: string | undefined }>;
+  onConnectNodes(fromNodeId: string, toNodeId: string, surface: SurfaceKey): Promise<SemanticConnectOutcome>;
 }
+
+/**
+ * A05/A09: Core-first connect decision. ok -> Core Relation projected as edge.
+ * 
+ative -> at least one endpoint has no Core binding (native-only node), host
+ *   MAY fall back to the stock Huabu connect (no Core relation created).
+ * 
+
+ejected -> Core refused / capability unsupported: MUST NOT create a native
+ *   edge (fail-close, audit P0-4). 
+eason is user-visible.
+ */
+export type SemanticConnectOutcome =
+  | { readonly kind: 'ok'; readonly edgeId?: string }
+  | { readonly kind: 'native'; readonly reason: string }
+  | { readonly kind: 'rejected'; readonly reason: string };
 
 export interface HostSeam {
   extraRenderers: LcosRendererDescriptor[];
@@ -75,7 +91,8 @@ export interface HostSeamOptions {
  * recognizers are supplied by the host app via the descriptors; this factory
  * wires the semantic path.
  */
-export function createHostSeam(host: Gen2Host, options: HostSeamOptions = {}): HostSeam {
+export function createHostSeam(host: Gen2Host | (() => Gen2Host), options: HostSeamOptions = {}): HostSeam {
+  const getHost = (): Gen2Host => (typeof host === 'function' ? host() : host);
   return {
     extraRenderers: [...(options.renderers ?? [])],
     overlays: [...(options.overlays ?? [])],
@@ -86,17 +103,26 @@ export function createHostSeam(host: Gen2Host, options: HostSeamOptions = {}): H
         if (!resolution.ok) {
           throw new Error(`Connect refused: ${resolution.reason}`);
         }
-        const result = await host.connect(ctx.from, ctx.to, resolution.kind);
+        const result = await getHost().connect(ctx.from, ctx.to, resolution.kind);
         return { relationId: result.relationId, changeSetId: result.changeSetId, edgeId: result.edgeBinding?.spatialId };
       },
       onConnectNodes: async (fromNodeId, toNodeId, surface) => {
-        const from = await host.resolveNode(fromNodeId);
-        const to = await host.resolveNode(toNodeId);
-        if (!from || !to) throw new Error('Connect refused: an endpoint node has no Core entity binding');
+        const h = getHost();
+        const from = await h.resolveNode(fromNodeId);
+        const to = await h.resolveNode(toNodeId);
+        if (!from || !to) {
+          return { kind: 'native', reason: 'endpoint without a Core binding (native-only node)' };
+        }
         const resolution = resolveConnectKind({ from: { entityType: from.entityType, entityId: from.entityId }, to: { entityType: to.entityType, entityId: to.entityId }, surface });
-        if (!resolution.ok) throw new Error(`Connect refused: ${resolution.reason}`);
-        const result = await host.connect(from, to, resolution.kind);
-        return { edgeId: result.edgeBinding?.spatialId };
+        if (!resolution.ok) {
+          return { kind: 'rejected', reason: resolution.reason };
+        }
+        try {
+          const result = await h.connect(from, to, resolution.kind);
+          return { kind: 'ok', edgeId: result.edgeBinding?.spatialId };
+        } catch (error) {
+          return { kind: 'rejected', reason: error instanceof Error ? error.message : 'Core relation failed' };
+        }
       },
     },
   };

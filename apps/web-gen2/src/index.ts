@@ -49,7 +49,7 @@ export { Gen2Host } from './host/projectionFacade.js';
 export type { Gen2HostDeps } from './host/projectionFacade.js';
 
 export { createHostSeam } from './host/hostSeam.js';
-export type { HostSeam, HostSeamOptions, SemanticConnectIntent, LcosRendererDescriptor, LcosOverlayDescriptor, LcosRecognizerDescriptor } from './host/hostSeam.js';
+export type { HostSeam, HostSeamOptions, SemanticConnectIntent, SemanticConnectOutcome, LcosRendererDescriptor, LcosOverlayDescriptor, LcosRecognizerDescriptor } from './host/hostSeam.js';
 
 export { hostExtensionFromSeam } from './integration/huabu/LcosCanvasAdapter.js';
 export type { HuabuCanvasHostExtension, HuabuCanvasHostOverlay } from './integration/huabu/LcosCanvasAdapter.js';

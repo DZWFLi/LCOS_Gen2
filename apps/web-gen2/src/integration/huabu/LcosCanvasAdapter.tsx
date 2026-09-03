@@ -13,7 +13,7 @@
 
 import type { ComponentType, ReactNode } from 'react';
 
-import type { HostSeam } from '../../host/hostSeam.js';
+import type { HostSeam, SemanticConnectOutcome } from '../../host/hostSeam.js';
 
 /** Mirrors Huabu's `CanvasHostOverlay` (apps/web/src/lcos-seam/types.ts). */
 export interface HuabuCanvasHostOverlay {
@@ -42,7 +42,7 @@ export interface HuabuCanvasHostExtension {
       fromNodeId: string,
       toNodeId: string,
       surface: string,
-    ): Promise<{ edgeId?: string }>;
+    ): Promise<SemanticConnectOutcome>;
   };
 }
 

@@ -678,19 +678,28 @@ export const Canvas: React.FC<CanvasProps> = ({
     [onConnect, setConnectPicker],
   );
 
-  // A05: when a semantic connectIntent is installed, prefer Core-first for
-  // endpoints that carry a Core entity binding; anything else falls back to
-  // the native Huabu connect, so native nodes keep working unchanged.
+  // A05 (audit-reworked, P0-4): Core-first connect with explicit three-way
+  // outcome — never fall back to a native edge when Core refused.
+  //   ok: Core Relation projected as edge -> done
+  //   native: at least one endpoint has no Core binding (native-only node) ->
+  //          stock Huabu connect is the correct owner
+  //   rejected: Core refused / capability unsupported -> fail-close, NO edge
   const handleNodeConnect = useCallback(
     async (connection: Parameters<typeof onConnect>[0]) => {
       const intent = hostExtension?.connectIntent;
       if (intent && connection.source && connection.target) {
-        try {
-          await intent.onConnectNodes(connection.source, connection.target, canvasId ?? "");
-          return; // semantic edge projected by the host; skip native connect
-        } catch {
-          // endpoint(s) without a Core binding -> fall back to native below
+        const outcome = await intent.onConnectNodes(
+          connection.source,
+          connection.target,
+          canvasId ?? '',
+        );
+        if (outcome.kind === 'ok') return; // semantic edge projected by host
+        if (outcome.kind === 'rejected') {
+          // fail-close: no native edge, no second truth. Surface why.
+          console.warn(`[lcos] connect rejected: ${outcome.reason}`);
+          return;
         }
+        // outcome.kind === 'native' -> fall through to the stock connect.
       }
       onConnect(connection);
     },

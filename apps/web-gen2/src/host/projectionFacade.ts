@@ -117,6 +117,36 @@ export class Gen2Host {
     });
   }
 
+  /**
+   * All node bindings for this project/canvas — the reference-store cache
+   * source (P0-5): identity derives from ProjectionBinding, never from the
+   * frontend guessing a Core ref.
+   */
+  async listNodeBindings(): Promise<
+    { spatialId: string; entityType: CoreEntityRef['entityType']; entityId: string }[]
+  > {
+    const all = await this.bindings.list();
+    const out: {
+      spatialId: string;
+      entityType: CoreEntityRef['entityType'];
+      entityId: string;
+    }[] = [];
+    for (const b of all) {
+      if (
+        b.projectId === this.deps.projectId &&
+        b.canvasId === this.canvasId &&
+        b.spatialKind === 'node'
+      ) {
+        out.push({
+          spatialId: b.spatialId,
+          entityType: b.entityType as CoreEntityRef['entityType'],
+          entityId: b.entityId,
+        });
+      }
+    }
+    return out;
+  }
+
   /** Run reconciliation on demand (startup / after a mutation / on reconnect). */
   async reconcile(trigger: ReconcileTrigger): Promise<boolean> {
     return this.reconciler.runNow(trigger);

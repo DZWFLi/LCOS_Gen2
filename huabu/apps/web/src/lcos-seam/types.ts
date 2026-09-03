@@ -34,12 +34,17 @@ export interface CanvasHostOverlay {
  * back to Core entities (A05). Returns the ready edge id when a semantic edge
  * was projected (undefined if the edge binding is not captured yet).
  */
+export type CanvasConnectOutcome =
+  | { readonly kind: 'ok'; readonly edgeId?: string }
+  | { readonly kind: 'native'; readonly reason: string }
+  | { readonly kind: 'rejected'; readonly reason: string };
+
 export interface CanvasHostConnectIntent {
   onConnectNodes(
     fromNodeId: string,
     toNodeId: string,
     surface: string,
-  ): Promise<{ edgeId?: string }>;
+  ): Promise<CanvasConnectOutcome>;
 }
 
 /** A pointer recognizer wired into the canvas pointer router. */
