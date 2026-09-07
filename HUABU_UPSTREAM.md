@@ -8,25 +8,30 @@ file pins exactly which upstream commit the LCOS Gen2 RFS contract mirrors.
 | Repo | [microsoft/Huabu](https://github.com/microsoft/Huabu) |
 | **Vendored path (construction host)** | `huabu/` — inside THIS repo |
 | Standalone clone | `E:\OS开发\Huabu` — retired as construction host; kept read-only as the upstream sync reference |
-| **Pin commit SHA** | `58339e269b784728d67730c70bfe7792cae2457d` |
+| **Pin commit SHA** | `a3c411e1f655191344285141f08c4738fa6015f7` |
 | Protocol version | `2` |
 | Server default port | `3001` |
 | Node requirement | `>=22.22.0` |
 | Package manager | `pnpm@10.34.3` |
 
-## Vendoring (2026-09-02)
+## Current vendored baseline (2026-09-07)
 
-The Huabu tree is vendored into this repository at `huabu/` via
-`git archive` from the standalone clone's HEAD, i.e. upstream pin
-`58339e2` plus the three LCOS thin-seam commits already authored there
-(`407ea21` shared-type widening, `12d5ba4` Phase A01 host seam,
-`129bf81` Phase A02 presentation context) — they are carried into the
-vendor drop, not re-authored. Cross-repo TS/Vite aliases
-(`../../../LCOS_GEN2/...`) were rewritten to in-repo paths
-(`../../../...` from `huabu/apps/web`). `.npmrc` keeps the upstream
-portable version (no machine-local store path is committed). The standalone
-clone stays untouched for future upstream diffs/syncs; ALL construction
-now happens on `huabu/` in this repo and is reviewed in THIS repo's PRs.
+The Huabu tree vendored at `huabu/` now uses upstream
+`a3c411e1f655191344285141f08c4738fa6015f7` as its mechanical baseline.
+The migration was applied in four reviewable steps:
+
+- `930bdf306d`: re-vendor upstream `a3c411e`;
+- `56c3d7c3e1`: re-apply the LCOS thin seams and adapters;
+- `350f0d504a`: adapt `LcosArtifactNode` to the stricter upstream
+  `NodeData` / `CanvasNodeType` contracts;
+- `232b2ca5`: merge the migrated tree into `LCOS_Gen2/main`.
+
+The previous `58339e2` vendor plus LCOS seam commits (`407ea21`, `12d5ba4`,
+`129bf81`) is historical context only; it is no longer the construction
+baseline. Cross-repo TS/Vite aliases remain rewritten to in-repo paths and
+`.npmrc` keeps the upstream portable version. The standalone clone remains a
+read-only upstream sync reference. All construction and review happen against
+the vendored `huabu/` tree in this repository.
 
 ## Contract sources
 
