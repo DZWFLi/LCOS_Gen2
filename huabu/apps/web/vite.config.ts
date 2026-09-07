@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 import { readFileSync } from 'node:fs';
@@ -112,10 +112,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
-        // LCOS boundary — resolved to its TS source so Vite transpiles it.
-        '@local-creative-os/web-gen2': fileURLToPath(
-          new URL('../../../apps/web-gen2/src/index.ts', import.meta.url),
-        ),
       },
     },
     server: {
@@ -155,13 +151,6 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
           ws: true,
-        },
-        // LCOS: same-origin path to Local Core. Rewrite the prefix so the Core
-        // receives its canonical `/projects/...` routes without the proxy prefix.
-        '/lcos-core': {
-          target: 'http://127.0.0.1:43121',
-          changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/lcos-core/, ''),
         },
       },
     },

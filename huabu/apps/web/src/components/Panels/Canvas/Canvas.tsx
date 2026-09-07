@@ -18,7 +18,6 @@ import {
 } from '@xyflow/react';
 import clsx from 'clsx';
 import React, {
-  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -107,6 +106,7 @@ import {
 import { EdgeStyleToolbar } from './FloatingToolbars/EdgeStyleToolbar.tsx';
 import { MultiSelectToolbar } from './FloatingToolbars/MultiSelectToolbar.tsx';
 import { StrokeSelectionToolbar } from './FloatingToolbars/StrokeSelectionToolbar.tsx';
+import { MoveSelectionModal } from './MoveSelectionModal.tsx';
 import { MultiSelectResizer } from './MultiSelectResizer.tsx';
 import { SelectionOutlines } from './SelectionOutlines.tsx';
 import { SnapGuidesOverlay } from './SnapGuidesOverlay.tsx';
@@ -156,8 +156,6 @@ import type { AddNodeInput } from '@/handler/canvasCommand/uiIntent';
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
 import type { PointerRecognizer } from '@/handler/pointerRouter';
 import type { FrameFitResult, NestableNode } from '@huabu/shared/canvas-engine';
-import { mergeNodeTypes } from '../../../lcos-seam/mergeNodeTypes';
-import type { CanvasHostExtension } from '../../../lcos-seam/types';
 
 const nodeTypes = {
   image: ImageNode,
@@ -400,23 +398,11 @@ const CanvasInteractivityControl: React.FC<{
 
 type CanvasProps = {
   shortcutsDisabled?: boolean;
-  /** LCOS host seam: renderers/overlays/recognizers injected by the LCOS host. */
-  hostExtension?: CanvasHostExtension;
 };
 
 export const Canvas: React.FC<CanvasProps> = ({
   shortcutsDisabled = false,
-  hostExtension,
 }) => {
-  // LCOS host seam: merge host renderers over Huabu's built-in nodeTypes.
-  // Collisions with built-ins throw in dev and are refused (warn) in prod.
-  const mergedNodeTypes = useMemo(
-    () =>
-      mergeNodeTypes(nodeTypes, hostExtension?.nodeTypes, {
-        isDev: import.meta.env.DEV,
-      }),
-    [hostExtension?.nodeTypes],
-  );
   // ── Reactive state subscriptions ─────────────────────────────
   // Only fields that actually change at runtime are subscribed. Anything
   // else (action fns) is read non-reactively below to avoid registering
@@ -678,33 +664,6 @@ export const Canvas: React.FC<CanvasProps> = ({
     [onConnect, setConnectPicker],
   );
 
-  // A05 (audit-reworked, P0-4): Core-first connect with explicit three-way
-  // outcome — never fall back to a native edge when Core refused.
-  //   ok: Core Relation projected as edge -> done
-  //   native: at least one endpoint has no Core binding (native-only node) ->
-  //          stock Huabu connect is the correct owner
-  //   rejected: Core refused / capability unsupported -> fail-close, NO edge
-  const handleNodeConnect = useCallback(
-    async (connection: Parameters<typeof onConnect>[0]) => {
-      const intent = hostExtension?.connectIntent;
-      if (intent && connection.source && connection.target) {
-        const outcome = await intent.onConnectNodes(
-          connection.source,
-          connection.target,
-          canvasId ?? '',
-        );
-        if (outcome.kind === 'ok') return; // semantic edge projected by host
-        if (outcome.kind === 'rejected') {
-          // fail-close: no native edge, no second truth. Surface why.
-          console.warn(`[lcos] connect rejected: ${outcome.reason}`);
-          return;
-        }
-        // outcome.kind === 'native' -> fall through to the stock connect.
-      }
-      onConnect(connection);
-    },
-    [hostExtension?.connectIntent, canvasId, onConnect],
-  );
   const handleConnectedKindPick = useCallback(
     (nodeKind: ConnectedNodeKind) => {
       // Read-then-act rather than acting inside a `setState` updater:
@@ -1195,9 +1154,8 @@ export const Canvas: React.FC<CanvasProps> = ({
           isLassoStartTarget(event.target as Element | null) &&
           canDirectlyManipulateWithPointer(event.pointerType, ctx.inputMode),
       ),
-      ...(hostExtension?.recognizers ?? []),
     ];
-  }, [suppressNextPaneClick, hostExtension?.recognizers]);
+  }, [suppressNextPaneClick]);
 
   // Handle click-to-place for note, text, and question.
   const handlePaneClick = useCallback(
@@ -1531,7 +1489,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={handleNodeConnect}
+        onConnect={onConnect}
         onConnectEnd={onConnectEnd}
         // A port is also the "create a connected node" button, so a plain
         // click on one has to reach `onConnectEnd`. React Flow only starts
@@ -1551,7 +1509,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
-        nodeTypes={mergedNodeTypes}
+        nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onInit={(instance) => {
           rfInstanceRef.current = instance;
@@ -1609,19 +1567,6 @@ export const Canvas: React.FC<CanvasProps> = ({
           pendingNodeType ? false : !isNotMouse && tool === 'select'
         }
         selectionMode={SelectionMode.Partial}
-        // Frozen Gen1 pointer grammar (user ruling): Shift is the ONLY
-
-        // multi-selection key. React Flow's default multiSelectionKeyCode is
-
-        // Meta/Control (which made Ctrl silently multi-select, colliding with
-
-        // the LCOS reference-pick gesture) — force it to Shift so Ctrl/Cmd
-
-        // stays exclusively LCOS reference picking and Shift gets true
-
-        // additive selection with its native highlight.
-
-        multiSelectionKeyCode={'Shift'}
         onSelectionStart={handleSelectionStart}
         onSelectionEnd={handleSelectionEnd}
         nodesDraggable={
@@ -1684,6 +1629,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         {!isBoxSelecting && <StrokeSelectionRegion />}
         {!isBoxSelecting && <StrokeSelectionToolbar />}
         {!isBoxSelecting && <EdgeStyleToolbar />}
+        <MoveSelectionModal />
         <ConnectedNodePicker
           anchor={connectPicker?.anchor ?? null}
           tether={
@@ -1699,10 +1645,6 @@ export const Canvas: React.FC<CanvasProps> = ({
           onDismiss={dismissConnectPicker}
         />
         <Background color="var(--canvas-grid)" gap={GRID_SIZE} />
-
-        {hostExtension?.overlays?.map((overlay) => (
-          <Fragment key={overlay.key}>{overlay.node}</Fragment>
-        ))}
 
         <Controls position="bottom-left" showInteractive={false}>
           <CanvasZoomLevel />

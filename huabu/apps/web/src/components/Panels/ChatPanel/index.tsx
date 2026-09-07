@@ -34,7 +34,6 @@ import { useAcpThreadChangesStore } from '@/store/acpThreadChangesStore';
 import useCanvasStore from '@/store/canvasStore';
 import {
   selectThreadBinding,
-  selectThreadDraft,
   selectThreadHistoryLoaded,
   selectThreadLastAction,
   selectThreadMessages,
@@ -59,9 +58,9 @@ import { bindingsEqual } from './agentMenu';
 import { AgentSelector, type AgentChoice } from './AgentSelector';
 import { BuiltinSessionSelectors } from './BuiltinSessionSelectors';
 import { ChangeReviewCard } from './ChangeReviewCard';
-import { ChatInput } from './ChatInput';
 import { parseSlashInvocations } from './parseSlashInvocations';
 import { saveChatAsQuestion } from './saveChatAsQuestion';
+import { ThreadChatInput } from './ThreadChatInput';
 import { useAgentStream } from '../../../hooks/useAgentStream';
 import { useChatHistory } from '../../../hooks/useChatHistory';
 import { MessageList } from '../../Messages/MessageList';
@@ -100,7 +99,6 @@ export const ChatPanel = ({
 }: ChatPanelProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const setDraft = useChatStore((state) => state.setDraft);
   const canvasId = useCanvasStore((state) => state.canvasId);
 
   // When the panel is replaying a question node's thread, the mode is a
@@ -120,12 +118,6 @@ export const ChatPanel = ({
     selectThreadLastAction(state, threadId),
   );
   const activeConversationView = session.conversationView;
-
-  // Composer draft lives in the store keyed by threadId (see chatStore
-  // `ChatThreadState.draft`) so an unsent draft stays with its own session
-  // instead of being wiped when the user switches canvas or opens a
-  // question replay.
-  const input = useChatStore((state) => selectThreadDraft(state, threadId));
 
   const viewingQuestionNodeId =
     activeConversationView?.conversationOwner.nodeId;
@@ -229,13 +221,6 @@ export const ChatPanel = ({
   const isHistoryLoaded = useChatStore((state) =>
     selectThreadHistoryLoaded(state, threadId),
   );
-  // Wire the composer's onChange to the current thread's draft slot. An
-  // empty string clears the draft (see `setDraft`), so the existing
-  // `setInput('')` on send doubles as clear-on-send.
-  const setInput = useCallback(
-    (text: string) => setDraft(threadId, text),
-    [setDraft, threadId],
-  );
   const addNode = useCanvasStore((state) => state.addNode);
   const llmConfig = useLLMStore((state) => state.config);
   const llmLoading = useLLMStore((state) => state.loading);
@@ -255,10 +240,6 @@ export const ChatPanel = ({
     refresh: refreshAcpProfiles,
     loaded: acpProfilesLoaded,
   } = useAcpProfiles();
-  const activeExternalProfile =
-    agentBinding.kind === 'external'
-      ? acpProfiles.find((profile) => profile.id === agentBinding.profileId)
-      : undefined;
 
   useEffect(() => {
     if (!fixedAgentBinding || bindingsEqual(agentBinding, fixedAgentBinding)) {
@@ -321,8 +302,7 @@ export const ChatPanel = ({
   // own binding recipe (see server's session-store `bindingRecipe`),
   // so a deleted-profile thread still has a usable transport. If the
   // server can't resolve a recipe (orphan v2 record with no profile)
-  // the ensure-session call surfaces a clear error and the badge flips
-  // to `failed` — that's the right channel for it.
+  // the first explicit interaction surfaces a clear error.
   const acpExternalReachable = agentBinding.kind === 'external';
 
   // Slash commands have two independent sources depending on the
@@ -387,17 +367,16 @@ export const ChatPanel = ({
   // instead of looking inert.
   const {
     meta: acpSessionMeta,
+    source: acpSessionMetaSource,
     loading: acpSessionMetaLoading,
     error: acpSessionMetaError,
-    errorCode: acpSessionMetaErrorCode,
+    refresh: refreshAcpSessionMeta,
     applyOptimistic: applyAcpSessionMetaOptimistic,
   } = useAcpSessionMeta({
     threadId,
     binding: agentBinding,
     canvasId: ownerCanvasId,
     enabled: ownerScopeReady && acpExternalReachable,
-    autoEnsureOnCacheMiss:
-      activeExternalProfile?.launch.kind !== 'agent-team-manifest',
   });
 
   // Keep a ref to the latest snapshot so the optimistic handlers can
@@ -428,10 +407,8 @@ export const ChatPanel = ({
   // The badge only deviates from `connected` when there is positive
   // evidence of trouble:
   //
-  //   connecting: a real `ensureAcpSession` (refresh / set-RPC) is
-  //               currently in flight
-  //   failed:     the last `ensureAcpSession` rejected AND we have
-  //               no cached snapshot to fall back on (`updatedAt === 0`)
+  //   connecting: the GET-only capability cache read is in flight
+  //   failed:     the cache read failed and there is no cached snapshot
   //   connected:  everything else — cache hit, post-success steady
   //               state, or transient ensure failure that still leaves
   //               us with a valid (if possibly stale) snapshot. We
@@ -464,12 +441,12 @@ export const ChatPanel = ({
   // Spawn context threaded into every set-RPC: the selector dropdowns
   // are seeded from the no-spawn cached-meta snapshot, so the user can
   // switch a value before the session has ever been opened. Passing
-  // `{ profileId, canvasId }` lets the server open the session
+  // `{ binding, canvasId }` lets the server realize the complete workload
+  // and open its session
   // on-demand instead of rejecting the switch with `session_not_found`.
-  const acpSetRpcSpawnCtx = useMemo(
+  const acpControlTarget = useMemo(
     () => ({
-      profileId:
-        agentBinding.kind === 'external' ? agentBinding.profileId : undefined,
+      binding: agentBinding.kind === 'external' ? agentBinding : undefined,
       canvasId: ownerCanvasId ?? undefined,
     }),
     [agentBinding, ownerCanvasId],
@@ -492,7 +469,13 @@ export const ChatPanel = ({
         selection: { id: MODE_SELECTION_ID, value: modeId },
       });
       try {
-        await setAcpSessionMode(threadId, { modeId, ...acpSetRpcSpawnCtx });
+        if (!acpControlTarget.binding) return;
+        await setAcpSessionMode(threadId, {
+          modeId,
+          binding: acpControlTarget.binding,
+          canvasId: acpControlTarget.canvasId,
+        });
+        await refreshAcpSessionMeta();
         onCommit?.();
       } catch (err) {
         applyAcpSessionMetaOptimistic({
@@ -506,7 +489,14 @@ export const ChatPanel = ({
         );
       }
     },
-    [threadId, applyAcpSessionMetaOptimistic, acpSetRpcSpawnCtx, onCommit, t],
+    [
+      threadId,
+      applyAcpSessionMetaOptimistic,
+      acpControlTarget,
+      refreshAcpSessionMeta,
+      onCommit,
+      t,
+    ],
   );
 
   const handleAcpSelectModel = useCallback(
@@ -518,7 +508,13 @@ export const ChatPanel = ({
         selection: { id: MODEL_SELECTION_ID, value: modelId },
       });
       try {
-        await setAcpSessionModel(threadId, { modelId, ...acpSetRpcSpawnCtx });
+        if (!acpControlTarget.binding) return;
+        await setAcpSessionModel(threadId, {
+          modelId,
+          binding: acpControlTarget.binding,
+          canvasId: acpControlTarget.canvasId,
+        });
+        await refreshAcpSessionMeta();
         onCommit?.();
       } catch (err) {
         applyAcpSessionMetaOptimistic({
@@ -532,7 +528,14 @@ export const ChatPanel = ({
         );
       }
     },
-    [threadId, applyAcpSessionMetaOptimistic, acpSetRpcSpawnCtx, onCommit, t],
+    [
+      threadId,
+      applyAcpSessionMetaOptimistic,
+      acpControlTarget,
+      refreshAcpSessionMeta,
+      onCommit,
+      t,
+    ],
   );
 
   const handleAcpSelectConfigOption = useCallback(
@@ -543,11 +546,14 @@ export const ChatPanel = ({
         selection: { id: optionId, value },
       });
       try {
+        if (!acpControlTarget.binding) return;
         await setAcpSessionConfigOption(threadId, {
           configOptionId: optionId,
           value,
-          ...acpSetRpcSpawnCtx,
+          binding: acpControlTarget.binding,
+          canvasId: acpControlTarget.canvasId,
         });
+        await refreshAcpSessionMeta();
         onCommit?.();
       } catch (err) {
         applyAcpSessionMetaOptimistic({
@@ -561,7 +567,14 @@ export const ChatPanel = ({
         );
       }
     },
-    [threadId, applyAcpSessionMetaOptimistic, acpSetRpcSpawnCtx, onCommit, t],
+    [
+      threadId,
+      applyAcpSessionMetaOptimistic,
+      acpControlTarget,
+      refreshAcpSessionMeta,
+      onCommit,
+      t,
+    ],
   );
 
   // Question thread replay mode
@@ -632,48 +645,60 @@ export const ChatPanel = ({
     viewingQuestionNodeId,
   ]);
 
-  const handleSubmit = async (e: React.FormEvent, agentMode: AgentMode) => {
-    e.preventDefault();
-    // Strip leading `/<id>` tokens that match a known slash command
-    // and forward them as `invokedSkills`. Skill invocation is gated
-    // to **internal + operate mode** only:
-    //
-    //  - External (ACP) bindings: skip parsing entirely. ACP agents
-    //    handle their own slash dispatch inside the prompt body, so
-    //    re-splitting here would double-strip the leading token.
-    //  - Internal + ask mode: skip parsing too. Ask is a Q&A surface
-    //    where a leading `/foo` is just literal text (e.g. a path or
-    //    a typo); the menu is suppressed upstream and submit must
-    //    mirror that or the two halves of the UX would disagree.
-    //  - Internal + operate mode: parse, dedup, forward.
-    //
-    // Unknown `/foo` tokens in operate mode pass through as literal
-    // message text — matches the typeahead UX (no menu hit → no
-    // recognition).
-    const raw = input;
-    setInput('');
-    const isSkillInvocationAllowed =
-      agentBinding.kind === 'internal' && agentMode === 'operate';
-    if (!isSkillInvocationAllowed) {
-      const prompt = raw.trim();
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent, agentMode: AgentMode, draft: string) => {
+      e.preventDefault();
+      // Strip leading `/<id>` tokens that match a known slash command
+      // and forward them as `invokedSkills`. Skill invocation is gated
+      // to **internal + operate mode** only:
+      //
+      //  - External (ACP) bindings: skip parsing entirely. ACP agents
+      //    handle their own slash dispatch inside the prompt body, so
+      //    re-splitting here would double-strip the leading token.
+      //  - Internal + ask mode: skip parsing too. Ask is a Q&A surface
+      //    where a leading `/foo` is just literal text (e.g. a path or
+      //    a typo); the menu is suppressed upstream and submit must
+      //    mirror that or the two halves of the UX would disagree.
+      //  - Internal + operate mode: parse, dedup, forward.
+      //
+      // Unknown `/foo` tokens in operate mode pass through as literal
+      // message text — matches the typeahead UX (no menu hit → no
+      // recognition).
+      const raw = draft;
+      useChatStore.getState().setDraft(threadId, '');
+      const isSkillInvocationAllowed =
+        agentBinding.kind === 'internal' && agentMode === 'operate';
+      if (!isSkillInvocationAllowed) {
+        const prompt = raw.trim();
+        if (!prompt) return;
+        onCommit?.();
+        await startStream(prompt, agentMode);
+        return;
+      }
+      const { invokedSkills, message } = parseSlashInvocations(
+        raw,
+        knownSlashIds,
+      );
+      const prompt = message.trim();
       if (!prompt) return;
       onCommit?.();
-      await startStream(prompt, agentMode);
-      return;
+      await startStream(
+        prompt,
+        agentMode,
+        invokedSkills.length > 0 ? invokedSkills : undefined,
+      );
+    },
+    [agentBinding.kind, knownSlashIds, onCommit, startStream, threadId],
+  );
+
+  const handleRetry = useCallback(() => {
+    const lastUserMsg = [...messages]
+      .reverse()
+      .find((message) => message.role === 'user');
+    if (lastUserMsg?.role === 'user') {
+      void startStream(lastUserMsg.content, mode);
     }
-    const { invokedSkills, message } = parseSlashInvocations(
-      raw,
-      knownSlashIds,
-    );
-    const prompt = message.trim();
-    if (!prompt) return;
-    onCommit?.();
-    await startStream(
-      prompt,
-      agentMode,
-      invokedSkills.length > 0 ? invokedSkills : undefined,
-    );
-  };
+  }, [messages, mode, startStream]);
 
   // Inline agent selector (left of the chat input toolbar). The binding
   // is mutable only while the thread has no user message yet — once a
@@ -810,7 +835,6 @@ export const ChatPanel = ({
                 status={acpConnectionStatus}
                 alias={agentBinding.alias}
                 errorMessage={acpSessionMetaError?.message ?? null}
-                errorCode={acpSessionMetaErrorCode}
               />
             )}
           </span>
@@ -852,15 +876,7 @@ export const ChatPanel = ({
             }
             openPositionRequestNonce={openPositionRequest?.nonce}
             onOpenPositionHandled={onOpenPositionHandled}
-            onRetry={() => {
-              // Find the last user message and re-send it
-              const lastUserMsg = [...messages]
-                .reverse()
-                .find((m) => m.role === 'user');
-              if (lastUserMsg && lastUserMsg.role === 'user') {
-                void startStream(lastUserMsg.content, mode);
-              }
-            }}
+            onRetry={handleRetry}
           />
 
           <div className="px-3 pb-2">
@@ -890,9 +906,7 @@ export const ChatPanel = ({
                 </Button>
               </div>
             ) : null}
-            <ChatInput
-              value={input}
-              onChange={setInput}
+            <ThreadChatInput
               onSubmit={handleSubmit}
               onCommit={onCommit}
               onStop={stopStream}
@@ -919,6 +933,7 @@ export const ChatPanel = ({
                 agentBinding.kind === 'external' ? (
                   <AcpSessionSelectors
                     meta={acpSessionMeta}
+                    source={acpSessionMetaSource}
                     loading={acpSessionMetaLoading}
                     onSelectMode={handleAcpSelectMode}
                     onSelectModel={handleAcpSelectModel}

@@ -41,10 +41,7 @@ const nodeOriginSchema = z
 
 const nodeRefSchema = z.object({
   id: z.string().min(1),
-  // Built-in node types, or any external host-extension type (e.g. `lcos/*`
-  // canvas host renderers). Consistent with the RFS space_commands layer,
-  // which already validates nodeType as a plain string.
-  type: z.enum(CANVAS_NODE_TYPES).or(z.string()),
+  type: z.enum(CANVAS_NODE_TYPES),
   label: z.string().optional(),
   origin: nodeOriginSchema.optional(),
 });
