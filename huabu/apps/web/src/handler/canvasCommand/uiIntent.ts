@@ -41,7 +41,6 @@ import type {
   FrameSizing,
   NodeSize,
   CanvasNodeType,
-  ExternalCanvasNodeType,
   Point,
   RecentAction,
   EdgeStyle,
@@ -64,8 +63,7 @@ export type CanvasUiSelectionMode = 'replace' | 'toggle';
 
 export interface AddNodeInput {
   id?: CanvasNodeId;
-  /** Built-in node type OR an external host-extension type (`lcos/*` namespace). */
-  nodeType: CanvasNodeType | ExternalCanvasNodeType;
+  nodeType: CanvasNodeType;
   data?: Record<string, unknown>;
   size?: NodeSize;
   naturalDimensions?: { width: number; height: number };

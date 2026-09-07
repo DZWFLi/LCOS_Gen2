@@ -12,7 +12,6 @@ import {
   type CanvasCommand,
   type CanvasNodeId,
   type CanvasNodeType,
-  ExternalCanvasNodeType,
   type NodeSize,
   type Point,
 } from '@huabu/shared';
@@ -32,7 +31,7 @@ import type { NestableNode } from '@huabu/shared/canvas-engine';
 // Sizing helpers
 // ---------------------------------------------------------------------------
 function computeMediaSize(
-  nodeType: CanvasNodeType | ExternalCanvasNodeType,
+  nodeType: CanvasNodeType,
   naturalWidth: number,
   naturalHeight: number,
 ): NodeSize {
@@ -71,7 +70,7 @@ const VIEWPORT_FALLBACK_HEIGHT =
  * centring still feels balanced until measured dimensions are available.
  */
 function viewportCenterAnchor(
-  nodeType: CanvasNodeType | ExternalCanvasNodeType,
+  nodeType: CanvasNodeType,
   size: NodeSize | undefined,
   center: Point,
   staggerIndex: number,
@@ -100,8 +99,7 @@ function materializeAddNode(
   node: Extract<CanvasCommand, { type: 'CREATE_NODES' }>['nodes'][number];
   traceNode: {
     id: CanvasNodeId;
-    /** Built-in or external host-extension node type. */
-    type: CanvasNodeType | ExternalCanvasNodeType;
+    type: CanvasNodeType;
     label?: string;
   };
 } {

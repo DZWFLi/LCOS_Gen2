@@ -14,7 +14,6 @@ import {
 import { Button } from '../../components/Common/Button';
 import { cn } from '../../components/Common/cn';
 import { Canvas } from '../../components/Panels/Canvas/Canvas';
-import { useLcosCanvasProps } from '../../lcos/useLcosCanvasProps';
 import { openUserHandbook } from '../../config/handbook';
 import { isElectron } from '../../hooks/useElectron';
 
@@ -39,11 +38,6 @@ export const CenterArea: React.FC<CenterAreaProps> = ({
   // when running inside the desktop shell.
   const isElectronApp = isElectron();
 
-  // LCOS host seam: project the project's Core artifacts as Huabu nodes and
-  // reconcile on open. `PROJECT_ID` env picks the project the canvas hosts.
-  const lcosProjectId = (import.meta.env.PROJECT_ID as string | undefined) ?? 'disposable-mvp-sample';
-  const lcosProps = useLcosCanvasProps(lcosProjectId);
-
   return (
     <div className="relative flex h-full w-full overflow-hidden">
       {/* Canvas – always mounted; width controlled via CSS. Hosts the
@@ -52,7 +46,7 @@ export const CenterArea: React.FC<CenterAreaProps> = ({
           stay over the canvas portion instead of bleeding into the
           expanded preview panel on the right. */}
       <div className="relative h-full w-full overflow-hidden">
-        <Canvas shortcutsDisabled={canvasShortcutsDisabled} {...lcosProps} />
+        <Canvas shortcutsDisabled={canvasShortcutsDisabled} />
 
         {/* Floating top-right controls — in the browser these host the
             Handbook / Settings / Chat-toggle group. In Electron the

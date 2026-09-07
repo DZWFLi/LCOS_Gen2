@@ -16,7 +16,6 @@
  */
 
 import type { CanvasNodeType, NodeOrigin } from '../canvas/node.js';
-import type { ExternalCanvasNodeType } from '../canvas/command.js';
 
 /**
  * Shared minimum for any node reference, regardless of consumer
@@ -25,8 +24,7 @@ import type { ExternalCanvasNodeType } from '../canvas/command.js';
  */
 export interface NodeRefBase {
   id: string;
-  /** Built-in node type or an external host-extension type (e.g. `lcos/*`). */
-  type: CanvasNodeType | ExternalCanvasNodeType;
+  type: CanvasNodeType;
   /** Display name; omitted when blank (e.g. fresh frame). */
   label?: string;
 }

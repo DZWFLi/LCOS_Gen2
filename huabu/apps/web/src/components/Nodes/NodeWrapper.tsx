@@ -62,10 +62,6 @@ import { NodeTakeoverLayer } from './NodeTakeoverLayer.tsx';
 import { SemanticPlaceholder } from './SemanticPlaceholder.tsx';
 
 import type { CanvasNodeType, NodeData } from './types.ts';
-import type { BaseNodeData, ExternalCanvasNodeType } from '@huabu/shared';
-import { CANVAS_NODE_TYPES } from '@huabu/shared';
-import { LcosNodePresentationProvider, resolveInteractionPhase } from '@/lcos-seam/nodePresentation';
-import type { LcosNodePresentationInput } from '@/lcos-seam/nodePresentation';
 import type { TakeoverState } from '@/config/nodeTakeover';
 
 const OverlayPortal = memo(
@@ -179,10 +175,8 @@ OverlayPortal.displayName = 'OverlayPortal';
 
 interface NodeWrapperProps {
   id: string;
-  /** Built-in node data, or the shared base shape supplied by external host renderers (`lcos/*`). */
-  data: NodeData | BaseNodeData;
-  /** Built-in node type or an external host-extension type. */
-  type: CanvasNodeType | ExternalCanvasNodeType;
+  data: NodeData;
+  type: CanvasNodeType;
   selected?: boolean;
 
   allowOverflow?: boolean;
@@ -325,7 +319,6 @@ export const NodeWrapper = memo(
 
     const [hovered, setHovered] = useState(false);
     const [editing, setEditing] = useState(false);
-    const [isResizing, setIsResizing] = useState(false);
 
     // Open the canvas's `nodes/` folder so the user can resolve a
     // duplicate-sidecar collision by hand (keep one file, delete the
@@ -402,29 +395,6 @@ export const NodeWrapper = memo(
       return (node?.style?.height as number) || node?.measured?.height || 200;
     });
 
-    // LCOS seam (Phase A02): the adaptive presentation input every host
-    // renderer can consume. Screen size = world × zoom; DPR only affects
-    // crispness, never density. Memoized on the selectors above so pan/zoom
-    // of OTHER nodes never re-renders this one.
-    const lcosPresentationInput = useMemo<LcosNodePresentationInput>(
-      () => ({
-        worldWidth: nodeWidth,
-        worldHeight: nodeHeight,
-        zoom,
-        dpr: typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1,
-        screenWidth: nodeWidth * zoom,
-        screenHeight: nodeHeight * zoom,
-        phase: resolveInteractionPhase({
-          editing,
-          selected: selected ?? false,
-          isDragging,
-          isResizing,
-          hovered,
-        }),
-      }),
-      [nodeWidth, nodeHeight, zoom, editing, selected, isDragging, isResizing, hovered],
-    );
-
     // Deliberately *not* `resolveHeightMode`: this asks whether a layout
     // height exists to fill, not who owns it. An auto note now carries a
     // materialized number and must stretch to it exactly like a pinned
@@ -477,7 +447,6 @@ export const NodeWrapper = memo(
         event: unknown,
         params: { x: number; y: number; width: number; height: number },
       ) => {
-        setIsResizing(true);
         onNodeResizeStart();
 
         const state = useCanvasStore.getState();
@@ -525,7 +494,6 @@ export const NodeWrapper = memo(
         _event: unknown,
         params: { x: number; y: number; width: number; height: number },
       ) => {
-        setIsResizing(false);
         endResizePreview();
         const snapped = getResizeSnappedRect();
         const ctx = getResizeContext();
@@ -639,7 +607,6 @@ export const NodeWrapper = memo(
       type !== 'frame';
 
     return (
-      <LcosNodePresentationProvider value={lcosPresentationInput}>
       <>
         {showResizer && (
           <NodeResizer
@@ -662,12 +629,11 @@ export const NodeWrapper = memo(
           selectedCount === 1 &&
           !isDragging &&
           !hasStrokeSelection &&
-          !hasPendingConnect &&
-          (CANVAS_NODE_TYPES as readonly string[]).includes(type) && (
+          !hasPendingConnect && (
             <NodeFloatingToolbar
               id={id}
-              type={type as CanvasNodeType}
-              data={data as NodeData}
+              type={type}
+              data={data}
               toolbar={toolbar}
               actions={actions}
             />
@@ -768,8 +734,8 @@ export const NodeWrapper = memo(
           */}
           {supportsMinimalLOD && (
             <SemanticPlaceholder
-              type={type as CanvasNodeType}
-              data={data as NodeData}
+              type={type}
+              data={data}
               active={isMinimal}
               width={nodeWidth}
               height={nodeHeight}
@@ -876,7 +842,6 @@ export const NodeWrapper = memo(
           />
         </div>
       </>
-    </LcosNodePresentationProvider>
     );
   },
 );

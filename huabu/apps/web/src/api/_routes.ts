@@ -54,6 +54,8 @@ export const routes = {
   canvasImport: '/canvas/import',
   canvas: (canvasId: string) => `/canvas/${enc(canvasId)}`,
   canvasExecute: (canvasId: string) => `/canvas/${enc(canvasId)}/execute`,
+  canvasMoveSelection: (canvasId: string) =>
+    `/canvas/${enc(canvasId)}/move-selection`,
   canvasReferences: (canvasId: string) => `/canvas/${enc(canvasId)}/references`,
   canvasPreviewScene: (canvasId: string) =>
     `/canvas/${enc(canvasId)}/preview-scene`,
@@ -138,12 +140,6 @@ export const routes = {
   acpAgentlet: '/acp/agentlet',
   acpAgentletRestart: '/acp/agentlet/restart',
   acpRuntimeConfig: '/acp/runtime-config',
-  acpThreadSession: (threadId: string) =>
-    `/acp/threads/${enc(threadId)}/session`,
-  acpThreadCommands: (threadId: string, canvasId?: string) => {
-    const params = canvasId ? `?canvasId=${enc(canvasId)}` : '';
-    return `/acp/threads/${enc(threadId)}/commands${params}`;
-  },
   acpThreadCachedMeta: (
     threadId: string,
     canvasId?: string,

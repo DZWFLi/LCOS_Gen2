@@ -13,7 +13,7 @@
 
 import React from 'react';
 import type { NodeProps } from '@xyflow/react';
-import type { BaseNodeData } from '@huabu/shared';
+import type { CanvasNodeType } from '@huabu/shared';
 
 import { resolvePresentationDensity } from '@local-creative-os/web-gen2';
 
@@ -35,8 +35,8 @@ export const LcosArtifactNode: React.FC<NodeProps> = ({
   return (
     <NodeWrapper
       id={id}
-      data={data as BaseNodeData}
-      type={'lcos/artifact'}
+      data={data as never}
+      type={'lcos/artifact' as unknown as CanvasNodeType}
       selected={selected}
       resizable
       keepAspectRatio={false}

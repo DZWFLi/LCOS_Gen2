@@ -103,24 +103,9 @@ type CanvasNodeCreateInputByType<T extends CanvasNodeType> = {
   selectOnCreate?: boolean;
 };
 
-/**
- * External (host-app) node type: any string outside the built-in set. The
- * RFS/agent layer already accepts arbitrary node type strings at runtime
- * (the space_commands schema validates nodeType as a plain string); this
- * alias lets typed UI callers create nodes whose renderers come from a
- * canvas host extension (namespaced keys such as `lcos/*`). Built-in keys
- * keep their per-type data checks via the mapped union below.
- */
-export type ExternalCanvasNodeType = string & {};
-
-export type CanvasNodeCreateInput =
-  | {
-      [T in CanvasNodeType]: CanvasNodeCreateInputByType<T>;
-    }[CanvasNodeType]
-  | (Omit<CanvasNodeCreateInputByType<CanvasNodeType>, 'nodeType' | 'data'> & {
-      nodeType: ExternalCanvasNodeType;
-      data?: Record<string, unknown>;
-    });
+export type CanvasNodeCreateInput = {
+  [T in CanvasNodeType]: CanvasNodeCreateInputByType<T>;
+}[CanvasNodeType];
 
 export type CanvasNodeDataMergePatch = {
   nodeId: CanvasNodeId;
