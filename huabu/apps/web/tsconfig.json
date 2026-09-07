@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@local-creative-os/web-gen2": ["../../../apps/web-gen2/src/index.ts"],
+      "@local-creative-os/domain": ["../../../packages/domain/src/index.ts"],
+      "@local-creative-os/contracts": ["../../../packages/contracts/src/index.ts"]
     },
     "types": ["node"],
     "target": "ES2022",
