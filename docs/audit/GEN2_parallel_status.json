@@ -1,0 +1,149 @@
+{
+  "schema": "lcos-gen2-parallel-status/1",
+  "updatedAt": "2026-09-14T01:20:00+08:00",
+  "repo": "E:/OS开发/LCOS_GEN2",
+  "branch": "frontend-reconstruction-v2",
+  "baseCommit": "685e02a5b7c0f698cdf356436f975cbd4b573964",
+  "mergeToMain": "forbidden",
+  "push": "forbidden",
+  "notes": "状态只允许 planned/scouting/running/partial/ready_for_review/reviewed/merged；施工 Agent 不得自标 reviewed。",
+  "tracks": [
+    {
+      "taskId": "R0",
+      "owner": "integrator",
+      "worktree": "E:/OS开发/LCOS_GEN2",
+      "ownedPaths": ["scripts/e2e/**", "docs/audit/**", "huabu/apps/web/vite.config.ts", "根 config"],
+      "status": "running",
+      "outputCommit": "d249395",
+      "evidencePaths": [
+        "docs/audit/GEN2_R0_未提交Diff冻结证据_20260914.md",
+        "docs/audit/GEN2_R0_Readback_20260914.md"
+      ],
+      "gaps": [
+        "R0-A TextNode 临时特例已撤（TextNode.tsx 回到 HEAD，工作区仅剩 ensureCanvas 候选 Diff）",
+        "R0-5 已建：scripts/e2e/_harness.mjs + r0-harness-selftest.mjs；反证 ok=0 / missing=1 / error=1（证据：本文件同目录夜间日志）",
+        "R0-6 未做：隔离 fixture/profile（需 Core DB/端口 + Huabu HUABU_DATA_DIR + Vite 代理 43121 硬编码点可配）",
+        "R0-3 未做：ensureCanvas(recreate) 独立提交与 8 步验收（stale→recreate→persist→reload）",
+        "R0 docs 切片（audit/handoff）未提交"
+      ],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R3-professional-scout",
+      "owner": "scout (read-only)",
+      "worktree": "无（只读仓库）",
+      "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R3_Professional_WorkPacket.md"],
+      "status": "scouting",
+      "outputCommit": null,
+      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R3_Professional_WorkPacket.md"],
+      "gaps": [
+        "AssemblyBody.tsx:88 对所有 item 写死 {kind:'artifactView'} → 投放必然 'Artifact view not found.'；后端 assembly-apply-service 已按 kind 支持（纯前端接错）",
+        "Reader 无 file-record content client（后端 GET /projects/:pid/file-records/:fid/content 存在）；L79 自述正文未接",
+        "Professional Window 是静态 right:24/top:88 单窗，与 Dock/Composer z-40 重叠，无 drag/resize/dock/split/safeRect",
+        "4 条 INTEGRATOR_REQUEST（窗口拓扑字段 / file content client / occupiedRect / 依赖裁定）"
+      ],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R4-context-scout",
+      "owner": "scout (read-only)",
+      "worktree": "无（只读仓库）",
+      "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R4_Context_Portal_Atlas_Temporal_WorkPacket.md"],
+      "status": "scouting",
+      "outputCommit": null,
+      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R4_Context_Portal_Atlas_Temporal_WorkPacket.md"],
+      "gaps": [
+        "前端无 presentation 持久化 client（/presentations 只有 Core 实现）→ 各现场 presentation 与 reload 恢复不可达",
+        "Collection/Portal 物种永不可达：seam 只拿 entityType，nodeSpecies 仅映射 4 类；body 已注册但永不命中",
+        "Rhine motion donor 源码不存在（仅合同文本）→ 只能按文档自研 C 级并录屏，禁写'采用 Rhine donor'",
+        "Portal 唯一机械须改为 Huabu canvasRef + SpacePreviewViewport，禁用 navigate('/canvas/:id')",
+        "5 条 INTEGRATOR_REQUEST"
+      ],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R5-workflow-scout",
+      "owner": "scout (read-only)",
+      "worktree": "无（只读仓库）",
+      "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R5_Workflow_Hand_Cards_WorkPacket.md"],
+      "status": "scouting",
+      "outputCommit": null,
+      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R5_Workflow_Hand_Cards_WorkPacket.md"],
+      "gaps": [
+        "手牌是 fixed 白卡 modal；'打开（尚未接入）'是 span 非按钮，打开/续接零调用链",
+        "取用写 entityType: item.kind（'workflow'）被 composerController + Core runs.ts 双重静默剔除 → 引用 100% 丢失（静默数据丢失 bug）",
+        "Workflow scope 无 producer + Main 不读 presentation membership → Main 上无法到达工作流集合",
+        "RhineLabUI motion donor 无源码，需用户裁定 CSS-only 或引库",
+        "5 条 INTEGRATOR_REQUEST"
+      ],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R1",
+      "owner": "integrator",
+      "worktree": "E:/OS开发/LCOS_GEN2",
+      "ownedPaths": ["huabu/apps/web/src/lcos/ui/**", "token/gallery"],
+      "status": "planned",
+      "outputCommit": null,
+      "evidencePaths": [],
+      "gaps": ["待 R0 退出条件满足后开始"],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R2",
+      "owner": "integrator",
+      "worktree": "E:/OS开发/LCOS_GEN2",
+      "ownedPaths": ["huabu/apps/web/src/lcos/{host,nodes,shell,ui}/**", "apps/web-gen2 共享 client/controller"],
+      "status": "planned",
+      "outputCommit": null,
+      "evidencePaths": [],
+      "gaps": ["统一 NodePresentation Junction / renderer registry / GEN1 placement / T3 Action Arc / 旧 chrome 退役 待做", "R2 完成后必须停下等用户第一次视觉验收"],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R3",
+      "owner": "worker (未启动)",
+      "worktree": "E:/OS开发/worktrees/LCOS_Gen2_R3_Professional（R2 验收通过后才创建）",
+      "ownedPaths": ["huabu/apps/web/src/lcos/professional/**", "huabu/apps/web/src/lcos/assembly/**", "huabu/apps/web/src/lcos/reader/**"],
+      "status": "planned",
+      "outputCommit": null,
+      "evidencePaths": ["parallel-prep/R3_Professional_WorkPacket.md"],
+      "gaps": ["blockedBy: R2_ACCEPTED_COMMIT"],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R4",
+      "owner": "worker (未启动)",
+      "worktree": "E:/OS开发/worktrees/LCOS_Gen2_R4_Context（R2 验收通过后才创建）",
+      "ownedPaths": ["huabu/apps/web/src/lcos/context/**", "huabu/apps/web/src/lcos/portal/**", "huabu/apps/web/src/lcos/surfaces/context/**"],
+      "status": "planned",
+      "outputCommit": null,
+      "evidencePaths": ["parallel-prep/R4_Context_Portal_Atlas_Temporal_WorkPacket.md"],
+      "gaps": ["blockedBy: R2_ACCEPTED_COMMIT", "R4 Portal 先合入，R5 不得复制第二套 portal"],
+      "reviewedBy": null
+    },
+    {
+      "taskId": "R5",
+      "owner": "worker (未启动)",
+      "worktree": "E:/OS开发/worktrees/LCOS_Gen2_R5_Workflow（R2 验收通过后才创建）",
+      "ownedPaths": ["huabu/apps/web/src/lcos/workflow/**", "huabu/apps/web/src/lcos/surfaces/workflow/**"],
+      "status": "planned",
+      "outputCommit": null,
+      "evidencePaths": ["parallel-prep/R5_Workflow_Hand_Cards_WorkPacket.md"],
+      "gaps": ["blockedBy: R2_ACCEPTED_COMMIT + R4 Portal 合入"],
+      "reviewedBy": null
+    }
+  ],
+  "sharedOwnershipReservedByIntegrator": [
+    "packages/contracts/**",
+    "packages/domain/**",
+    "apps/local-core/**",
+    "apps/web-gen2 共享 client/controller",
+    "huabu/apps/web/src/lcos/ui/**",
+    "huabu/apps/web/src/lcos/shell/**",
+    "huabu/apps/web/src/lcos/host/**",
+    "huabu/apps/web/src/lcos/nodes/**",
+    "共享 renderer/registry/token",
+    "根 package/lock/config"
+  ]
+}
