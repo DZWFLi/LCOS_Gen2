@@ -46,7 +46,10 @@
       "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R3_Professional_WorkPacket.md"],
       "status": "scouting",
       "outputCommit": null,
-      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R3_Professional_WorkPacket.md"],
+      "evidencePaths": [
+        "E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R3_Professional_WorkPacket.md",
+        "docs/audit/GEN2_scout_delta_R2_20260914.md"
+      ],
       "gaps": [
         "AssemblyBody.tsx:88 对所有 item 写死 {kind:'artifactView'} → 投放必然 'Artifact view not found.'；后端 assembly-apply-service 已按 kind 支持（纯前端接错）",
         "Reader 无 file-record content client（后端 GET /projects/:pid/file-records/:fid/content 存在）；L79 自述正文未接",
@@ -59,10 +62,10 @@
       "taskId": "R4-context-scout",
       "owner": "scout (read-only)",
       "worktree": "无（只读仓库）",
-      "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R4_Context_Portal_Atlas_Temporal_WorkPacket.md"],
+      "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R4_Context_Portal_Atlas_Temporal_WorkPacket.md", "docs/audit/GEN2_scout_delta_R2_20260914.md"],
       "status": "scouting",
       "outputCommit": null,
-      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R4_Context_Portal_Atlas_Temporal_WorkPacket.md"],
+      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R4_Context_Portal_Atlas_Temporal_WorkPacket.md", "docs/audit/GEN2_scout_delta_R2_20260914.md"],
       "gaps": [
         "前端无 presentation 持久化 client（/presentations 只有 Core 实现）→ 各现场 presentation 与 reload 恢复不可达",
         "Collection 物种仍不可达：seam 只拿 entityType，nodeSpecies 仅映射 4 类；Collection body 已注册但永不命中（Portal 侧已由 R1 打通：原生 canvasRef 节点即 portal 物种 producer）",
@@ -76,10 +79,10 @@
       "taskId": "R5-workflow-scout",
       "owner": "scout (read-only)",
       "worktree": "无（只读仓库）",
-      "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R5_Workflow_Hand_Cards_WorkPacket.md"],
+      "ownedPaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R5_Workflow_Hand_Cards_WorkPacket.md", "docs/audit/GEN2_scout_delta_R2_20260914.md"],
       "status": "scouting",
       "outputCommit": null,
-      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R5_Workflow_Hand_Cards_WorkPacket.md"],
+      "evidencePaths": ["E:/Codex 项目/OS开发/deliverables/GEN2_新前端重新总装正本_20260913/parallel-prep/R5_Workflow_Hand_Cards_WorkPacket.md", "docs/audit/GEN2_scout_delta_R2_20260914.md"],
       "gaps": [
         "手牌是 fixed 白卡 modal；'打开（尚未接入）'是 span 非按钮，打开/续接零调用链",
         "取用写 entityType: item.kind（'workflow'）被 composerController + Core runs.ts 双重静默剔除 → 引用 100% 丢失（静默数据丢失 bug）",
