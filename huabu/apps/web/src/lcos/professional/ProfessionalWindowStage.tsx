@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
 
 import { ArtifactReaderBody } from './ArtifactReaderBody';
 import { AssemblyBody } from './AssemblyBody';
+import { ConversationWorkViewBody } from './ConversationWorkViewBody';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
@@ -96,14 +97,15 @@ function ProfessionalBody({
     case 'reader':
       return <ArtifactReaderBody projectId={projectId} artifactId={target} />;
     case 'conversation':
+      return <ConversationWorkViewBody projectId={projectId} connectedConversationId={target} />;
     case 'runtime-doctor':
     case 'capture-inbox':
     case 'connector-source':
-      // Wave 8 / 5 收尾接入；当前诚实展示
+      // Wave 5 收尾/Wave 8 接入；当前诚实展示
       return (
         <div className="flex h-full min-h-[220px] items-center justify-center">
           <span className="text-sm" style={{ color: lcosTokens.color.muted.light }}>
-            {bodyKey} body（Wave 8 接入）
+            {bodyKey} body（后续 Wave 接入）
           </span>
         </div>
       );

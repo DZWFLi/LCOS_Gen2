@@ -76,8 +76,8 @@ function MetaLine({ text }: { text: string }): JSX.Element {
   );
 }
 
-/** 各物种 body 内容（frame 由 LcosSpeciesBody 统一提供）。 */
-function SpeciesBodyContent({
+/** 各物种 body 内容（frame 由 LcosSpeciesBody / GlythNodeBody 提供）。 */
+export function LcosSpeciesBodyContent({
   species,
   title,
   density,
@@ -271,7 +271,7 @@ function LcosSpeciesBody({
         padding: 10,
       }}
     >
-      <SpeciesBodyContent species={species} title={title} density={density} />
+      <LcosSpeciesBodyContent species={species} title={title} density={density} />
     </div>
   );
 }
