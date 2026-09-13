@@ -2,7 +2,7 @@
 // 并挂载唯一 Huabu Canvas（Wave 1 原生节点；Wave 2 换 CanvasHostBoundary 收口 chrome）。
 // 加载副作用（loadCanvas/switchCanvas）沿用 CanvasPage 机制（KEEP KERNEL）。
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Loading } from '@/components/Common/Loading';
@@ -18,7 +18,8 @@ export interface LcosWorksiteStageProps {
   readonly projectId: string;
   readonly surface: LcosSurfaceKey;
   readonly canvasId?: string;
-  readonly ensureCanvas: () => Promise<string | undefined>;
+  /** recreate=true：引用失效恢复（重建画布并回写）。 */
+  readonly ensureCanvas: (recreate?: boolean) => Promise<string | undefined>;
   readonly ensureError?: string;
 }
 
@@ -30,6 +31,8 @@ export function LcosWorksiteStage({
   ensureError,
 }: LcosWorksiteStageProps): React.JSX.Element {
   const { t } = useTranslation();
+  const [recreating, setRecreating] = useState(false);
+  const recreateError = useRef<string | undefined>(undefined);
   const loadCanvas = useCanvasStore((s) => s.loadCanvas);
   const switchCanvas = useCanvasStore((s) => s.switchCanvas);
   const isLoading = useCanvasStore((s) => s.isLoading);
@@ -82,13 +85,43 @@ export function LcosWorksiteStage({
 
   if (canvasNotFound) {
     return (
-      <div className="flex h-full w-full items-center justify-center" style={{ background: lcosTokens.color.canvas.light }}>
+      <div className="flex h-full w-full flex-col items-center justify-center gap-4" style={{ background: lcosTokens.color.canvas.light }}>
         <LcosSurfaceFeedback
           presentation="disabled"
           message={t('canvasPage.notFoundDescription')}
           onAction={() => void loadCanvas(canvasId)}
           actionLabel="重试加载"
         />
+        {/* 恢复：画布引用失效/缺失 → 重建并回写 workspace.canvasId（真实 createCanvas） */}
+        <button
+          type="button"
+          disabled={recreating}
+          onClick={() => {
+            setRecreating(true);
+            recreateError.current = undefined;
+            void ensureCanvas(true)
+              .then((created) => {
+                if (created) return loadCanvas(created);
+                recreateError.current = '现场画布建立失败（检查 Core 连接与权限）';
+                return undefined;
+              })
+              .catch((error: unknown) => {
+                recreateError.current = error instanceof Error ? error.message : String(error);
+              })
+              .finally(() => setRecreating(false));
+          }}
+          className="rounded-full px-5 font-medium"
+          style={{
+            background: lcosTokens.color.inverse.light,
+            color: lcosTokens.color.textOnInverse.light,
+            minHeight: 44,
+          }}
+        >
+          {recreating ? '建立中…' : '重新建立现场画布（回写 workspace）'}
+        </button>
+        {recreateError.current && (
+          <span className="text-xs" style={{ color: lcosTokens.color.danger }}>{recreateError.current}</span>
+        )}
       </div>
     );
   }

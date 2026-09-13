@@ -20,7 +20,7 @@ const SURFACE_ICON: Readonly<Record<LcosSurfaceKey, React.ComponentType<{ classN
 export interface LcosRailwayProps {
   readonly projectId: string;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
+  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
 }
 
 export function LcosRailway({ projectId, canvasBySurface, ensureCanvas }: LcosRailwayProps): React.JSX.Element {

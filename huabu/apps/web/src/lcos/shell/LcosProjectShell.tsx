@@ -15,6 +15,7 @@ import { LcosComposerHost } from '../composer/LcosComposerHost';
 import { ProfessionalWindowStage } from '../professional/ProfessionalWindowStage';
 import { ContextWorksite } from '../surfaces/context/ContextWorksite';
 import { MainWorksite } from '../surfaces/main/MainWorksite';
+import { WorkflowWorksite } from '../surfaces/workflow/WorkflowWorksite';
 import { lcosTokens } from '../ui/lcosTokens';
 
 export interface LcosProjectShellProps {
@@ -23,7 +24,7 @@ export interface LcosProjectShellProps {
   readonly surface: LcosSurfaceKey;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
   readonly surfaceByWorkspace: Readonly<Map<string, LcosSurfaceKey>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
+  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
   readonly ensureError?: string;
   readonly shellStatus: 'loading' | 'ready' | 'offline' | 'error';
   readonly onRetry: () => void;
@@ -81,6 +82,13 @@ export function LcosProjectShell({
                 surface={active}
                 canvasId={canvasBySurface[active]}
                 canvasBySurface={canvasBySurface}
+                ensureCanvas={ensureCanvas}
+              />
+            ) : active === 'workflow' ? (
+              <WorkflowWorksite
+                projectId={projectId}
+                surface={active}
+                canvasId={canvasBySurface[active]}
                 ensureCanvas={ensureCanvas}
               />
             ) : (

@@ -20,7 +20,7 @@ export interface ContextWorksiteProps {
   readonly surface: LcosSurfaceKey;
   readonly canvasId?: string;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
+  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
 }
 
 export function ContextWorksite({
@@ -48,7 +48,7 @@ export function ContextWorksite({
         projectId={projectId}
         surface={surface}
         canvasId={canvasId}
-        ensureCanvas={() => ensureCanvas(surface)}
+        ensureCanvas={(recreate?: boolean) => ensureCanvas(surface, recreate)}
       />
 
       {/* Context 现场仪器入口（真实动作；Temporal Rail 常驻右侧） */}

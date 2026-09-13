@@ -11,7 +11,7 @@ export interface MainWorksiteProps {
   readonly surface: LcosSurfaceKey;
   readonly canvasId?: string;
   readonly canvasNodeCount: number;
-  readonly ensureCanvas: () => Promise<string | undefined>;
+  readonly ensureCanvas: (recreate?: boolean) => Promise<string | undefined>;
   readonly ensureError?: string;
 }
 

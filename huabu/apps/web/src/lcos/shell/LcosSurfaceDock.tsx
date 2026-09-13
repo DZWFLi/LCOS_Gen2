@@ -12,7 +12,7 @@ import { lcosHitArea, lcosTokens } from '../ui/lcosTokens';
 export interface LcosSurfaceDockProps {
   readonly projectId: string;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
+  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
 }
 
 export function LcosSurfaceDock({

@@ -27,7 +27,11 @@ export interface LcosWorksiteState {
   readonly surfaceCanvasId: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
   /** workspaceId → surface（FocusWhere 跨现场行映射用）。 */
   readonly surfaceByWorkspace: Readonly<Map<string, LcosSurfaceKey>>;
-  ensureSurfaceCanvas(surface: LcosSurfaceKey): Promise<string | undefined>;
+  /**
+   * 建立/确保现场画布；force=true 时即使已有映射也重建（引用失效恢复路径，
+   * 见 WorksiteStage「重新建立现场画布」）。
+   */
+  ensureSurfaceCanvas(surface: LcosSurfaceKey, force?: boolean): Promise<string | undefined>;
   retry(): void;
 }
 
@@ -87,9 +91,9 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
   }, [projectId, reloadKey]);
 
   const ensureSurfaceCanvas = useCallback(
-    async (surface: LcosSurfaceKey): Promise<string | undefined> => {
+    async (surface: LcosSurfaceKey, force = false): Promise<string | undefined> => {
       const existing = surfaceCanvasId[surface];
-      if (existing) return existing;
+      if (!force && existing) return existing;
       const workspace = workspaces.find((w) => w.preferredSurface === SURFACE_PREFERENCE[surface]);
       if (!workspace) return undefined;
       try {
