@@ -13,6 +13,7 @@ import { SURFACE_LABEL, useLcosShellStore, type LcosSurfaceKey } from './lcosShe
 import { LcosWorksiteStage } from './LcosWorksiteStage';
 import { LcosComposerHost } from '../composer/LcosComposerHost';
 import { ProfessionalWindowStage } from '../professional/ProfessionalWindowStage';
+import { ContextWorksite } from '../surfaces/context/ContextWorksite';
 import { MainWorksite } from '../surfaces/main/MainWorksite';
 import { lcosTokens } from '../ui/lcosTokens';
 
@@ -63,7 +64,7 @@ export function LcosProjectShell({
         </div>
       ) : (
         <>
-          {/* 工作现场舞台（唯一 Canvas）；Main 用主现场壳（空态引导），Context/Workflow 用通用舞台 */}
+          {/* 工作现场舞台（唯一 Canvas）；Main/Context/Workflow 各自壳（空态/仪器差异） */}
           <div className="absolute inset-0">
             {active === 'main' ? (
               <MainWorksite
@@ -73,6 +74,14 @@ export function LcosProjectShell({
                 canvasNodeCount={mainNodeCount}
                 ensureCanvas={() => ensureCanvas(active)}
                 ensureError={ensureError}
+              />
+            ) : active === 'context' ? (
+              <ContextWorksite
+                projectId={projectId}
+                surface={active}
+                canvasId={canvasBySurface[active]}
+                canvasBySurface={canvasBySurface}
+                ensureCanvas={ensureCanvas}
               />
             ) : (
               <LcosWorksiteStage
