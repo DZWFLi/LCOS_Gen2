@@ -37,6 +37,7 @@ export type LcosProfessionalBodyKey =
   | 'assembly'
   | 'reader'
   | 'conversation'
+  | 'portal-preview'
   | 'runtime-doctor'
   | 'capture-inbox'
   | 'connector-source';

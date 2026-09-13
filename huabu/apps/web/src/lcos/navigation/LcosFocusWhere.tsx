@@ -141,12 +141,12 @@ export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
       aria-label="对象位置（在哪）"
     >
       <div className="mb-2 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: lcosTokens.color.text.light }}>
+        <span className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: lcosTokens.color.text }}>
           <Focus className="h-4 w-4" aria-hidden />
           在哪 · {entityTitle ? `实体 ${entityTitle.slice(0, 24)}` : ''}
         </span>
         <button type="button" aria-label="关闭" onClick={() => setOpen(false)} className="rounded-full p-1">
-          <X className="h-4 w-4" style={{ color: lcosTokens.color.muted.light }} />
+          <X className="h-4 w-4" style={{ color: lcosTokens.color.muted }} />
         </button>
       </div>
 
@@ -157,7 +157,7 @@ export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
       )}
 
       {rows.length === 0 && !unavailable && (
-        <div className="px-3 py-2 text-sm" style={{ color: lcosTokens.color.muted.light }}>
+        <div className="px-3 py-2 text-sm" style={{ color: lcosTokens.color.muted }}>
           在当前现场没有其它投影
         </div>
       )}
@@ -172,20 +172,20 @@ export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
                   style={{ background: row.current ? 'rgba(0,0,0,0.04)' : 'transparent', minHeight: 44 }}
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: lcosTokens.color.muted.light }} aria-hidden />
-                    <span className="truncate text-sm" style={{ color: lcosTokens.color.text.light }}>{row.label}</span>
+                    <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: lcosTokens.color.muted }} aria-hidden />
+                    <span className="truncate text-sm" style={{ color: lcosTokens.color.text }}>{row.label}</span>
                     {row.entityTitle && (
-                      <span className="truncate text-xs" style={{ color: lcosTokens.color.muted.light }}>{row.entityTitle}</span>
+                      <span className="truncate text-xs" style={{ color: lcosTokens.color.muted }}>{row.entityTitle}</span>
                     )}
                   </span>
                   {row.current ? (
-                    <span className="shrink-0 text-[10px]" style={{ color: lcosTokens.color.muted.light }}>当前现场</span>
+                    <span className="shrink-0 text-[10px]" style={{ color: lcosTokens.color.muted }}>当前现场</span>
                   ) : goSurface ? (
                     <button
                       type="button"
                       onClick={() => void switchWorksite(goSurface)}
                       className="flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
-                      style={{ color: lcosTokens.color.text.light }}
+                      style={{ color: lcosTokens.color.text }}
                     >
                       前往
                       <ArrowRight className="h-3 w-3" aria-hidden />

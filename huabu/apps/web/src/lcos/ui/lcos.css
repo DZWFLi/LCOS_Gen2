@@ -1,6 +1,21 @@
 /* LCOS 前端样式（Wave 9 收口）：静态脉冲占位、焦点可见轮廓、玻璃降级、reduced-motion 覆盖。
  * 只服务 lcos UI，不改 Huabu 设计系统；由 index.css 顶部 @import 引入。 */
 
+/* LCOS 本地 token（Figma manifest 无对应 variable，登记在 FIGMA_SOURCE_LEDGER 的 honest remainder；
+ * 其余所有颜色一律来自生成的 lcos-tokens.css，本文件不得再出现第二处 hex）。 */
+:root {
+  /* 状态色：Figma 统一导出包只覆盖 Blue/Pin 组，没有 danger 语义变量。 */
+  --lcos-status-danger: #c25b4e;
+  /* 专业窗口浮起的投影与描边：Figma 没有对应的 EFFECT 样式（Shadow/Default 是 4/16 的近距投影）。 */
+  --lcos-window-shadow: 0 12px 40px rgba(40, 48, 58, 0.14);
+  --lcos-window-border: var(--lcos-color-border-subtle);
+}
+
+/* 玻璃岛底色：跟随主题的 surface（Figma 变量），避免深色模式下仍用浅色底。 */
+:root {
+  --lcos-glass-bg: color-mix(in srgb, var(--gen2-surface) 72%, transparent);
+}
+
 /* 加载/运行态符号：不用无限旋转（reduced-motion 安全），用低幅透明度呼吸。
  * Figma SurfaceFeedback 规范：loading 用静态符号代替旋转。 */
 .lcos-static-pulse {

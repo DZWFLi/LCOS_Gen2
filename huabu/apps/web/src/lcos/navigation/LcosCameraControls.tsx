@@ -19,7 +19,7 @@ export function LcosCameraControls(): React.JSX.Element {
     // 44px 热区（Figma Global HUD camera 岛高 52 = 44 + 上下 4 内边距）。
     width: 44,
     height: 44,
-    color: lcosTokens.color.text.light,
+    color: lcosTokens.color.text,
     borderRadius: 12,
   } as const;
 
@@ -32,13 +32,13 @@ export function LcosCameraControls(): React.JSX.Element {
       <button type="button" aria-label="缩小" title="缩小" style={btn} onClick={() => requestCamera('zoom-out')}>
         <Minus className="h-4 w-4" />
       </button>
-      <span className="w-12 text-center text-xs tabular-nums" style={{ color: lcosTokens.color.muted.light }}>
+      <span className="w-12 text-center text-xs tabular-nums" style={{ color: lcosTokens.color.muted }}>
         {Math.round(zoom * 100)}%
       </span>
       <button type="button" aria-label="放大" title="放大" style={btn} onClick={() => requestCamera('zoom-in')}>
         <Plus className="h-4 w-4" />
       </button>
-      <span aria-hidden className="mx-0.5 h-5 w-px" style={{ background: lcosTokens.color.borderSubtle.light }} />
+      <span aria-hidden className="mx-0.5 h-5 w-px" style={{ background: lcosTokens.color.borderSubtle }} />
       <button type="button" aria-label="适合画面" title="适合画面" style={btn} onClick={() => requestCamera('fit')}>
         <Maximize2 className="h-4 w-4" />
       </button>

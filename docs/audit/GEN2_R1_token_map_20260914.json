@@ -1,0 +1,1109 @@
+{
+  "generatedBy": "scripts/figma/gen-lcos-tokens.mjs",
+  "source": "E:/Codex 项目/OS开发/exports/LCOS_Figma_全设计包_20260913/unification/token-style-component-manifest.json",
+  "fileKey": "nFUdroLvI5qJZuYTW8h2rF",
+  "exportedAt": "2026-09-13T15:37:47+08:00",
+  "variableCount": 32,
+  "themedCount": 17,
+  "rootOnlyCount": 15,
+  "effectStyles": [
+    {
+      "name": "LCOS / 通透玻璃 / HUD",
+      "key": "3438dd140920731b6f0da346d104777f277c273d"
+    },
+    {
+      "name": "Shadow/Default",
+      "key": "701aa6631661a3e11f8381cdeeb023793f2a4c37"
+    }
+  ],
+  "effectCssVars": {
+    "--lcos-glass-blur": {
+      "value": "4px",
+      "source": "GLASS.radius（style「LCOS / 通透玻璃 / HUD」，refraction 0.2800000011920929、depth 8 无法用 CSS 表达）"
+    },
+    "--lcos-glass-shadow": {
+      "value": "0px 4px 12px -3px rgba(40,48,58,0.075), 0px 0px 1px rgba(40,48,58,0.1)",
+      "source": "「LCOS / 通透玻璃 / HUD」可见 DROP_SHADOW"
+    },
+    "--lcos-shadow-default": {
+      "value": "0px 4px 16px rgba(0,0,0,0.04)",
+      "source": "「Shadow/Default」可见 DROP_SHADOW"
+    }
+  },
+  "svgAssets": [
+    {
+      "nodeId": "5385:212",
+      "path": "svg/5385-212.svg",
+      "method": "FIGMA_NATIVE_SVG_STRING"
+    },
+    {
+      "nodeId": "5385:215",
+      "path": "svg/5385-215.svg",
+      "method": "FIGMA_NATIVE_SVG_STRING"
+    },
+    {
+      "nodeId": "5385:218",
+      "path": "svg/5385-218.svg",
+      "method": "FIGMA_NATIVE_SVG_STRING"
+    }
+  ],
+  "semanticCorrections": {
+    "ColorPin": "明确设置的颜色分组偏好及成员关系；不是业务关系、运行状态或节点类型。00页5409:2纠正旧description的“持久关系”简写。",
+    "ProjectShell": "Main基础变体是共用外壳；Context/Workflow实例覆盖选中态，并不改变其现场身份。"
+  },
+  "rows": [
+    {
+      "figmaVariableId": "VariableID:179:15790",
+      "figmaName": "Color/Palette/Blue Text",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-color-palette-blue-text",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#107D98",
+      "dark": "#DEF7F9",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0.062745101749897,
+          "g": 0.4901960790157318,
+          "b": 0.5960784554481506,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.8705882430076599,
+          "g": 0.9686274528503418,
+          "b": 0.9764705896377563,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0.062745101749897,
+          "g": 0.4901960790157318,
+          "b": 0.5960784554481506,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.8705882430076599,
+          "g": 0.9686274528503418,
+          "b": 0.9764705896377563,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:179:15791",
+      "figmaName": "Color/Palette/Blue Bg",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-color-palette-blue-bg",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#DEF7F9",
+      "dark": "#0088F1",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0.8705882430076599,
+          "g": 0.9686274528503418,
+          "b": 0.9764705896377563,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0,
+          "g": 0.5333333611488342,
+          "b": 0.9450980424880981,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0.8705882430076599,
+          "g": 0.9686274528503418,
+          "b": 0.9764705896377563,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0,
+          "g": 0.5333333611488342,
+          "b": 0.9450980424880981,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:20708",
+      "figmaName": "Color/Bg/Base",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-surface-base",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#FFFFFF",
+      "dark": "#111111",
+      "valuesByMode": {
+        "2:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.06666667014360428,
+          "g": 0.06666667014360428,
+          "b": 0.06666667014360428,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.06666667014360428,
+          "g": 0.06666667014360428,
+          "b": 0.06666667014360428,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:20710",
+      "figmaName": "Color/Bg/Inverse",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-color-bg-inverse",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#202020",
+      "dark": "#FCFCFC",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0.125490203499794,
+          "g": 0.125490203499794,
+          "b": 0.125490203499794,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.9882352948188782,
+          "g": 0.9882352948188782,
+          "b": 0.9882352948188782,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0.125490203499794,
+          "g": 0.125490203499794,
+          "b": 0.125490203499794,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.9882352948188782,
+          "g": 0.9882352948188782,
+          "b": 0.9882352948188782,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:20711",
+      "figmaName": "Color/Text/On Inverse",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-color-text-on-inverse",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#FFFFFF",
+      "dark": "#000000",
+      "valuesByMode": {
+        "2:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:20712",
+      "figmaName": "Color/Text/Primary",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-text-primary",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#000000",
+      "dark": "#FFFFFF",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 1
+        },
+        "5:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 1
+        },
+        "5:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:20718",
+      "figmaName": "Color/Border/Default",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-color-border-default",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "rgba(0,0,0,0.12)",
+      "dark": "rgba(255,255,255,0.15)",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 0.11999999731779099
+        },
+        "5:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 0.15000000596046448
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 0.11999999731779099
+        },
+        "5:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 0.15000000596046448
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:20719",
+      "figmaName": "Color/Text/Secondary",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-color-text-secondary",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#646464",
+      "dark": "#B4B4B4",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0.3921568691730499,
+          "g": 0.3921568691730499,
+          "b": 0.3921568691730499,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.7058823704719543,
+          "g": 0.7058823704719543,
+          "b": 0.7058823704719543,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0.3921568691730499,
+          "g": 0.3921568691730499,
+          "b": 0.3921568691730499,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.7058823704719543,
+          "g": 0.7058823704719543,
+          "b": 0.7058823704719543,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:28501",
+      "figmaName": "Color/Bg/Elevated",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-surface-elevated",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "#F9F9F9",
+      "dark": "#191919",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0.9764705896377563,
+          "g": 0.9764705896377563,
+          "b": 0.9764705896377563,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.09803921729326248,
+          "g": 0.09803921729326248,
+          "b": 0.09803921729326248,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0.9764705896377563,
+          "g": 0.9764705896377563,
+          "b": 0.9764705896377563,
+          "a": 1
+        },
+        "5:0": {
+          "r": 0.09803921729326248,
+          "g": 0.09803921729326248,
+          "b": 0.09803921729326248,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:28502",
+      "figmaName": "Color/Border/Subtle",
+      "collection": "Theme",
+      "type": "COLOR",
+      "cssName": "--lcos-color-border-subtle",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "rgba(0,0,0,0.09)",
+      "dark": "rgba(255,255,255,0.11)",
+      "valuesByMode": {
+        "2:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 0.09000000357627869
+        },
+        "5:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 0.10999999940395355
+        }
+      },
+      "resolvedValuesByMode": {
+        "2:0": {
+          "r": 0,
+          "g": 0,
+          "b": 0,
+          "a": 0.09000000357627869
+        },
+        "5:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 0.10999999940395355
+        }
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:2:40646",
+      "figmaName": "Radius/Control",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-radius-control",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "8px",
+      "dark": "8px",
+      "valuesByMode": {
+        "2:0": 8,
+        "5:0": 8
+      },
+      "resolvedValuesByMode": {
+        "2:0": 8,
+        "5:0": 8
+      },
+      "scopes": [
+        "CORNER_RADIUS"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7468",
+      "figmaName": "Radius/Card Medium",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-radius-medium",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "16px",
+      "dark": "16px",
+      "valuesByMode": {
+        "2:0": 16,
+        "5:0": 16
+      },
+      "resolvedValuesByMode": {
+        "2:0": 16,
+        "5:0": 16
+      },
+      "scopes": [
+        "CORNER_RADIUS"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7469",
+      "figmaName": "Radius/Capsule",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-radius-capsule",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "999px",
+      "dark": "999px",
+      "valuesByMode": {
+        "2:0": 999,
+        "5:0": 999
+      },
+      "resolvedValuesByMode": {
+        "2:0": 999,
+        "5:0": 999
+      },
+      "scopes": [
+        "CORNER_RADIUS"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7471",
+      "figmaName": "Radius/Card Small",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-radius-card-small",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "12px",
+      "dark": "12px",
+      "valuesByMode": {
+        "2:0": 12,
+        "5:0": 12
+      },
+      "resolvedValuesByMode": {
+        "2:0": 12,
+        "5:0": 12
+      },
+      "scopes": [
+        "CORNER_RADIUS"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7474",
+      "figmaName": "Space/x6",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-space-12",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "12px",
+      "dark": "12px",
+      "valuesByMode": {
+        "2:0": 12,
+        "5:0": 12
+      },
+      "resolvedValuesByMode": {
+        "2:0": 12,
+        "5:0": 12
+      },
+      "scopes": [
+        "GAP"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7475",
+      "figmaName": "Space/x8",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-space-16",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "16px",
+      "dark": "16px",
+      "valuesByMode": {
+        "2:0": 16,
+        "5:0": 16
+      },
+      "resolvedValuesByMode": {
+        "2:0": 16,
+        "5:0": 16
+      },
+      "scopes": [
+        "GAP"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7476",
+      "figmaName": "Space/x3",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-space-x3",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "6px",
+      "dark": "6px",
+      "valuesByMode": {
+        "2:0": 6,
+        "5:0": 6
+      },
+      "resolvedValuesByMode": {
+        "2:0": 6,
+        "5:0": 6
+      },
+      "scopes": [
+        "GAP"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7477",
+      "figmaName": "Space/x2",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-space-x2",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "4px",
+      "dark": "4px",
+      "valuesByMode": {
+        "2:0": 4,
+        "5:0": 4
+      },
+      "resolvedValuesByMode": {
+        "2:0": 4,
+        "5:0": 4
+      },
+      "scopes": [
+        "GAP"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7478",
+      "figmaName": "Space/x1",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-space-x1",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "2px",
+      "dark": "2px",
+      "valuesByMode": {
+        "2:0": 2,
+        "5:0": 2
+      },
+      "resolvedValuesByMode": {
+        "2:0": 2,
+        "5:0": 2
+      },
+      "scopes": [
+        "GAP"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7479",
+      "figmaName": "Space/x4",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-space-8",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "8px",
+      "dark": "8px",
+      "valuesByMode": {
+        "2:0": 8,
+        "5:0": 8
+      },
+      "resolvedValuesByMode": {
+        "2:0": 8,
+        "5:0": 8
+      },
+      "scopes": [
+        "GAP"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:3:7482",
+      "figmaName": "Space/x12",
+      "collection": "Theme",
+      "type": "FLOAT",
+      "cssName": "--lcos-space-24",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "theme-collection",
+      "light": "24px",
+      "dark": "24px",
+      "valuesByMode": {
+        "2:0": 24,
+        "5:0": 24
+      },
+      "resolvedValuesByMode": {
+        "2:0": 24,
+        "5:0": 24
+      },
+      "scopes": [
+        "GAP"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5037:51",
+      "figmaName": "界面/canvas",
+      "collection": "Gen2 / 节点场景",
+      "type": "COLOR",
+      "cssName": "--gen2-canvas",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#FAFAFA",
+      "dark": "#0A0A0A",
+      "valuesByMode": {
+        "5037:0": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:50"
+        },
+        "5037:1": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:50"
+        }
+      },
+      "resolvedValuesByMode": {
+        "5037:0": {
+          "r": 0.9803921580314636,
+          "g": 0.9803921580314636,
+          "b": 0.9803921580314636,
+          "a": 1
+        },
+        "5037:1": {
+          "r": 0.03921568766236305,
+          "g": 0.03921568766236305,
+          "b": 0.03921568766236305,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL",
+        "TEXT_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5037:53",
+      "figmaName": "界面/surface",
+      "collection": "Gen2 / 节点场景",
+      "type": "COLOR",
+      "cssName": "--gen2-surface",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#FFFFFF",
+      "dark": "#1F1F1F",
+      "valuesByMode": {
+        "5037:0": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:52"
+        },
+        "5037:1": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:52"
+        }
+      },
+      "resolvedValuesByMode": {
+        "5037:0": {
+          "r": 1,
+          "g": 1,
+          "b": 1,
+          "a": 1
+        },
+        "5037:1": {
+          "r": 0.12156862765550613,
+          "g": 0.12156862765550613,
+          "b": 0.12156862765550613,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL",
+        "TEXT_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5037:55",
+      "figmaName": "界面/raised",
+      "collection": "Gen2 / 节点场景",
+      "type": "COLOR",
+      "cssName": "--gen2-raised",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#F5F5F5",
+      "dark": "#262626",
+      "valuesByMode": {
+        "5037:0": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:54"
+        },
+        "5037:1": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:54"
+        }
+      },
+      "resolvedValuesByMode": {
+        "5037:0": {
+          "r": 0.9607843160629272,
+          "g": 0.9607843160629272,
+          "b": 0.9607843160629272,
+          "a": 1
+        },
+        "5037:1": {
+          "r": 0.14901961386203766,
+          "g": 0.14901961386203766,
+          "b": 0.14901961386203766,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL",
+        "TEXT_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5037:57",
+      "figmaName": "界面/text",
+      "collection": "Gen2 / 节点场景",
+      "type": "COLOR",
+      "cssName": "--gen2-text",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#242625",
+      "dark": "#F5F5F5",
+      "valuesByMode": {
+        "5037:0": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:56"
+        },
+        "5037:1": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:56"
+        }
+      },
+      "resolvedValuesByMode": {
+        "5037:0": {
+          "r": 0.1411764770746231,
+          "g": 0.14901961386203766,
+          "b": 0.14509804546833038,
+          "a": 1
+        },
+        "5037:1": {
+          "r": 0.9607843160629272,
+          "g": 0.9607843160629272,
+          "b": 0.9607843160629272,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL",
+        "TEXT_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5037:59",
+      "figmaName": "界面/muted",
+      "collection": "Gen2 / 节点场景",
+      "type": "COLOR",
+      "cssName": "--gen2-muted",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#69716B",
+      "dark": "#BDC4BF",
+      "valuesByMode": {
+        "5037:0": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:58"
+        },
+        "5037:1": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:58"
+        }
+      },
+      "resolvedValuesByMode": {
+        "5037:0": {
+          "r": 0.4117647111415863,
+          "g": 0.4431372582912445,
+          "b": 0.41960784792900085,
+          "a": 1
+        },
+        "5037:1": {
+          "r": 0.7411764860153198,
+          "g": 0.7686274647712708,
+          "b": 0.7490196228027344,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL",
+        "TEXT_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5037:61",
+      "figmaName": "界面/border",
+      "collection": "Gen2 / 节点场景",
+      "type": "COLOR",
+      "cssName": "--gen2-border",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#E7E9E7",
+      "dark": "#383A3B",
+      "valuesByMode": {
+        "5037:0": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:60"
+        },
+        "5037:1": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:60"
+        }
+      },
+      "resolvedValuesByMode": {
+        "5037:0": {
+          "r": 0.9058823585510254,
+          "g": 0.9137254953384399,
+          "b": 0.9058823585510254,
+          "a": 1
+        },
+        "5037:1": {
+          "r": 0.21960784494876862,
+          "g": 0.22745098173618317,
+          "b": 0.23137255012989044,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "STROKE_COLOR"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5037:63",
+      "figmaName": "界面/accent",
+      "collection": "Gen2 / 节点场景",
+      "type": "COLOR",
+      "cssName": "--gen2-accent",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#547464",
+      "dark": "#9BC0A8",
+      "valuesByMode": {
+        "5037:0": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:62"
+        },
+        "5037:1": {
+          "type": "VARIABLE_ALIAS",
+          "id": "VariableID:5037:62"
+        }
+      },
+      "resolvedValuesByMode": {
+        "5037:0": {
+          "r": 0.3294117748737335,
+          "g": 0.45490196347236633,
+          "b": 0.3921568691730499,
+          "a": 1
+        },
+        "5037:1": {
+          "r": 0.6078431606292725,
+          "g": 0.7529411911964417,
+          "b": 0.658823549747467,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL",
+        "TEXT_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5393:330",
+      "figmaName": "Pin/violet",
+      "collection": "LCOS / 导航颜色",
+      "type": "COLOR",
+      "cssName": "--lcos-pin-violet",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#6371DD",
+      "dark": "#6371DD",
+      "valuesByMode": {
+        "5393:0": {
+          "r": 0.38823530077934265,
+          "g": 0.4431372582912445,
+          "b": 0.8666666746139526,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "5393:0": {
+          "r": 0.38823530077934265,
+          "g": 0.4431372582912445,
+          "b": 0.8666666746139526,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5393:331",
+      "figmaName": "Pin/teal",
+      "collection": "LCOS / 导航颜色",
+      "type": "COLOR",
+      "cssName": "--lcos-pin-teal",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#238E86",
+      "dark": "#238E86",
+      "valuesByMode": {
+        "5393:0": {
+          "r": 0.13725490868091583,
+          "g": 0.5568627715110779,
+          "b": 0.5254902243614197,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "5393:0": {
+          "r": 0.13725490868091583,
+          "g": 0.5568627715110779,
+          "b": 0.5254902243614197,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:5393:332",
+      "figmaName": "Pin/amber",
+      "collection": "LCOS / 导航颜色",
+      "type": "COLOR",
+      "cssName": "--lcos-pin-amber",
+      "nameSource": "codeSyntax.WEB",
+      "themeScope": "theme-collection",
+      "light": "#CE824C",
+      "dark": "#CE824C",
+      "valuesByMode": {
+        "5393:0": {
+          "r": 0.8078431487083435,
+          "g": 0.5098039507865906,
+          "b": 0.2980392277240753,
+          "a": 1
+        }
+      },
+      "resolvedValuesByMode": {
+        "5393:0": {
+          "r": 0.8078431487083435,
+          "g": 0.5098039507865906,
+          "b": 0.2980392277240753,
+          "a": 1
+        }
+      },
+      "scopes": [
+        "FRAME_FILL",
+        "SHAPE_FILL"
+      ]
+    },
+    {
+      "figmaVariableId": "VariableID:958c351c86cb46ca4f1b4201c60b41e07381089d/55:1681",
+      "figmaName": "line height/12",
+      "collection": "VariableCollectionId:39b5044c5d9980b4df5c2e43c6348b0d548c142f/55:1589",
+      "type": "FLOAT",
+      "cssName": "--lcos-line-height-12",
+      "nameSource": "manifest.suggestedCssAlias",
+      "themeScope": "library-single-mode",
+      "light": "16px",
+      "dark": "16px",
+      "valuesByMode": {
+        "55:0": 16
+      },
+      "resolvedValuesByMode": {
+        "55:0": 16
+      },
+      "scopes": [
+        "ALL_SCOPES"
+      ]
+    }
+  ]
+}

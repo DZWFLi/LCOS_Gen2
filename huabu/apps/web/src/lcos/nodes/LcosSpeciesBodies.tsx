@@ -25,14 +25,14 @@ import type { ComponentType, JSX } from 'react';
 
 /** 物种 → 主识别色（边缘/角标；浓度统一收敛，不作为唯一区分）。 */
 export const SPECIES_ACCENT: Readonly<Record<LcosNodeSpecies, string>> = {
-  source: lcosTokens.color.muted.light,
-  working: lcosTokens.color.info.light,
+  source: lcosTokens.color.muted,
+  working: lcosTokens.color.info,
   draft: lcosTokens.color.pinAmber,
   'context-reference': lcosTokens.color.pinTeal,
   run: lcosTokens.color.pinViolet,
-  decision: lcosTokens.color.accent.light,
-  glyth: lcosTokens.color.inverse.light,
-  collection: lcosTokens.color.info.light,
+  decision: lcosTokens.color.accent,
+  glyth: lcosTokens.color.inverse,
+  collection: lcosTokens.color.info,
   'workflow-collection': lcosTokens.color.pinTeal,
   portal: lcosTokens.color.pinViolet,
   'prompt-frame': lcosTokens.color.pinAmber,
@@ -62,7 +62,7 @@ function SpeciesChip({ label, accent }: { label: string; accent: string }): JSX.
 
 function TitleLine({ text }: { text: string }): JSX.Element {
   return (
-    <span className="line-clamp-2 text-sm font-semibold leading-snug" style={{ color: lcosTokens.color.text.light }}>
+    <span className="line-clamp-2 text-sm font-semibold leading-snug" style={{ color: lcosTokens.color.text }}>
       {text}
     </span>
   );
@@ -70,7 +70,7 @@ function TitleLine({ text }: { text: string }): JSX.Element {
 
 function MetaLine({ text }: { text: string }): JSX.Element {
   return (
-    <span className="text-[11px]" style={{ color: lcosTokens.color.muted.light }}>
+    <span className="text-[11px]" style={{ color: lcosTokens.color.muted }}>
       {text}
     </span>
   );
@@ -174,7 +174,7 @@ export function LcosSpeciesBodyContent({
             <span
               aria-hidden
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-              style={{ background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light }}
+              style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse }}
             >
               {(title.charAt(0) || '?').toUpperCase()}
             </span>
@@ -263,7 +263,7 @@ function LcosSpeciesBody({
       data-lcos-density={density}
       className="flex h-full w-full flex-col overflow-hidden"
       style={{
-        background: lcosTokens.color.surface.light,
+        background: lcosTokens.color.surface,
         border: `1px solid ${SPECIES_ACCENT[species]}2E`,
         borderRadius: lcosTokens.radius.cardSmall,
         boxShadow: lcosTokens.shadow.default,

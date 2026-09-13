@@ -13,15 +13,15 @@ export function TemporalRail(): React.JSX.Element {
       className="pointer-events-auto fixed right-6 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-3 px-3 py-4"
       style={{ ...lcosGlassStyle, width: 65, maxHeight: 555, minHeight: 120 }}
     >
-      <Clock3 className="h-4 w-4" style={{ color: lcosTokens.color.muted.light }} aria-hidden />
+      <Clock3 className="h-4 w-4" style={{ color: lcosTokens.color.muted }} aria-hidden />
       <div className="flex flex-col items-center gap-1">
-        <span className="text-[10px] font-medium" style={{ color: lcosTokens.color.muted.light }}>时间轨</span>
-        <span className="text-center text-[9px] leading-tight" style={{ color: lcosTokens.color.muted.light }}>
+        <span className="text-[10px] font-medium" style={{ color: lcosTokens.color.muted }}>时间轨</span>
+        <span className="text-center text-[9px] leading-tight" style={{ color: lcosTokens.color.muted }}>
           时间分组尚未接入
         </span>
       </div>
-      <span className="h-px w-8" style={{ background: lcosTokens.color.borderSubtle.light }} aria-hidden />
-      <span className="text-[9px] leading-tight" style={{ color: lcosTokens.color.muted.light }}>
+      <span className="h-px w-8" style={{ background: lcosTokens.color.borderSubtle }} aria-hidden />
+      <span className="text-[9px] leading-tight" style={{ color: lcosTokens.color.muted }}>
         不绘制虚假刻度
       </span>
     </div>

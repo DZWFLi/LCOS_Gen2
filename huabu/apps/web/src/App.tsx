@@ -27,10 +27,10 @@ import { NativeMenuBridge } from './components/Shell/NativeMenuBridge';
 import { WindowChrome } from './components/Shell/WindowChrome';
 import { useDisableBrowserZoom } from './hooks/useDisableBrowserZoom';
 import { useInputModeListener } from './hooks/useInputMode';
+import { lcosProjectRoutes } from './lcos/app/LcosAppRoutes';
 import CanvasListPage from './pages/CanvasListPage';
 import { WorkspaceLoadingScreen } from './pages/WorkspaceLoadingScreen';
 import WorkspaceSetupPage from './pages/WorkspaceSetupPage';
-import { lcosProjectRoutes } from './lcos/app/LcosAppRoutes';
 import { drainPendingSaves } from './store/canvasStore.ts';
 import { useWorkspaceStore } from './store/workspaceStore';
 
@@ -45,6 +45,13 @@ const CanvasPage = lazy(() => import('./pages/CanvasPage/CanvasPage.tsx'));
 
 const playgroundRoutes = import.meta.env.DEV
   ? [
+      {
+        // LCOS 共享组件族 gallery（R1）：全部 Figma variant 的唯一对照面
+        path: '/playground/lcos-families',
+        lazy: async () => ({
+          Component: (await import('./lcos/dev/LcosFamiliesGalleryPage')).default,
+        }),
+      },
       {
         path: '/playground/components',
         lazy: async () => ({

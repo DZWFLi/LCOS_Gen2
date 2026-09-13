@@ -74,19 +74,19 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
   };
 
   return (
-    <section data-lcos-waiting-input className="flex flex-col gap-2 rounded-xl p-3" style={{ background: lcosTokens.color.surface.light, border: `1px solid ${lcosTokens.color.borderSubtle.light}` }}>
+    <section data-lcos-waiting-input className="flex flex-col gap-2 rounded-xl p-3" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
       <div className="flex items-center gap-1.5">
         <CircleHelp className="h-3.5 w-3.5" style={{ color: lcosTokens.color.pinAmber }} aria-hidden />
-        <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text.light }}>
+        <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>
           等待输入 · Run {runId.slice(0, 8)}
         </span>
-        <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised.light, color: lcosTokens.color.muted.light }}>
+        <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}>
           {runStatus}
         </span>
       </div>
 
       {state === 'loading' && (
-        <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>读取待回答问题…</span>
+        <span className="text-xs" style={{ color: lcosTokens.color.muted }}>读取待回答问题…</span>
       )}
       {state === 'error' && (
         <span className="text-xs" style={{ color: lcosTokens.color.danger }}>
@@ -94,14 +94,14 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
         </span>
       )}
       {state === 'ready' && !request && (
-        <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>
+        <span className="text-xs" style={{ color: lcosTokens.color.muted }}>
           该 Run 当前没有待回答问题
         </span>
       )}
 
       {state === 'ready' && request && (
         <>
-          <p className="text-sm leading-relaxed" style={{ color: lcosTokens.color.text.light }}>
+          <p className="text-sm leading-relaxed" style={{ color: lcosTokens.color.text }}>
             {request.question}
           </p>
 
@@ -119,8 +119,8 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
                     }
                     className="rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
                     style={{
-                      background: on ? lcosTokens.color.inverse.light : lcosTokens.color.raised.light,
-                      color: on ? lcosTokens.color.textOnInverse.light : lcosTokens.color.text.light,
+                      background: on ? lcosTokens.color.inverse : lcosTokens.color.raised,
+                      color: on ? lcosTokens.color.textOnInverse : lcosTokens.color.text,
                       minHeight: 30,
                     }}
                   >
@@ -139,7 +139,7 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
               aria-label="回答待输入问题"
               placeholder="输入回答（失败会保留内容）"
               className="w-full resize-none rounded-lg px-2.5 py-2 text-sm outline-none"
-              style={{ background: lcosTokens.color.raised.light, color: lcosTokens.color.text.light }}
+              style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}
             />
           )}
 
@@ -149,11 +149,11 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
               disabled={submitting || (answerText.trim() === '' && selected.length === 0)}
               onClick={submit}
               className="rounded-full px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-              style={{ background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light, minHeight: 32 }}
+              style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse, minHeight: 32 }}
             >
               {submitting ? '提交中…' : '提交回答'}
             </button>
-            {receipt && <span className="text-xs" style={{ color: lcosTokens.color.accent.light }}>{receipt}</span>}
+            {receipt && <span className="text-xs" style={{ color: lcosTokens.color.accent }}>{receipt}</span>}
           </div>
           {errorDetail && submitting === false && receipt === null && (
             <span className="text-xs" style={{ color: lcosTokens.color.danger }}>回答失败 · {errorDetail}（输入已保留）</span>

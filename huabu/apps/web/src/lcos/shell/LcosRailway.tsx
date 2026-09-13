@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 
 import { LCOS_SURFACES, useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
 import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
-import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
+import { LcosRailwayView, type LcosRailwayViewItem } from '../ui/families';
 
 const SURFACE_ICON: Readonly<Record<LcosSurfaceKey, React.ComponentType<{ className?: string }>>> = {
   main: PanelsTopLeft,
@@ -51,48 +51,24 @@ export function LcosRailway({ projectId, canvasBySurface, ensureCanvas }: LcosRa
      
   }, [projectId]);
 
-  const renderItem = (surface: LcosSurfaceKey, label: string, entryKey: string): React.JSX.Element => {
-    const Icon = SURFACE_ICON[surface];
-    const active = activeSurface === surface;
-    return (
-      <button
-        key={entryKey}
-        type="button"
-        data-lcos-railway-item={surface}
-        data-lcos-railway-active={active ? 'true' : 'false'}
-        disabled={busySurface === surface}
-        onClick={() => void switchWorksite(surface)}
-        title={label}
-        aria-label={label}
-        className="flex flex-col items-center justify-center gap-1 rounded-lg transition-colors"
-        style={{
-          width: 52,
-          height: 52,
-          color: active ? lcosTokens.color.textOnInverse.light : lcosTokens.color.muted.light,
-          background: active ? lcosTokens.color.inverse.light : 'transparent',
-        }}
-      >
-        <Icon className="h-5 w-5" />
-        {active && <span className="text-[9px] font-medium" aria-hidden />}
-      </button>
-    );
-  };
+  const items: readonly LcosRailwayViewItem[] = LCOS_SURFACES.map(({ key, label }) => ({
+    key,
+    label,
+    icon: SURFACE_ICON[key],
+    selected: activeSurface === key,
+    disabled: busySurface === key,
+  }));
 
   return (
     <div
       data-lcos-railway
-      className="pointer-events-auto fixed left-6 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5 px-1.5 py-2"
-      style={lcosGlassStyle}
+      className="pointer-events-auto fixed left-6 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-2"
     >
-      {LCOS_SURFACES.map(({ key, label }) => renderItem(key, label, `surface-${key}`))}
-      {railInfo && (
-        <span
-          className="mt-1 max-w-[10rem] rounded-full px-2 py-1 text-center text-[9px] leading-tight"
-          style={{ color: lcosTokens.color.muted.light, background: lcosTokens.color.raised.light }}
-        >
-          {railInfo}
-        </span>
-      )}
+      <LcosRailwayView
+        items={items}
+        onSelect={(key) => void switchWorksite(key as LcosSurfaceKey)}
+        footer={railInfo}
+      />
     </div>
   );
 }

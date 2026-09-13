@@ -1,22 +1,71 @@
 # FIGMA_SOURCE_LEDGER — 设计→源码采用账本
 
-初始化：2026-09-13。Figma 文件 `nFUdroLvI5qJZuYTW8h2rF`；机器入口 = `deliverables/GEN2_新前端重新总装正本_20260913/references/figma-master/unification/`（nine-surface-status.json、token-style-component-manifest.json、specs/、structures/）。
+初始化：2026-09-13。最近更新：2026-09-14（R1：设计系统 → 代码组件族）。
+Figma 文件 `nFUdroLvI5qJZuYTW8h2rF`；机器入口 = `deliverables/GEN2_新前端重新总装正本_20260913/references/figma-master/unification/`，本地全设计包 `E:\Codex 项目\OS开发\exports\LCOS_Figma_全设计包_20260913\unification\`（含 `token-style-component-manifest.json`、`specs/`、`structures/`、`svg/`）。
+
 PNG 只做整页视觉走查；exact node/component/variant、variables/styles、structures/specs、SVG 才是施工输入。
+读结构包用 `node scripts/figma/describe-structure.mjs <name> [--name <regex>] [--depth N]`（打印 pad/gap/尺寸/圆角/fill/boundVariables）。
+
+---
+
+## 一、R1 共享组件族（本 Wave 的主交付）
+
+| ID | Figma component（nodeId / 变体轴） | 变体（取值 = Figma 原文） | 实测几何（structures/） | 代码 target | production caller | gallery | 生产可达变体 | 未达变体归属 |
+|---|---|---|---|---|---|---|---|---|
+| FIG-FAM-SHELL | 统一 / ProjectShell `5386:436`｜轴 `现场` | Main / Context / Workflow（1440×900） | 变体框 1440×900 | `lcos/shell/LcosProjectShell.tsx`（根 `data-lcos-family="project-shell"`） | `lcos/app/LcosProjectRoute.tsx` → `/projects/:id/:surface` | `/playground/lcos-families` ProjectShell 段 | Main（生产 Main 路由实测 `data-lcos-variant=main`） | Context/Workflow 同组件同路由，切现场即达 |
+| FIG-FAM-NAV | 统一 / NavigatorIsland `5384:367`｜轴 `状态` | 静息 / 彩色标 / 搜索 / hover / pressed / focus / disabled / loading / error / degraded / selected（11） | h48 · pad 6/8 · gap 8 · r999 · 键 36（图标 19）· 输入 210 · Pin 角标 22 r11 → 静息 52、彩色标 184、搜索 402 | `lcos/ui/families/LcosNavigatorIslandView.tsx` + `lcos/navigation/LcosNavigatorIsland.tsx`（Core 搜索接线） | 同上容器：`LcosGlobalHud` → 生产 Main（实测 island 存在） | 11 状态全渲染（e2e 断言唯一取值数 = 11） | 静息 / 搜索 / loading / error / disabled | 彩色标 需 Core Pin/颜色组 producer（T2/T6）；hover/pressed/focus/selected/degraded 由 CSS 与键盘真实触发 |
+| FIG-FAM-RAIL | 统一 / Railway `5385:283`｜轴 `目的地` | 1 / 4 | pad 8 · gap 6 · item 36 r10 · r26 → 目的地=1 52×52、=4 52×178 | `lcos/ui/families/LcosRailwayView.tsx` + `lcos/shell/LcosRailway.tsx` | `LcosGlobalHud` → 生产 Main（实测三现场 `data-lcos-variant-count=3`） | 目的地 1 与 4 两变体 | 三现场真实切换；disabled = 切换中 | —（Railway 无未达态） |
+| FIG-FAM-WIN | 统一 / ProfessionalWindowChrome `5387:331`｜轴 `布局` + TEXT 窗口标题 | 浮动 / 停靠 / 分组（640×48） | h48 · pad 8/24 · gap 8 · 标题 22 行高 · 图标键 32 r999 | `lcos/ui/families/LcosWindowChrome.tsx` | `lcos/professional/ProfessionalWindowStage.tsx`（阅读/Assembly/工作台共用顶栏） | 3 布局 + 标题 + 多窗口 tab | 浮动（生产仅浮动；停靠/分组需 Stage 拓扑动作） | 停靠 / 分组 → R3（Professional/Assembly/Reader） |
+| FIG-FAM-FB | 统一 / SurfaceFeedback `5391:357`｜轴 `呈现` | loading / empty / normal / focus / disabled / error / recovery（7） | h38 · pad 10/12 · gap 8 · r16 · 图标 18 | `lcos/ui/LcosSurfaceFeedback.tsx`（族根 `data-lcos-family="surface-feedback"`） | Assembly / Atlas / Workflow 等宿主（loading/empty/error） | 7 呈现全渲染 | loading / empty / error / normal | focus / disabled / recovery 由宿主按需给，不伪造 |
+| FIG-FAM-COL | 集合 / 上下文跨视图 `5333:96`（轴 `组织` × `呈现`）+ 工作流跨视图 `5334:46`（轴 `呈现`） | 事情/时间 × 总览/主画布/装配；工作流现场/主画布/装配（248×244） | 变体框 248×244（page 13 未随 structures/ 导出 → 内层细分几何不在本次证据内） | `lcos/ui/families/LcosCollectionSurface.tsx` | `lcos/surfaces/context/ContextAtlasStage.tsx`（体块 248×244、列间 32） | 9 体块（6 + 3） | 总览（组织轴已可达：事情/时间真实切换） | 主画布 / 装配 / 工作流跨视图 → R4 |
+| FIG-FAM-CARD | 工作流 / 取用卡 `5335:110`｜轴 `状态` | 静息 / 悬停 / 预览 / 已选目标 / 草稿中 / 不可用 / 键盘焦点（7）（224×324 3:4） | 变体框 224×324（同上，page 13 未导出结构） | `lcos/ui/families/LcosTaskCard.tsx` | `lcos/surfaces/workflow/WorkflowCardPool.tsx` | 7 状态全渲染 | 静息 / 草稿中（真实 draft 引用）/ 不可用（无可引用身份）/ 悬停 / 键盘焦点（:focus-within） | 预览 / 已选目标 → R5（Workflow/Hand/Cards） |
+| FIG-FAM-PORTAL | 产品 Portal / 目标预览状态 `5348:1151`｜轴 `状态` | 可预览 / 加载中 / 旧缓存 / 部分预览 / 预览失败 / 目标缺失（6）（440×360） | 变体框 440×360（同上，page 13 未导出结构） | `lcos/ui/families/LcosPortalPreview.tsx` | `lcos/professional/PortalPreviewBody.tsx`（窗口 body）+ `lcos/nodes/PortalNodeBody.tsx`（双击触发，读原生 `canvasRef.data.targetCanvasId`） | 6 状态全渲染 | 可预览 / 目标缺失（由真实 targetCanvasId 推导） | 加载中 / 旧缓存 / 部分预览 / 预览失败 → R4（窗口内渲染目标现场） |
+
+族根契约：一律带 `data-lcos-family="<kebab>"` + `data-lcos-variant="<Figma 取值原文>"`（导航/铁路等另有 `data-lcos-*` 部件锚点）。变体样式集中在 `lcos/ui/families/lcos-families.css`，只允许引用 token 变量。
+
+## 二、R1 token 映射（Figma variables → CSS custom properties）
+
+- 生成器：`scripts/figma/gen-lcos-tokens.mjs`（唯一输入 = `token-style-component-manifest.json`；`--check` 校验产物是否最新）。
+- 产物 1（渲染入口）：`huabu/apps/web/src/lcos/ui/lcos-tokens.css` —— 32 个 variable + 3 个 EFFECT 派生变量。
+- 产物 2（映射证据）：`docs/audit/GEN2_R1_token_map_20260914.json` —— 每行的 Figma id / 名称 / collection / 变量名出处 / 双主题值 / 原始 RGBA。
+- 命名规则：优先 `codeSyntax.WEB`（`--gen2-*` / `--lcos-pin-*`，作者手写），其次 `manifest.suggestedCssAlias`（`--lcos-*`）；两者都缺即脚本报错退出，禁止手编变量名。
+- 取值规则：一律取 `resolvedValuesByMode`（alias 链在浅/深两个 mode 常指向同一 VariableID，只有 resolved 才是各主题真实值）。
+- TS 侧：`lcos/ui/lcosTokens.ts` 只导出 `var(...)` 语义引用，不复制同值常量（由 `lcosTokens.test.ts` 断言：出现 hex/rgb 即失败）。
+
+| 分组 | 变量 | 浅色 / 深色（节选） |
+|---|---|---|
+| 节点场景（Gen2 / 节点场景） | `--gen2-canvas` `--gen2-surface` `--gen2-raised` `--gen2-text` `--gen2-muted` `--gen2-border` `--gen2-accent` | `#FAFAFA`→`#0A0A0A`；`#FFFFFF`→`#1F1F1F`；`#547464`→`#9BC0A8` |
+| 主题（Theme / Oreo） | `--lcos-surface-base` `--lcos-color-bg-inverse` `--lcos-color-text-on-inverse` `--lcos-text-primary` `--lcos-color-border-default` `--lcos-color-text-secondary` `--lcos-surface-elevated` `--lcos-color-border-subtle` `--lcos-color-palette-blue-text` `--lcos-color-palette-blue-bg` | `--lcos-color-bg-inverse` `#202020`→`#FCFCFC` |
+| 导航颜色（LCOS / 导航颜色） | `--lcos-pin-violet` `#6371DD`、`--lcos-pin-teal` `#238E86`、`--lcos-pin-amber` `#CE824C`（与导航岛 Pin 角标实测 fill 一致） | 与主题无关（单 mode） |
+| 圆角 / 间距 | `--lcos-radius-control` 8、`--lcos-radius-card-small` 12、`--lcos-radius-medium` 16、`--lcos-radius-capsule` 999；`--lcos-space-x1/x2/x3/8/12/16/24` | 与主题无关 |
+| EFFECT 派生 | `--lcos-glass-blur`（GLASS.radius 4）、`--lcos-glass-shadow`（HUD 双层阴影）、`--lcos-shadow-default`（Shadow/Default） | 与主题无关 |
+
+**LCOS 本地 token（Figma 无对应 variable，登记为 honest remainder）**：`lcos/ui/lcos.css` 的 `:root` —
+`--lcos-status-danger`（Figma 统一导出包只覆盖 Blue/Pin 组，没有 danger 语义色）、`--lcos-glass-bg`（= `color-mix(gen2-surface 72%)`，跟随主题）、`--lcos-window-shadow` / `--lcos-window-border`（Figma 的 Shadow/Default 是 4/16 近距投影，不描述浮起窗口）、`lcosTokens.fontSize` 阶梯（无 Figma variable）。
+
+## 三、九面级绑定（Wave 级归属，随各 Wave 更新）
 
 | ID | Figma page/frame/node | component/variant | token/asset | target body | presenter/producer | action owner | fallback | viewport evidence |
 |---|---|---|---|---|---|---|---|---|
-| FIG-PROJECT | launcher 5388:3652 / spec 5392:3427 | ProjectLauncher family | Theme vars（--lcos-surface-base 等） | `lcos/app/LcosProjectLauncherPage.tsx` | Core `projects.ts` list/create | T6 项目事实 | Core offline / path error 分类提示 | Wave 1 |
-| FIG-MAIN | main 5388:96 / spec 5392:3695 | MainWorksite + NodeSpecies | --gen2-canvas/surface/raised/text/muted/border/accent | `lcos/surfaces/main/MainWorksite.tsx` + node bodies | T1/T2/T3/T6 | Huabu kernel | loading/empty/normal/error | Wave 4 |
-| FIG-HUD | hud 5388:27696 / spec 5392:7799 | ProjectShell 5386:436；NavigatorIsland 5384:367（11 variants）；Railway 5385:283（2） | Pin violet/teal/amber（--lcos-pin-*）；GLASS S:3438dd... | `lcos/shell/LcosGlobalHud.tsx`、`LcosRailway.tsx`、`navigation/*` | T2 nav/Pin/Railway | T1 camera | Navigator loading/error/degraded 共用壳 + SurfaceFeedback 5391:357 | Wave 4 |
-| FIG-CONTEXT | context 5388:21602 / spec 5392:4840 | ContextWorksite + ChildCanvas | 集合手牌 context styles | `lcos/surfaces/context/ContextWorksite.tsx` | T1/ T2/ T6 | Huabu kernel | cold/empty/recovery | Wave 6 |
-| FIG-ATLAS | atlas 5388:24294 / spec 5392:4924 | CollectionSurface 5333:96（组织=事情/时间 × 呈现=总览/主画布/装配） | 248×244 体块、列间 32 | `lcos/surfaces/context/ContextAtlasStage.tsx` | T6 成员事实 | T1 集合投影 | 缓存可读 + 标缺失 | Wave 6 |
-| FIG-TEMPORAL | temporal 5388:25701 / spec 5392:6043 | TemporalRail（右 24、宽 65、maxH 555） | — | `lcos/surfaces/context/TemporalRail.tsx` | 时间分组 producer | T2 交互/T1 camera | 不画虚假刻度 | Wave 6 |
-| FIG-WORKFLOW | workflow 5388:22998 / spec 5392:4882 | WorkflowWorksite + TaskCard 5335:110（7 状态） | 3:4 卡 224×324 | `lcos/surfaces/workflow/WorkflowWorksite.tsx`、`WorkflowCard.tsx` | T6 Run 事实 | T4 work view | 封面失败→任务图标 | Wave 7 |
-| FIG-WINDOW | window 5388:27165 / spec 5392:6085 | ProfessionalWindowChrome 5387:331（浮动/停靠/分组） | header 48、min 360×280 | `lcos/professional/ProfessionalWindowStage.tsx` | T4 窗口拓扑 | body 各 owner | 过期目标明确不可用 | Wave 5 |
-| FIG-READER | reader 5388:27411 / spec 5392:6127 | ReaderChrome + ArtifactReaderBody | text 16–18、长行自适应 | `lcos/professional/ArtifactReaderBody.tsx` | T6 artifact/revision | T4 + Huabu preview | 无可预览→外部打开 | Wave 5 |
-| FIG-PORTAL | 产品 Portal 5348:1151（6 状态） | 目标预览状态 | 440×360 | `lcos/portal/*` | 进入目标 | T2 worksite | 旧缓存/部分预览/缺失 | Wave 6 |
+| FIG-PROJECT | launcher 5388:3652 / spec 5392:3427 | ProjectLauncher family | Theme vars | `lcos/app/LcosProjectLauncherPage.tsx` | Core `projects.ts` list/create | T6 项目事实 | Core offline / path error 分类提示 | Wave 1 |
+| FIG-MAIN | main 5388:96 / spec 5392:3695 | MainWorksite + NodeSpecies | --gen2-canvas/surface/raised/text/muted/border/accent | `lcos/surfaces/main/MainWorksite.tsx` + node bodies | T1/T2/T3/T6 | Huabu kernel | loading/empty/normal/error | R2 |
+| FIG-HUD | hud 5388:27696 / spec 5392:7799 | ProjectShell 5386:436；NavigatorIsland 5384:367（11）；Railway 5385:283（2） | Pin violet/teal/amber；GLASS S:3438dd… | `lcos/shell/LcosGlobalHud.tsx`、`LcosRailway.tsx`、`navigation/*` | T2 nav/Pin/Railway | T1 camera | Navigator loading/error/degraded 共用壳 + SurfaceFeedback 5391:357 | R1（gallery + 生产 Main 截图） |
+| FIG-CONTEXT | context 5388:21602 / spec 5392:4840 | ContextWorksite + ChildCanvas | 集合手牌 context styles | `lcos/surfaces/context/ContextWorksite.tsx` | T1/T2/T6 | Huabu kernel | cold/empty/recovery | R4 |
+| FIG-ATLAS | atlas 5388:24294 / spec 5392:4924 | CollectionSurface 5333:96 | 248×244 体块、列间 32 | `lcos/surfaces/context/ContextAtlasStage.tsx` | T6 成员事实 | T1 集合投影 | 缓存可读 + 标缺失 | R1（族）+ R4（深化） |
+| FIG-TEMPORAL | temporal 5388:25701 / spec 5392:6043 | TemporalRail（右 24、宽 65、maxH 555） | — | `lcos/surfaces/context/TemporalRail.tsx` | 时间分组 producer | T2 交互/T1 camera | 不画虚假刻度 | R4 |
+| FIG-WORKFLOW | workflow 5388:22998 / spec 5392:4882 | WorkflowWorksite + TaskCard 5335:110 | 3:4 卡 224×324 | `lcos/surfaces/workflow/WorkflowWorksite.tsx`、`WorkflowCardPool.tsx` | T6 Run 事实 | T4 work view | 封面失败→任务图标 | R1（族）+ R5（深化） |
+| FIG-WINDOW | window 5388:27165 / spec 5392:6085 | ProfessionalWindowChrome 5387:331 | header 48、min 360×280 | `lcos/professional/ProfessionalWindowStage.tsx` | T4 窗口拓扑 | body 各 owner | 过期目标明确不可用 | R1（族）+ R3（拓扑） |
+| FIG-READER | reader 5388:27411 / spec 5392:6127 | ReaderChrome + ArtifactReaderBody | text 16–18、长行自适应 | `lcos/professional/ArtifactReaderBody.tsx` | T6 artifact/revision | T4 + Huabu preview | 无可预览→外部打开 | R3 |
+| FIG-PORTAL | 产品 Portal 5348:1151（6 状态） | 目标预览状态 | 440×360 | `lcos/professional/PortalPreviewBody.tsx`、`lcos/nodes/PortalNodeBody.tsx` | 进入目标（原生 canvasRef） | T2 worksite | 旧缓存/部分预览/缺失 | R1（族）+ R4（现场渲染） |
 
-共享组件族（先行）：NavigatorIsland 5384:367、Railway 5385:283、ProjectShell 5386:436、ProfessionalWindowChrome 5387:331、SurfaceFeedback 5391:357；第 13 页集合 5333:96/5334:46、取用任务牌 5335:110、Portal 5348:1151。
-语义纠正：ColorPin = 颜色分组偏好及成员关系（00 页 5409:2 纠正，非"持久关系"简写）；Context/Workflow 主稿复用 Main 基础 Shell + 选中态覆盖，component variant 名不代表现场归属。
+语义纠正（沿用）：ColorPin = 颜色分组偏好及成员关系（00 页 5409:2 纠正，非"持久关系"简写）；Context/Workflow 主稿复用 Main 基础 Shell + 选中态覆盖，component variant 名不代表现场归属。
 
-> 规则：编码任一可见组件前，先从此表（或母表 grep 该 node）找到一行，绑定真实 target/caller/producer/fallback；缺 token/asset 时先核 token-style-component-manifest.json 与 exports 资产目录，禁止截图裁片冒充资产。
+## 四、R1 遗留缺口（诚实登记，不得改写为完成）
+
+1. page 13 的 Collection `5333:96`/`5334:46`、TaskCard `5335:110`、Portal `5348:1151` **未随 `structures/` 导出**，只有变体轴与变体框尺寸 → 内层细分几何未采用 Figma，只采用「轴 + 体块 + 身份」。
+2. Pin / 颜色组的 Core producer 不存在（无 pin/color-group 客户端）→ 导航岛「彩色标」在生产不可达。
+3. `manifest.limitations` 原样保留：无 Code Connect 生产绑定；窗口 chrome 只规定 header 几何，docking/grouping 运行时仍是 source binding；Navigator loading/error/degraded 共用壳几何，需就近组合反馈原语；**深色值是导出的，但本次人工走查只看过浅色**（R1 已用 e2e 断计算样式变化，未做人工深色走查）。
+4. SVG 资产 `svg/5385-212.svg`、`5385-215.svg`、`5385-218.svg`（导航岛 Pin 角标）尚未采用：当前用 lucide `Pin` + 22×22 圆角底近似，未使用 Figma 原生 SVG。
+5. `lcos/ui/presets.ts` 为空文件（0 字节），Wave 0 遗留；本 Wave 未使用。
+
+> 规则：编码任一可见组件前，先从此表（或母表 grep 该 node）找到一行，绑定真实 target/caller/producer/fallback；缺 token/asset 时先核 `token-style-component-manifest.json` 与 exports 资产目录，禁止截图裁片冒充资产。

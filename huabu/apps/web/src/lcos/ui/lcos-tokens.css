@@ -1,0 +1,68 @@
+/* 本文件由 scripts/figma/gen-lcos-tokens.mjs 生成，请勿手改。
+ * 来源：Figma nFUdroLvI5qJZuYTW8h2rF / unification/token-style-component-manifest.json
+ *       exportedAt 2026-09-13T15:37:47+08:00
+ * 变量名来源：codeSyntax.WEB 或 manifest.suggestedCssAlias（不手编）。
+ * 这是 LCOS 前端颜色的唯一渲染入口；TS 侧只允许引用 var()，不得复制同值常量。 */
+
+:root {
+  --lcos-radius-control: 8px;
+  --lcos-radius-medium: 16px;
+  --lcos-radius-capsule: 999px;
+  --lcos-radius-card-small: 12px;
+  --lcos-space-12: 12px;
+  --lcos-space-16: 16px;
+  --lcos-space-x3: 6px;
+  --lcos-space-x2: 4px;
+  --lcos-space-x1: 2px;
+  --lcos-space-8: 8px;
+  --lcos-space-24: 24px;
+  --lcos-pin-violet: #6371DD;
+  --lcos-pin-teal: #238E86;
+  --lcos-pin-amber: #CE824C;
+  --lcos-line-height-12: 16px;
+
+  --lcos-color-palette-blue-text: #107D98;
+  --lcos-color-palette-blue-bg: #DEF7F9;
+  --lcos-surface-base: #FFFFFF;
+  --lcos-color-bg-inverse: #202020;
+  --lcos-color-text-on-inverse: #FFFFFF;
+  --lcos-text-primary: #000000;
+  --lcos-color-border-default: rgba(0,0,0,0.12);
+  --lcos-color-text-secondary: #646464;
+  --lcos-surface-elevated: #F9F9F9;
+  --lcos-color-border-subtle: rgba(0,0,0,0.09);
+  --gen2-canvas: #FAFAFA;
+  --gen2-surface: #FFFFFF;
+  --gen2-raised: #F5F5F5;
+  --gen2-text: #242625;
+  --gen2-muted: #69716B;
+  --gen2-border: #E7E9E7;
+  --gen2-accent: #547464;
+}
+
+.dark {
+  --lcos-color-palette-blue-text: #DEF7F9;
+  --lcos-color-palette-blue-bg: #0088F1;
+  --lcos-surface-base: #111111;
+  --lcos-color-bg-inverse: #FCFCFC;
+  --lcos-color-text-on-inverse: #000000;
+  --lcos-text-primary: #FFFFFF;
+  --lcos-color-border-default: rgba(255,255,255,0.15);
+  --lcos-color-text-secondary: #B4B4B4;
+  --lcos-surface-elevated: #191919;
+  --lcos-color-border-subtle: rgba(255,255,255,0.11);
+  --gen2-canvas: #0A0A0A;
+  --gen2-surface: #1F1F1F;
+  --gen2-raised: #262626;
+  --gen2-text: #F5F5F5;
+  --gen2-muted: #BDC4BF;
+  --gen2-border: #383A3B;
+  --gen2-accent: #9BC0A8;
+}
+
+/* EFFECT 样式（Figma styles / effectStyles） */
+:root {
+  --lcos-glass-blur: 4px;
+  --lcos-glass-shadow: 0px 4px 12px -3px rgba(40,48,58,0.075), 0px 0px 1px rgba(40,48,58,0.1);
+  --lcos-shadow-default: 0px 4px 16px rgba(0,0,0,0.04);
+}

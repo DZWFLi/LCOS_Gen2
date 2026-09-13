@@ -83,3 +83,37 @@ huabu typecheck / local-core tsc                  → 0 / 0
 5. 回填 `FIGMA_SOURCE_LEDGER.md`（node/component/variant/token/asset → code target → production caller）。
 
 **硬阻塞**：无。隔离环境保持运行（43131/3011/5273），用户 dev 栈（43121/3001/5173）未受影响。
+
+---
+
+## 03:05 条目 3 — R1（设计系统 → 代码组件族）就绪，进入 R2
+
+**HEAD / Git**
+- R0 后 HEAD `1118c29`；R1 全部改动尚未提交（本条目之后按 16 号文档提交办法落一个本地 commit）
+- 改动面：32 个已跟踪文件（其中 25 个是 `.light/.dark` 机械替换）＋ 10 个新增（families/、dev/、lcos-tokens.css、PortalNodeBody/PortalPreviewBody、token map、generator、describe-structure、r1 e2e、R1 handoff）
+
+**已完成**
+1. **token 层**：`scripts/figma/gen-lcos-tokens.mjs` 从 Figma manifest 生成 `lcos-tokens.css`（32 变量：17 双主题 + 15 与主题无关；外加 3 个 EFFECT 派生变量）+ `docs/audit/GEN2_R1_token_map_20260914.json` 映射证据。变量名只取 `codeSyntax.WEB` 或 manifest `suggestedCssAlias`（缺失即报错，不手编）；值一律取 `resolvedValuesByMode`（alias 链在浅/深 mode 常指向同一 VariableID，只有 resolved 是真值）。`--check` exit 0。
+2. **TS 语义层**：`lcosTokens.ts` 改为只导出 `var(...)`；25 个文件 232 处 `lcosTokens.color.X.light|.dark` 一次性 codemod 去掉主题分叉（脚本用完即删）；LCOS 本地 token（danger/glass-bg/window-shadow/window-border/字号）显式登记在 `lcos.css`。
+3. **八族落地**：新增 `lcos/ui/families/`（NavigatorIslandView / RailwayView / WindowChrome / CollectionSurface / TaskCard / PortalPreview）；SurfaceFeedback 与 ProjectShell 原地升级为族。逐族接回生产 caller，无第二套近似件。
+4. **实测几何替代猜测**（`scripts/figma/describe-structure.mjs` 读 structures）：导航岛 h48·pad6/8·gap8·r999 → 静息 52、彩色标 184、搜索 402；铁路 pad8·gap6·item36 → 1=52、4=178；窗口顶栏 h48·pad8/24；反馈 h38·pad10/12·r16。为守住 Figma 的 INSIDE 描边外框，导航岛/铁路用 padding-1px + 1px 描边（外框与 Figma 完全一致，e2e 有像素断言）。
+5. **两处真实缺陷顺带修掉**：Railway 把 `+N` 脚注塞在岛内 → 撑高外框超出 Figma（改为同级）；Atlas 体块 minHeight 150 + gap16 与 Figma 248×244/列间32 不符（改为族）。
+6. **Portal 生产入口打通**：原生 `canvasRef` 节点（真实 `data.targetCanvasId`）→ portal 物种 body（双击）→ 专业窗口 `portal-preview` body → `LcosPortalPreview`。顺带回答 R4 Scout 的「Collection/Portal 物种永不可达」：**Portal 侧已可达**（原生节点即 producer），Collection 侧仍不可达（需 entityType 绑定）。
+7. **dev-only gallery**：`/playground/lcos-families`（`import.meta.env.DEV` 分支，不进生产包），八族全部 variant + 浅/深主题切换。
+
+**测试与退出码**
+- `npx tsc -p tsconfig.json --noEmit` → exit 0
+- `npx eslint src/lcos src/App.tsx --max-warnings 0` → exit 0
+- `npx vitest run src/lcos` → 16 files / **90 tests 全绿**（新增 3 个测试文件 / 23 条）
+- `node scripts/e2e/r1-families-gallery.mjs` → 两场景 `ok:true`（gallery 变体计数 + 精确像素几何 + 双主题计算样式变化 + reduced-motion 动画取消；生产 Main 族属性实测）
+- 截图：`.e2e-data/shots/r1-gallery-light.png` / `r1-gallery-dark.png` / `r1-production-main-1440.png`
+- 全量 `vitest run`（177 files）：**1 个与本 Wave 无关的既有失败** `src/components/Milkdown/__tests__/blockFingerprintParity.test.ts`（该文件未被本 Wave 改动，单独跑亦确定性失败）→ 只登记不改
+
+**GAP / PARTIAL（不得改写为完成）**
+1. page 13 四组组件（Collection 5333:96/5334:46、TaskCard 5335:110、Portal 5348:1151）未随 `structures/` 导出 → 内层细分几何未采用 Figma，只采用「轴 + 体块 + 身份」。
+2. Pin/颜色组无 Core producer → 导航岛「彩色标」生产不可达。
+3. 深色模式只有 e2e 计算样式断言，未做人工走眼走查。
+4. Figma 原生 Pin SVG（5385-212/215/218）未采用，暂用 lucide 近似。
+5. 未达变体归属：WindowChrome 停靠/分组→R3；Collection 主画布/装配/工作流跨视图、Portal 加载中/旧缓存/部分预览/预览失败→R4；TaskCard 预览/已选目标→R5。
+
+**下一步**：进入 R2 Main 垂直切片（Launcher+Shell+HUD → 单一 NodePresentation Junction → renderer registry 成为 production caller → 可达物种 → 真实内容位 → GEN1 placement → T3 Action Arc → 退役旧可见壳 → Composer 接 receiver）。**R2 完成后停下等用户第一次视觉验收，验收前不启动 R3/R4/R5 源码写入。**

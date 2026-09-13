@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { createLcosCoreSession } from '../../app/lcosCoreClient';
 import { useLcosReferenceStore } from '../../lcosReferenceState';
+import { LcosCollectionSurface } from '../../ui/families';
 import { LcosSurfaceFeedback } from '../../ui/LcosSurfaceFeedback';
 import { lcosGlassStyle, lcosTokens } from '../../ui/lcosTokens';
 
@@ -82,15 +83,15 @@ export function ContextAtlasStage({ projectId, onClose, onEnterSurface }: Contex
       <div className="flex h-full w-full max-w-[1100px] flex-col rounded-2xl p-6" style={lcosGlassStyle}>
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-base font-semibold" style={{ color: lcosTokens.color.text.light }}>Context Atlas</span>
-            <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>集合/现场总览 · 同身份实体</span>
+            <span className="text-base font-semibold" style={{ color: lcosTokens.color.text }}>Context Atlas</span>
+            <span className="text-xs" style={{ color: lcosTokens.color.muted }}>集合/现场总览 · 同身份实体</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setOrganize('things')}
               className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium"
-              style={organize === 'things' ? { background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light } : { color: lcosTokens.color.muted.light }}
+              style={organize === 'things' ? { background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse } : { color: lcosTokens.color.muted }}
             >
               <Layers className="h-3.5 w-3.5" aria-hidden /> 事情
             </button>
@@ -98,11 +99,11 @@ export function ContextAtlasStage({ projectId, onClose, onEnterSurface }: Contex
               type="button"
               onClick={() => setOrganize('time')}
               className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium"
-              style={organize === 'time' ? { background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light } : { color: lcosTokens.color.muted.light }}
+              style={organize === 'time' ? { background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse } : { color: lcosTokens.color.muted }}
             >
               <CalendarDays className="h-3.5 w-3.5" aria-hidden /> 时间
             </button>
-            <button type="button" aria-label="关闭 Atlas" onClick={onClose} className="rounded-full p-1.5" style={{ color: lcosTokens.color.muted.light }}>
+            <button type="button" aria-label="关闭 Atlas" onClick={onClose} className="rounded-full p-1.5" style={{ color: lcosTokens.color.muted }}>
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -114,38 +115,28 @@ export function ContextAtlasStage({ projectId, onClose, onEnterSurface }: Contex
         )}
 
         {state === 'ready' && (
-          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto">
             {groups.map((group) => (
               <section key={group.key}>
-                <h4 className="mb-2 text-xs font-medium uppercase tracking-wide" style={{ color: lcosTokens.color.muted.light }}>
+                <h4 className="mb-4 text-xs font-medium uppercase tracking-wide" style={{ color: lcosTokens.color.muted }}>
                   {group.label}
                 </h4>
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                {/* Figma atlas：体块 248×244、列间 32（gap-8）；体块语言 = 族 Collection 5333:96 */}
+                <div className="flex flex-wrap gap-8">
                   {group.list.map((item) => (
-                    <button
+                    <LcosCollectionSurface
                       key={`${item.kind}:${item.entityRef.id}`}
-                      type="button"
-                      onClick={() => focusOnCanvas(item)}
-                      className="flex flex-col gap-2 rounded-2xl p-4 text-left transition-transform hover:-translate-y-0.5"
-                      style={{
-                        minHeight: 150,
-                        background: item.kind === 'conversation' ? 'rgba(32,32,32,0.05)' : `${lcosTokens.color.infoBg.light}`,
-                        border: `1px solid ${lcosTokens.color.borderSubtle.light}`,
-                        boxShadow: lcosTokens.shadow.default,
-                      }}
-                      data-lcos-atlas-card={item.kind}
+                      organize={organize === 'things' ? '事情' : '时间'}
+                      rendition="总览"
+                      title={item.title ?? '未命名'}
+                      meta={`${item.kind}${item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleDateString('zh-CN')}` : ''}`}
+                      onActivate={() => focusOnCanvas(item)}
+                      legacyAtlasKind={item.kind}
                     >
-                      <span className="truncate text-sm font-semibold" style={{ color: lcosTokens.color.text.light }}>
-                        {item.title ?? '未命名'}
-                      </span>
-                      <span className="text-[10px]" style={{ color: lcosTokens.color.muted.light }}>
-                        {item.kind}
-                        {item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleDateString('zh-CN')}` : ''}
-                      </span>
-                      <span className="mt-auto flex items-center gap-1 text-xs" style={{ color: lcosTokens.color.info.light }}>
+                      <span className="mt-auto flex items-center gap-1 text-xs" style={{ color: lcosTokens.color.info }}>
                         进入 <ArrowRight className="h-3 w-3" aria-hidden />
                       </span>
-                    </button>
+                    </LcosCollectionSurface>
                   ))}
                 </div>
               </section>

@@ -148,7 +148,7 @@ export function LcosProjectLauncherPage(): React.JSX.Element {
     <div
       data-lcos-launcher
       className="relative flex h-full w-full flex-col overflow-hidden"
-      style={{ background: lcosTokens.color.surface.light, color: lcosTokens.color.text.light }}
+      style={{ background: lcosTokens.color.surface, color: lcosTokens.color.text }}
     >
       {/* 品牌 + 标题区 */}
       <header className="flex items-start justify-between px-12 pt-8">
@@ -158,7 +158,7 @@ export function LcosProjectLauncherPage(): React.JSX.Element {
             <h1 className="font-semibold" style={{ fontSize: lcosTokens.fontSize.hero }}>
               项目
             </h1>
-            <p className="text-sm" style={{ color: lcosTokens.color.muted.light }}>
+            <p className="text-sm" style={{ color: lcosTokens.color.muted }}>
               继续上一次的创作现场。
             </p>
           </div>
@@ -169,8 +169,8 @@ export function LcosProjectLauncherPage(): React.JSX.Element {
               className="rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
               style={
                 tab === 'recent'
-                  ? { background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light }
-                  : { color: lcosTokens.color.muted.light, minHeight: 28 }
+                  ? { background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse }
+                  : { color: lcosTokens.color.muted, minHeight: 28 }
               }
             >
               最近
@@ -179,7 +179,7 @@ export function LcosProjectLauncherPage(): React.JSX.Element {
               type="button"
               onClick={() => setTab('all')}
               className="rounded-full px-4 py-1.5 text-sm font-medium transition-colors"
-              style={tab === 'all' ? { background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light } : { color: lcosTokens.color.muted.light, minHeight: 28 }}
+              style={tab === 'all' ? { background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse } : { color: lcosTokens.color.muted, minHeight: 28 }}
             >
               全部
             </button>
@@ -238,19 +238,19 @@ export function LcosProjectLauncherPage(): React.JSX.Element {
         )}
         {status === 'ready' && (
           <div className="flex flex-col gap-5 pb-16">
-            <label className="flex max-w-md items-center gap-2 rounded-xl px-4 py-2.5" style={{ background: lcosTokens.color.raised.light }}>
-              <Search className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted.light }} aria-hidden />
+            <label className="flex max-w-md items-center gap-2 rounded-xl px-4 py-2.5" style={{ background: lcosTokens.color.raised }}>
+              <Search className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted }} aria-hidden />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="名称或关键词"
                 aria-label="搜索项目"
                 className="w-full bg-transparent text-sm outline-none"
-                style={{ color: lcosTokens.color.text.light }}
+                style={{ color: lcosTokens.color.text }}
               />
               {query !== '' && (
                 <button type="button" onClick={() => setQuery('')} aria-label="清空搜索">
-                  <X className="h-4 w-4" style={{ color: lcosTokens.color.muted.light }} />
+                  <X className="h-4 w-4" style={{ color: lcosTokens.color.muted }} />
                 </button>
               )}
             </label>
@@ -277,14 +277,14 @@ export function LcosProjectLauncherPage(): React.JSX.Element {
                       className="flex aspect-[16/10] w-full items-end justify-end overflow-hidden rounded-xl p-3 transition-shadow"
                       style={{ background: coverTone(project.rootPath, index), boxShadow: lcosTokens.shadow.default }}
                     >
-                      <span className="rounded-full bg-white/60 px-2 py-0.5 text-[10px] font-medium" style={{ color: lcosTokens.color.muted.light }}>
+                      <span className="rounded-full bg-white/60 px-2 py-0.5 text-[10px] font-medium" style={{ color: lcosTokens.color.muted }}>
                         项目
                       </span>
                     </div>
                     <span className="text-sm font-semibold" style={{ fontSize: lcosTokens.fontSize.md }}>
                       {project.name}
                     </span>
-                    <span className="text-xs truncate max-w-full" style={{ color: lcosTokens.color.muted.light }}>
+                    <span className="text-xs truncate max-w-full" style={{ color: lcosTokens.color.muted }}>
                       {project.rootPath}
                       {project.lastOpenedAt ? ` · ${new Date(project.lastOpenedAt).toLocaleDateString('zh-CN')}` : ''}
                     </span>
@@ -297,7 +297,7 @@ export function LcosProjectLauncherPage(): React.JSX.Element {
       </main>
 
       <footer className="flex items-center justify-between px-12 pb-6">
-        <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>
+        <span className="text-xs" style={{ color: lcosTokens.color.muted }}>
           项目保存在你自己的电脑上 — Local Core 是唯一真相源
         </span>
       </footer>
@@ -371,7 +371,7 @@ function Field(props: {
 }): React.JSX.Element {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium" style={{ color: lcosTokens.color.muted.light }}>{props.label}</span>
+      <span className="text-xs font-medium" style={{ color: lcosTokens.color.muted }}>{props.label}</span>
       <Input
         value={props.value}
         onChange={(event) => props.onChange(event.target.value)}

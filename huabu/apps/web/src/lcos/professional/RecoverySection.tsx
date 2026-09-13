@@ -66,8 +66,8 @@ export function RecoverySection({ client, projectId, operations, onRefreshed }: 
 
   if (operations.length === 0) {
     return (
-      <div data-lcos-recovery-section data-empty="true" className="rounded-xl px-3 py-2" style={{ background: lcosTokens.color.surface.light, border: `1px solid ${lcosTokens.color.borderSubtle.light}` }}>
-        <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>
+      <div data-lcos-recovery-section data-empty="true" className="rounded-xl px-3 py-2" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
+        <span className="text-xs" style={{ color: lcosTokens.color.muted }}>
           没有待恢复的续工操作
         </span>
       </div>
@@ -80,14 +80,14 @@ export function RecoverySection({ client, projectId, operations, onRefreshed }: 
         <div
           key={operation.operationId}
           className="flex flex-col gap-2 rounded-xl p-3"
-          style={{ background: lcosTokens.color.surface.light, border: `1px solid ${lcosTokens.color.borderSubtle.light}` }}
+          style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}
         >
           <div className="flex items-center gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" style={{ color: lcosTokens.color.pinViolet }} aria-hidden />
-            <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text.light }}>
+            <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>
               续工 · {operation.operationId.slice(0, 8)}
             </span>
-            <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised.light, color: lcosTokens.color.muted.light }}>
+            <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}>
               {operation.status} · {operation.mode} · {operation.provider}
             </span>
           </div>
@@ -99,8 +99,8 @@ export function RecoverySection({ client, projectId, operations, onRefreshed }: 
                 data-lcos-recovery-step={step}
                 className="rounded-full px-2 py-0.5 text-[10px]"
                 style={{
-                  background: state === 'confirmed' ? 'rgba(84,116,100,0.10)' : lcosTokens.color.raised.light,
-                  color: state === 'failed' ? lcosTokens.color.danger : lcosTokens.color.muted.light,
+                  background: state === 'confirmed' ? 'rgba(84,116,100,0.10)' : lcosTokens.color.raised,
+                  color: state === 'failed' ? lcosTokens.color.danger : lcosTokens.color.muted,
                 }}
               >
                 {step} · {state}
@@ -115,7 +115,7 @@ export function RecoverySection({ client, projectId, operations, onRefreshed }: 
           )}
 
           {operation.allowedActions.length === 0 ? (
-            <span className="text-[10px]" style={{ color: lcosTokens.color.muted.light }}>
+            <span className="text-[10px]" style={{ color: lcosTokens.color.muted }}>
               当前没有允许的恢复动作（guard 未放行）
             </span>
           ) : (
@@ -131,7 +131,7 @@ export function RecoverySection({ client, projectId, operations, onRefreshed }: 
                     title={descriptor.reason ?? (descriptor.requiresFreshRead ? '需要先读取最新状态' : undefined)}
                     onClick={() => run(operation, descriptor.action)}
                     className="rounded-full px-2.5 py-1 text-xs font-medium disabled:opacity-40"
-                    style={{ background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light, minHeight: 30 }}
+                    style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse, minHeight: 30 }}
                   >
                     {busyKey === key ? '执行中…' : (ACTION_LABEL[descriptor.action] ?? descriptor.action)}
                     {descriptor.requiresFreshRead ? ' · 需新读' : ''}
@@ -143,7 +143,7 @@ export function RecoverySection({ client, projectId, operations, onRefreshed }: 
         </div>
       ))}
 
-      {receipt && <span className="text-xs" style={{ color: lcosTokens.color.accent.light }}>{receipt}</span>}
+      {receipt && <span className="text-xs" style={{ color: lcosTokens.color.accent }}>{receipt}</span>}
       {errorDetail && <span className="text-xs" style={{ color: lcosTokens.color.danger }}>恢复动作失败 · {errorDetail}</span>}
     </div>
   );

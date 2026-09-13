@@ -16,7 +16,7 @@ import { ProfessionalWindowStage } from '../professional/ProfessionalWindowStage
 import { ContextWorksite } from '../surfaces/context/ContextWorksite';
 import { MainWorksite } from '../surfaces/main/MainWorksite';
 import { WorkflowWorksite } from '../surfaces/workflow/WorkflowWorksite';
-import { lcosTokens } from '../ui/lcosTokens';
+import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
 export interface LcosProjectShellProps {
   readonly projectId: string;
@@ -64,9 +64,10 @@ export function LcosProjectShell({
 
   return (
     <div
+      data-lcos-family="project-shell"
+      data-lcos-variant={active}
       data-lcos-project-shell
       className="relative h-full w-full overflow-hidden"
-      style={{ background: lcosTokens.color.canvas.light, color: lcosTokens.color.text.light }}
     >
       {shellStatus !== 'ready' ? (
         <div className="flex h-full w-full items-center justify-center">
@@ -118,20 +119,12 @@ export function LcosProjectShell({
             <Link
               to="/projects"
               className="line-clamp-1 inline-flex max-w-[42vw] items-center gap-2 rounded-full py-2 pr-4 text-sm font-medium transition-colors hover:opacity-90"
-              style={{
-                background: 'rgba(252,252,252,0.86)',
-                backdropFilter: 'blur(18px) saturate(1.4)',
-                WebkitBackdropFilter: 'blur(18px) saturate(1.4)',
-                border: '1px solid rgba(0,0,0,0.09)',
-                boxShadow: '0 4px 12px rgba(40,48,58,0.075)',
-                minHeight: 44,
-                color: lcosTokens.color.text.light,
-              }}
+              style={{ ...lcosGlassStyle, minHeight: 44, color: lcosTokens.color.text }}
               title="返回项目列表"
             >
-              <ChevronLeft className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted.light }} />
+              <ChevronLeft className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted }} />
               <span className="truncate font-semibold">{projectName ?? projectId.slice(0, 12)}</span>
-              <span className="ml-1 shrink-0 text-xs" style={{ color: lcosTokens.color.muted.light }}>
+              <span className="ml-1 shrink-0 text-xs" style={{ color: lcosTokens.color.muted }}>
                 {SURFACE_LABEL[active]}
               </span>
             </Link>
@@ -163,7 +156,7 @@ function LcosWorksiteStageLoading({
 }): React.JSX.Element {
   if (status === 'loading') {
     return (
-      <div className="flex flex-col items-center gap-3" style={{ color: lcosTokens.color.muted.light }}>
+      <div className="flex flex-col items-center gap-3" style={{ color: lcosTokens.color.muted }}>
         <span className="lcos-static-pulse text-sm">正在读取现场与画布…</span>
       </div>
     );
@@ -178,8 +171,8 @@ function LcosWorksiteStageLoading({
         onClick={onRetry}
         className="rounded-full px-5 font-medium"
         style={{
-          background: lcosTokens.color.inverse.light,
-          color: lcosTokens.color.textOnInverse.light,
+          background: lcosTokens.color.inverse,
+          color: lcosTokens.color.textOnInverse,
           minHeight: 44,
         }}
       >

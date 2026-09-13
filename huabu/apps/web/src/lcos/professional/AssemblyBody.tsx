@@ -103,17 +103,17 @@ export function AssemblyBody({ projectId }: { readonly projectId: string }): Rea
   return (
     <div data-lcos-assembly className="flex flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
-        <label className="flex flex-1 items-center gap-2 rounded-xl px-3 py-2" style={{ background: lcosTokens.color.raised.light }}>
-          <Search className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted.light }} aria-hidden />
+        <label className="flex flex-1 items-center gap-2 rounded-xl px-3 py-2" style={{ background: lcosTokens.color.raised }}>
+          <Search className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted }} aria-hidden />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索仓库（当前页过滤）"
             className="w-full bg-transparent text-sm outline-none"
-            style={{ color: lcosTokens.color.text.light }}
+            style={{ color: lcosTokens.color.text }}
           />
         </label>
-        <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>
+        <span className="text-xs" style={{ color: lcosTokens.color.muted }}>
           {items.length} 项
         </span>
       </div>
@@ -138,27 +138,27 @@ export function AssemblyBody({ projectId }: { readonly projectId: string }): Rea
               data-lcos-assembly-item={item.entityRef.id}
               data-lcos-assembly-item-kind={item.kind}
               className="flex flex-col gap-2 rounded-xl p-3"
-              style={{ background: lcosTokens.color.surface.light, border: `1px solid ${lcosTokens.color.borderSubtle.light}`, boxShadow: lcosTokens.shadow.default }}
+              style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}`, boxShadow: lcosTokens.shadow.default }}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="min-w-0 truncate text-sm font-medium" style={{ color: lcosTokens.color.text.light }}>
+                <span className="min-w-0 truncate text-sm font-medium" style={{ color: lcosTokens.color.text }}>
                   {item.title ?? '未命名'}
                 </span>
                 <span
                   className="shrink-0 rounded-full px-2 py-0.5 text-[10px]"
-                  style={{ background: lcosTokens.color.raised.light, color: lcosTokens.color.muted.light }}
+                  style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}
                   data-lcos-assembly-kind={item.kind}
                 >
                   {KIND_LABEL[item.kind] ?? item.kind}
                 </span>
               </div>
-              <div className="flex items-center gap-1 text-[10px]" style={{ color: lcosTokens.color.muted.light }}>
+              <div className="flex items-center gap-1 text-[10px]" style={{ color: lcosTokens.color.muted }}>
                 {item.visualFamily ? <span>{item.visualFamily}</span> : null}
                 {item.usageCount > 0 ? <span>· 使用 {item.usageCount}</span> : null}
                 {item.provenance ? <span>· {item.provenance.origin}</span> : null}
               </div>
               <div className="mt-auto flex items-center gap-1">
-                <button type="button" onClick={() => addToComposer(item)} title="加入 Composer 草稿" data-lcos-assembly-add className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs" style={{ color: lcosTokens.color.text.light }} >
+                <button type="button" onClick={() => addToComposer(item)} title="加入 Composer 草稿" data-lcos-assembly-add className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs" style={{ color: lcosTokens.color.text }} >
                   <PlusCircle className="h-3.5 w-3.5" aria-hidden /> 草稿
                 </button>
                 <button
@@ -166,7 +166,7 @@ export function AssemblyBody({ projectId }: { readonly projectId: string }): Rea
                   onClick={() => openWindow('reader', `阅读 · ${item.title ?? '材料'}`, item.entityRef.id)}
                   title="阅读"
                   className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs"
-                  style={{ color: lcosTokens.color.info.light }}
+                  style={{ color: lcosTokens.color.info }}
                 >
                   <BookOpen className="h-3.5 w-3.5" aria-hidden /> 阅读
                 </button>
@@ -177,7 +177,7 @@ export function AssemblyBody({ projectId }: { readonly projectId: string }): Rea
                   title="投放 Main（真实 apply 回执）"
                   data-lcos-assembly-drop
                   className="ml-auto flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium"
-                  style={{ background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light, minHeight: 32 }}
+                  style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse, minHeight: 32 }}
                 >
                   <Send className="h-3.5 w-3.5" aria-hidden /> 投放 Main
                 </button>
@@ -188,7 +188,7 @@ export function AssemblyBody({ projectId }: { readonly projectId: string }): Rea
       )}
 
       {applyResult && (
-        <div data-lcos-assembly-receipt className="rounded-xl px-3 py-2" style={{ background: applyResult.allApplied ? 'rgba(84,116,100,0.08)' : 'rgba(194,91,78,0.08)', color: applyResult.allApplied ? lcosTokens.color.accent.light : lcosTokens.color.danger }}>
+        <div data-lcos-assembly-receipt className="rounded-xl px-3 py-2" style={{ background: applyResult.allApplied ? 'rgba(84,116,100,0.08)' : 'rgba(194,91,78,0.08)', color: applyResult.allApplied ? lcosTokens.color.accent : lcosTokens.color.danger }}>
           {applyResult.results.map((r) => (
             <div key={`${r.sourceRef.kind}:${r.sourceRef.id}`} className="flex items-center justify-between gap-2 py-0.5 text-xs">
               <span>

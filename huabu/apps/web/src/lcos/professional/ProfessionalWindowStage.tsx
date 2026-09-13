@@ -9,7 +9,9 @@ import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 import { ArtifactReaderBody } from './ArtifactReaderBody';
 import { AssemblyBody } from './AssemblyBody';
 import { ConversationWorkViewBody } from './ConversationWorkViewBody';
+import { PortalPreviewBody } from './PortalPreviewBody';
 import { useLcosShellStore } from '../shell/lcosShellStore';
+import { LcosWindowChrome } from '../ui/families';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
 export interface ProfessionalWindowStageProps {
@@ -40,48 +42,33 @@ export function ProfessionalWindowStage({ projectId }: ProfessionalWindowStagePr
         width: 'min(520px, calc(100vw - 48px))',
         maxWidth: 'calc(100vw - 48px)',
         maxHeight: 'calc(100vh - 140px)',
-        border: '1px solid rgba(0,0,0,0.10)',
-        boxShadow: '0 12px 40px rgba(40,48,58,0.14)',
-        background: lcosTokens.color.surface.light,
+        border: '1px solid var(--lcos-window-border)',
+        boxShadow: 'var(--lcos-window-shadow)',
+        background: lcosTokens.color.surface,
         borderRadius: 16,
         overflow: 'hidden',
       }}
     >
-      {/* 顶栏（Chrome 5387:331：title + close；多窗口 tab） */}
-      <div
-        className="flex items-center gap-1 border-b px-3"
-        style={{ minHeight: 48, borderColor: lcosTokens.color.borderSubtle.light }}
-      >
-        {windows.map((w) => (
+      {/* 顶栏 = 共享族 ProfessionalWindowChrome（Figma 5387:331；布局 浮动/停靠/分组） */}
+      <LcosWindowChrome
+        layout="浮动"
+        title={active?.title ?? ''}
+        tabs={windows.map((w) => ({ key: w.bodyKey, value: w.id, label: w.title, selected: w.active }))}
+        onSelectTab={(id) => activateWindow(id)}
+        actions={
           <button
-            key={w.id}
             type="button"
-            data-lcos-window-tab={w.bodyKey}
-            data-lcos-window-active={w.active ? 'true' : 'false'}
-            onClick={() => activateWindow(w.id)}
-            className="max-w-[180px] truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-            style={{
-              color: w.active ? lcosTokens.color.text.light : lcosTokens.color.muted.light,
-              background: w.active ? lcosTokens.color.raised.light : 'transparent',
-            }}
+            data-lcos-window-icon-button
+            aria-label="关闭窗口"
+            onClick={() => active && closeWindow(active.id)}
           >
-            {w.title}
+            <X className="h-4 w-4" />
           </button>
-        ))}
-        <div className="flex-1" />
-        <button
-          type="button"
-          aria-label="关闭窗口"
-          onClick={() => active && closeWindow(active.id)}
-          className="rounded-full p-1.5"
-          style={{ color: lcosTokens.color.muted.light }}
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+        }
+      />
 
       {/* body */}
-      <div className="min-h-[240px] flex-1 overflow-y-auto" style={{ background: lcosTokens.color.canvas.light }}>
+      <div className="min-h-[240px] flex-1 overflow-y-auto" style={{ background: lcosTokens.color.canvas }}>
         {active && (
           <ProfessionalBody projectId={projectId} bodyKey={active.bodyKey} target={active.target} />
         )}
@@ -106,13 +93,15 @@ function ProfessionalBody({
       return <ArtifactReaderBody projectId={projectId} artifactId={target} />;
     case 'conversation':
       return <ConversationWorkViewBody projectId={projectId} connectedConversationId={target} />;
+    case 'portal-preview':
+      return <PortalPreviewBody projectId={projectId} target={target} />;
     case 'runtime-doctor':
     case 'capture-inbox':
     case 'connector-source':
       // 未接入 body：诚实展示，不假装可用
       return (
         <div className="flex h-full min-h-[220px] items-center justify-center">
-          <span className="text-sm" style={{ color: lcosTokens.color.muted.light }}>
+          <span className="text-sm" style={{ color: lcosTokens.color.muted }}>
             {bodyKey}（尚未接入）
           </span>
         </div>

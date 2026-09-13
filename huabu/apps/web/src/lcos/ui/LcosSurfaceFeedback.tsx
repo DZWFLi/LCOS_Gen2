@@ -71,16 +71,10 @@ export function LcosSurfaceFeedback({
   return (
     <div
       role="status"
+      data-lcos-family="surface-feedback"
+      data-lcos-variant={presentation}
       data-lcos-surface-feedback={presentation}
-      className="inline-flex max-w-full items-center gap-2 rounded-full px-3 py-1.5"
-      style={{
-        background: lcosTokens.color.raised.light,
-        border: `1px solid ${lcosTokens.color.borderSubtle.light}`,
-        color: presentation === 'error' ? lcosTokens.color.danger : lcosTokens.color.muted.light,
-        fontSize: lcosTokens.fontSize.sm,
-        minHeight: 38,
-        ...style,
-      }}
+      style={style}
     >
       <span aria-hidden className={presentation === 'loading' ? 'lcos-static-pulse' : undefined}>
         {PRESENTATION_ICON[presentation]}
@@ -100,7 +94,7 @@ export function LcosSurfaceFeedback({
           }}
           className="shrink-0 rounded-full font-medium"
           style={{
-            color: lcosTokens.color.text.light,
+            color: lcosTokens.color.text,
             padding: '2px 8px',
             minHeight: 28,
             fontSize: lcosTokens.fontSize.xs,

@@ -56,7 +56,7 @@ export function LcosSurfaceDock({
       <div
         title="Navigator（未启用）"
         className="mr-1 hidden items-center justify-center rounded-full sm:flex"
-        style={{ width: 44, height: 44, color: lcosTokens.color.muted.light, opacity: 0.55, cursor: 'not-allowed' }}
+        style={{ width: 44, height: 44, color: lcosTokens.color.muted, opacity: 0.55, cursor: 'not-allowed' }}
         aria-hidden
       >
         <Blocks className="h-4 w-4" />
@@ -79,8 +79,8 @@ export function LcosSurfaceDock({
               ...lcosHitArea,
               minHeight: 44,
               fontWeight: active ? 600 : 400,
-              color: active ? lcosTokens.color.textOnInverse.light : lcosTokens.color.text.light,
-              background: active ? lcosTokens.color.inverse.light : 'transparent',
+              color: active ? lcosTokens.color.textOnInverse : lcosTokens.color.text,
+              background: active ? lcosTokens.color.inverse : 'transparent',
             }}
           >
             {creating ? '建立中…' : label}
@@ -88,7 +88,7 @@ export function LcosSurfaceDock({
         );
       })}
 
-      <div className="mx-1 h-5 w-px" style={{ background: lcosTokens.color.borderSubtle.light }} />
+      <div className="mx-1 h-5 w-px" style={{ background: lcosTokens.color.borderSubtle }} />
 
       <button
         type="button"
@@ -96,7 +96,7 @@ export function LcosSurfaceDock({
         onClick={() => openWindow('assembly', 'Assembly')}
         title="Assembly · 项目共享仓库"
         className="rounded-full px-3 text-sm transition-colors sm:px-4"
-        style={{ ...lcosHitArea, minHeight: 44, color: lcosTokens.color.text.light }}
+        style={{ ...lcosHitArea, minHeight: 44, color: lcosTokens.color.text }}
       >
         Assembly
       </button>
@@ -105,8 +105,8 @@ export function LcosSurfaceDock({
         <div
           className="absolute -top-11 left-1/2 -translate-x-1/2 rounded-full px-3 py-1.5 text-xs whitespace-nowrap"
           style={{
-            background: lcosTokens.color.inverse.light,
-            color: lcosTokens.color.textOnInverse.light,
+            background: lcosTokens.color.inverse,
+            color: lcosTokens.color.textOnInverse,
             boxShadow: lcosTokens.glass.shadow,
           }}
         >

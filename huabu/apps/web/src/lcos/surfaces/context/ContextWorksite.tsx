@@ -65,7 +65,7 @@ export function ContextWorksite({
             border: '1px solid rgba(0,0,0,0.09)',
             boxShadow: '0 4px 12px rgba(40,48,58,0.075)',
             minHeight: 44,
-            color: lcosTokens.color.text.light,
+            color: lcosTokens.color.text,
           }}
         >
           <Layers className="h-4 w-4" aria-hidden />

@@ -1,0 +1,403 @@
+/* ==========================================================================
+   LCOS 共享组件族（R1）
+   变体轴与取值 = Figma component variants 原文（见 FIGMA_SOURCE_LEDGER）。
+   几何 = unification/structures/<name> 实测（pad/gap/尺寸/圆角）。
+   颜色/圆角/间距/阴影全部取 lcos-tokens.css 变量；本文件不得新增 hex。
+   ========================================================================== */
+
+/* ---------- NavigatorIsland（Figma 5384:367｜11 状态｜pad 6/8 gap 8 h48 r999） ----------
+ * Figma 的描边是 INSIDE（重叠在 padding 内），所以 CSS 用 padding 5/7 + 1px 实描边，
+ * 外框才与 Figma 完全一致：静息 52×48、彩色标 184×48、搜索 402×48。 */
+[data-lcos-family='navigator-island'] {
+  display: flex;
+  align-items: center;
+  gap: var(--lcos-space-8);
+  box-sizing: border-box;
+  height: 48px;
+  padding: 5px 7px;
+  border-radius: var(--lcos-radius-capsule);
+  background: var(--lcos-glass-bg);
+  border: 1px solid var(--lcos-color-border-subtle);
+  box-shadow: var(--lcos-glass-shadow);
+  backdrop-filter: blur(var(--lcos-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--lcos-glass-blur)) saturate(1.4);
+  color: var(--gen2-text);
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+[data-lcos-family='navigator-island'][data-lcos-variant='hover'],
+[data-lcos-family='navigator-island']:hover {
+  background: color-mix(in srgb, var(--gen2-raised) 88%, transparent);
+}
+[data-lcos-family='navigator-island'][data-lcos-variant='pressed'] {
+  background: var(--gen2-raised);
+  transform: scale(0.98);
+}
+[data-lcos-family='navigator-island'][data-lcos-variant='focus'],
+[data-lcos-family='navigator-island'][data-lcos-variant='selected'],
+[data-lcos-family='navigator-island']:focus-within {
+  outline: 2px solid var(--gen2-accent);
+  outline-offset: 2px;
+}
+[data-lcos-family='navigator-island'][data-lcos-variant='disabled'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+[data-lcos-family='navigator-island'][data-lcos-variant='error'] {
+  border-color: var(--lcos-status-danger);
+}
+[data-lcos-family='navigator-island'][data-lcos-variant='degraded'] {
+  border-style: dashed;
+}
+[data-lcos-family='navigator-island'][data-lcos-variant='loading'] {
+  animation: lcos-breathe 1.6s ease-in-out infinite;
+}
+/* 部件：搜索键 36×36（19px 图标）｜Pin 36×36（内 22×22 角标 r11）｜输入 210 */
+[data-lcos-nav-part='search'] {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--lcos-radius-capsule);
+  color: var(--gen2-text);
+}
+[data-lcos-nav-part='search']:hover {
+  background: var(--gen2-raised);
+}
+[data-lcos-nav-part='pin'] {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--lcos-radius-capsule);
+}
+[data-lcos-nav-part='pin']:hover {
+  background: var(--gen2-raised);
+}
+[data-lcos-pin-mark] {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  border: 1px solid var(--lcos-color-border-subtle);
+  background: var(--gen2-surface);
+}
+[data-lcos-pin-tone='violet'] { color: var(--lcos-pin-violet); }
+[data-lcos-pin-tone='teal'] { color: var(--lcos-pin-teal); }
+[data-lcos-pin-tone='amber'] { color: var(--lcos-pin-amber); }
+[data-lcos-nav-part='input'] {
+  width: 210px;
+  flex: none;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 13px;
+  color: var(--gen2-text);
+}
+
+/* ---------- Railway（Figma 5385:283｜目的地 1/4｜pad 8 gap 6｜item 36 r10） ----------
+ * 同 NavigatorIsland：Figma 是 INSIDE 描边，CSS 用 padding 7 + 1px 描边 →
+ * 目的地=1 恰好 52×52，目的地=4 恰好 52×178（7+36×4+6×3+7+2）。 */
+[data-lcos-family='railway'] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lcos-space-x3);
+  box-sizing: border-box;
+  width: 52px;
+  padding: 7px;
+  border-radius: var(--lcos-radius-capsule);
+  background: var(--lcos-glass-bg);
+  border: 1px solid var(--lcos-color-border-subtle);
+  box-shadow: var(--lcos-glass-shadow);
+  backdrop-filter: blur(var(--lcos-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--lcos-glass-blur)) saturate(1.4);
+}
+[data-lcos-railway-item] {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--gen2-muted);
+  transition: background 120ms ease, color 120ms ease;
+}
+[data-lcos-railway-item]:hover,
+[data-lcos-railway-item][data-lcos-variant='hover'] {
+  background: var(--gen2-raised);
+  color: var(--gen2-text);
+}
+[data-lcos-railway-item][data-lcos-variant='selected'] {
+  background: var(--lcos-color-bg-inverse);
+  color: var(--lcos-color-text-on-inverse);
+}
+[data-lcos-railway-item][data-lcos-variant='disabled'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+[data-lcos-railway-footer] {
+  max-width: 10rem;
+  margin-top: var(--lcos-space-x2);
+  padding: var(--lcos-space-x1) var(--lcos-space-8);
+  border-radius: var(--lcos-radius-capsule);
+  background: var(--gen2-raised);
+  color: var(--gen2-muted);
+  font-size: 9px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+/* ---------- ProfessionalWindowChrome（Figma 5387:331｜布局 浮动/停靠/分组｜h48 pad 8/24 gap 8） ---------- */
+[data-lcos-family='window-chrome'] {
+  display: flex;
+  align-items: center;
+  gap: var(--lcos-space-8);
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: var(--lcos-space-8) var(--lcos-space-24);
+  background: var(--gen2-surface);
+  color: var(--gen2-text);
+}
+[data-lcos-family='window-chrome'][data-lcos-variant='浮动'] {
+  border-bottom: 1px solid var(--lcos-color-border-subtle);
+}
+[data-lcos-family='window-chrome'][data-lcos-variant='停靠'] {
+  border-bottom: 1px solid var(--lcos-color-border-default);
+  border-radius: 0;
+}
+[data-lcos-family='window-chrome'][data-lcos-variant='分组'] {
+  border-bottom: 1px solid var(--lcos-color-border-subtle);
+  border-top-left-radius: var(--lcos-radius-card-small);
+  border-top-right-radius: var(--lcos-radius-card-small);
+}
+[data-lcos-window-title] {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--gen2-text);
+}
+[data-lcos-window-icon-button] {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--lcos-radius-capsule);
+  color: var(--gen2-muted);
+}
+[data-lcos-window-icon-button]:hover {
+  background: var(--gen2-raised);
+  color: var(--gen2-text);
+}
+[data-lcos-window-tab] {
+  display: inline-flex;
+  align-items: center;
+  max-width: 180px;
+  min-height: 32px;
+  padding: 0 var(--lcos-space-12);
+  border-radius: var(--lcos-radius-control);
+  font-size: 14px;
+  color: var(--gen2-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-lcos-window-tab][data-lcos-variant='selected'] {
+  background: var(--gen2-raised);
+  color: var(--gen2-text);
+  font-weight: 500;
+}
+
+/* ---------- SurfaceFeedback（Figma 5391:357｜7 呈现｜h38 pad 10/12 gap 8 r16） ---------- */
+[data-lcos-family='surface-feedback'] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lcos-space-8);
+  box-sizing: border-box;
+  min-height: 38px;
+  max-width: 100%;
+  padding: 10px var(--lcos-space-12);
+  border-radius: var(--lcos-radius-medium);
+  background: var(--lcos-surface-elevated);
+  border: 1px solid var(--lcos-color-border-subtle);
+  color: var(--gen2-text);
+  font-size: 13px;
+}
+[data-lcos-family='surface-feedback'][data-lcos-variant='empty'] { color: var(--gen2-muted); }
+[data-lcos-family='surface-feedback'][data-lcos-variant='normal'] { color: var(--gen2-accent); }
+[data-lcos-family='surface-feedback'][data-lcos-variant='focus'] {
+  border-color: var(--gen2-accent);
+  outline: 2px solid var(--gen2-accent);
+  outline-offset: 2px;
+}
+[data-lcos-family='surface-feedback'][data-lcos-variant='disabled'] {
+  color: var(--gen2-muted);
+  opacity: 0.7;
+}
+[data-lcos-family='surface-feedback'][data-lcos-variant='error'] {
+  color: var(--lcos-status-danger);
+  border-color: var(--lcos-status-danger);
+}
+[data-lcos-family='surface-feedback'][data-lcos-variant='recovery'] { color: var(--lcos-pin-amber); }
+
+/* ---------- Collection（Figma 5333:96 / 5334:46｜组织 事情/时间 × 呈现 总览/主画布/装配｜248×244） ---------- */
+[data-lcos-family='collection-surface'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lcos-space-8);
+  box-sizing: border-box;
+  width: 248px;
+  height: 244px;
+  padding: var(--lcos-space-16);
+  border-radius: var(--lcos-radius-medium);
+  background: var(--gen2-surface);
+  border: 1px solid var(--lcos-color-border-subtle);
+  box-shadow: var(--lcos-shadow-default);
+  color: var(--gen2-text);
+  text-align: left;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+[data-lcos-family='collection-surface']:hover {
+  transform: translateY(-2px);
+}
+[data-lcos-family='collection-surface'][data-lcos-variant='selected'] {
+  border-color: var(--gen2-accent);
+  outline: 2px solid var(--gen2-accent);
+  outline-offset: 2px;
+}
+[data-lcos-collection-swatch] {
+  height: 96px;
+  flex: none;
+  border-radius: var(--lcos-radius-card-small);
+  background: color-mix(in srgb, var(--gen2-raised) 80%, transparent);
+  border: 1px solid var(--lcos-color-border-subtle);
+}
+
+/* ---------- TaskCard（Figma 5335:110｜7 状态｜224×324 3:4） ---------- */
+[data-lcos-family='task-card'] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 224px;
+  height: 324px;
+  overflow: hidden;
+  border-radius: var(--lcos-radius-card-small);
+  background: var(--gen2-surface);
+  border: 1px solid var(--lcos-color-border-subtle);
+  box-shadow: var(--lcos-shadow-default);
+  color: var(--gen2-text);
+  text-align: left;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+[data-lcos-family='task-card'][data-lcos-variant='悬停']:hover,
+[data-lcos-family='task-card']:hover {
+  transform: translateY(-2px);
+}
+[data-lcos-family='task-card'][data-lcos-variant='键盘焦点']:focus-within,
+[data-lcos-family='task-card']:focus-within {
+  outline: 2px solid var(--gen2-accent);
+  outline-offset: 2px;
+}
+[data-lcos-family='task-card'][data-lcos-variant='已选目标'] {
+  border-color: var(--gen2-accent);
+  outline: 2px solid var(--gen2-accent);
+  outline-offset: 2px;
+}
+[data-lcos-family='task-card'][data-lcos-variant='草稿中'] {
+  border-color: var(--lcos-pin-amber);
+}
+[data-lcos-family='task-card'][data-lcos-variant='不可用'] {
+  opacity: 0.5;
+}
+[data-lcos-family='task-card'][data-lcos-variant='预览'] {
+  box-shadow: var(--lcos-glass-shadow);
+}
+[data-lcos-task-card-body] {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--lcos-space-8);
+  padding: var(--lcos-space-12);
+  background: var(--gen2-raised);
+}
+[data-lcos-task-card-footer] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lcos-space-8);
+  padding: var(--lcos-space-x3) var(--lcos-space-8);
+  border-top: 1px solid var(--lcos-color-border-subtle);
+}
+
+/* ---------- PortalPreview（Figma 5348:1151｜6 状态｜440×360） ---------- */
+[data-lcos-family='portal-preview'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lcos-space-8);
+  box-sizing: border-box;
+  width: 440px;
+  max-width: 100%;
+  height: 360px;
+  padding: var(--lcos-space-16);
+  border-radius: var(--lcos-radius-medium);
+  background: var(--gen2-surface);
+  border: 1px solid var(--lcos-color-border-subtle);
+  box-shadow: var(--lcos-shadow-default);
+  color: var(--gen2-text);
+}
+[data-lcos-family='portal-preview'][data-lcos-variant='旧缓存'] {
+  border-style: dashed;
+  color: var(--gen2-muted);
+}
+[data-lcos-family='portal-preview'][data-lcos-variant='部分预览'] {
+  border-color: var(--lcos-pin-amber);
+}
+[data-lcos-family='portal-preview'][data-lcos-variant='预览失败'],
+[data-lcos-family='portal-preview'][data-lcos-variant='目标缺失'] {
+  border-color: var(--lcos-status-danger);
+  color: var(--gen2-muted);
+}
+[data-lcos-portal-stage] {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--lcos-radius-card-small);
+  background: var(--gen2-canvas);
+  border: 1px solid var(--lcos-color-border-subtle);
+}
+
+/* ---------- ProjectShell（Figma 5386:436｜现场 Main/Context/Workflow｜1440×900） ---------- */
+[data-lcos-family='project-shell'] {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--gen2-canvas);
+  color: var(--gen2-text);
+}
+
+/* reduced-motion：族内位移/呼吸全部关闭，状态仍以轮廓与颜色表达。 */
+@media (prefers-reduced-motion: reduce) {
+  [data-lcos-family='navigator-island'][data-lcos-variant='loading'] {
+    animation: none;
+  }
+  [data-lcos-family='collection-surface'],
+  [data-lcos-family='task-card'] {
+    transition: none;
+  }
+  [data-lcos-family='collection-surface']:hover,
+  [data-lcos-family='task-card']:hover,
+  [data-lcos-family='navigator-island'][data-lcos-variant='pressed'] {
+    transform: none;
+  }
+}

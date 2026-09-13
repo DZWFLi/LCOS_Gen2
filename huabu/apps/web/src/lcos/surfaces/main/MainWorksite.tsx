@@ -28,10 +28,10 @@ export function MainWorksite(props: MainWorksiteProps): React.JSX.Element {
       {props.canvasId !== undefined && props.canvasNodeCount === 0 && (
         <div className="pointer-events-none fixed left-1/2 top-1/2 z-30 -translate-x-1/2 -translate-y-1/2">
           <div className="flex flex-col items-center gap-2 rounded-2xl px-6 py-5" style={lcosGlassStyle}>
-            <span className="text-sm font-medium" style={{ color: lcosTokens.color.text.light }}>
+            <span className="text-sm font-medium" style={{ color: lcosTokens.color.text }}>
               空的主现场
             </span>
-            <span className="max-w-[260px] text-center text-xs leading-relaxed" style={{ color: lcosTokens.color.muted.light }}>
+            <span className="max-w-[260px] text-center text-xs leading-relaxed" style={{ color: lcosTokens.color.muted }}>
               用顶部搜索把项目里的材料带到 Main，或从 Assembly 取用材料。
             </span>
           </div>

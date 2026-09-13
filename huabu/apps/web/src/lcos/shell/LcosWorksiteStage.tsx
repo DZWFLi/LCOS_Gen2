@@ -55,7 +55,7 @@ export function LcosWorksiteStage({
       <div
         data-lcos-worksite-stage-empty={surface}
         className="flex h-full w-full items-center justify-center"
-        style={{ background: lcosTokens.color.canvas.light }}
+        style={{ background: lcosTokens.color.canvas }}
       >
         <div className="flex flex-col items-center gap-4">
           <LcosSurfaceFeedback
@@ -67,8 +67,8 @@ export function LcosWorksiteStage({
             onClick={() => void ensureCanvas()}
             className="rounded-full px-5 font-medium transition-colors"
             style={{
-              background: lcosTokens.color.inverse.light,
-              color: lcosTokens.color.textOnInverse.light,
+              background: lcosTokens.color.inverse,
+              color: lcosTokens.color.textOnInverse,
               minHeight: 44,
               fontSize: lcosTokens.fontSize.md,
             }}
@@ -85,7 +85,7 @@ export function LcosWorksiteStage({
 
   if (canvasNotFound) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-4" style={{ background: lcosTokens.color.canvas.light }}>
+      <div className="flex h-full w-full flex-col items-center justify-center gap-4" style={{ background: lcosTokens.color.canvas }}>
         <LcosSurfaceFeedback
           presentation="disabled"
           message={t('canvasPage.notFoundDescription')}
@@ -113,8 +113,8 @@ export function LcosWorksiteStage({
           }}
           className="rounded-full px-5 font-medium"
           style={{
-            background: lcosTokens.color.inverse.light,
-            color: lcosTokens.color.textOnInverse.light,
+            background: lcosTokens.color.inverse,
+            color: lcosTokens.color.textOnInverse,
             minHeight: 44,
           }}
         >

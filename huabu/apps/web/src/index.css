@@ -4,6 +4,10 @@
  */
 
 @import 'tailwindcss';
+/* LCOS 设计 token（Figma 生成，双主题）：必须先于 lcos.css，后者引用 --gen2-* 等变量 */
+@import './lcos/ui/lcos-tokens.css';
+/* LCOS 共享组件族变体（R1） */
+@import './lcos/ui/families/lcos-families.css';
 /* LCOS 前端样式（Wave 9）：静态脉冲、焦点轮廓、玻璃降级、reduced-motion 覆盖 */
 @import './lcos/ui/lcos.css';
 

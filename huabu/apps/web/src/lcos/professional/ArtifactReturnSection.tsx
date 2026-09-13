@@ -93,29 +93,29 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
     <section
       data-lcos-artifact-return
       className="flex flex-col gap-2 rounded-xl p-3"
-      style={{ background: lcosTokens.color.surface.light, border: `1px solid ${lcosTokens.color.borderSubtle.light}` }}
+      style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}
     >
       <div className="flex items-center gap-1.5">
         <ShieldQuestion className="h-3.5 w-3.5" style={{ color: lcosTokens.color.pinViolet }} aria-hidden />
-        <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text.light }}>
+        <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>
           Review · Artifact Return
         </span>
       </div>
 
-      {state === 'loading' && <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>读取复核状态…</span>}
+      {state === 'loading' && <span className="text-xs" style={{ color: lcosTokens.color.muted }}>读取复核状态…</span>}
       {state === 'error' && (
         <div className="flex items-center gap-2">
           <span className="text-xs" style={{ color: lcosTokens.color.danger }}>
             复核状态读取失败{errorDetail ? `（${errorDetail}）` : ''}
           </span>
-          <button type="button" onClick={load} className="rounded-full px-2 py-1 text-[11px]" style={{ background: lcosTokens.color.raised.light, color: lcosTokens.color.text.light }}>
+          <button type="button" onClick={load} className="rounded-full px-2 py-1 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>
             重试
           </button>
         </div>
       )}
 
       {state === 'ready' && reviews.length === 0 && (
-        <span className="text-xs" style={{ color: lcosTokens.color.muted.light }}>
+        <span className="text-xs" style={{ color: lcosTokens.color.muted }}>
           本会话关联 Run 暂无复核投影
         </span>
       )}
@@ -126,16 +126,16 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
           return (
             <div key={String(review.run.id)} className="flex flex-col gap-1.5" data-lcos-review-run={String(review.run.id)}>
               <div className="flex items-center gap-2">
-                <span className="truncate text-xs" style={{ color: lcosTokens.color.text.light }}>
+                <span className="truncate text-xs" style={{ color: lcosTokens.color.text }}>
                   Run {String(review.run.id).slice(0, 10)}
                 </span>
-                <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised.light, color: lcosTokens.color.muted.light }}>
+                <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}>
                   {review.presentationPhase}
                 </span>
               </div>
 
               {review.returns.length === 0 ? (
-                <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: lcosTokens.color.muted.light }}>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: lcosTokens.color.muted }}>
                   <span>暂无待复核结果</span>
                   <span data-lcos-review-capability="accept">采纳 {caps.accept.enabled ? '可用' : `不可用（${caps.accept.reason ?? '未说明'}）`}</span>
                   <span data-lcos-review-capability="reject">拒绝 {caps.reject.enabled ? '可用' : `不可用（${caps.reject.reason ?? '未说明'}）`}</span>
@@ -147,13 +147,13 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
                     key={String(ret.id)}
                     data-lcos-return={String(ret.id)}
                     className="flex flex-col gap-1 rounded-lg px-2.5 py-2"
-                    style={{ background: lcosTokens.color.raised.light }}
+                    style={{ background: lcosTokens.color.raised }}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: lcosTokens.color.text.light }}>
+                      <span className="min-w-0 flex-1 truncate text-[11px]" style={{ color: lcosTokens.color.text }}>
                         {String(ret.targetArtifactId)} · {ret.action} · {ret.status}
                       </span>
-                      <span className="shrink-0 text-[10px]" style={{ color: lcosTokens.color.muted.light }}>
+                      <span className="shrink-0 text-[10px]" style={{ color: lcosTokens.color.muted }}>
                         base {String(ret.baseRevisionId).slice(0, 8)}
                       </span>
                     </div>
@@ -165,7 +165,7 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
                         title={caps.accept.enabled ? '采纳为 Current' : `不可用：${caps.accept.reason ?? '未说明'}`}
                         onClick={() => decide(ret, 'accept')}
                         className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium disabled:opacity-40"
-                        style={{ background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light, minHeight: 30 }}
+                        style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse, minHeight: 30 }}
                       >
                         <CheckCheck className="h-3 w-3" aria-hidden /> 采纳
                       </button>
@@ -176,7 +176,7 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
                         title={caps.reject.enabled ? '拒绝该 Draft' : `不可用：${caps.reject.reason ?? '未说明'}`}
                         onClick={() => decide(ret, 'reject')}
                         className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] disabled:opacity-40"
-                        style={{ color: lcosTokens.color.text.light, minHeight: 30 }}
+                        style={{ color: lcosTokens.color.text, minHeight: 30 }}
                       >
                         <XCircle className="h-3 w-3" aria-hidden /> 拒绝
                       </button>
@@ -187,12 +187,12 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
                         title={caps.retry.enabled ? '基于同一 Draft 重试' : `不可用：${caps.retry.reason ?? '未说明'}`}
                         onClick={() => decide(ret, 'retry')}
                         className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] disabled:opacity-40"
-                        style={{ color: lcosTokens.color.text.light, minHeight: 30 }}
+                        style={{ color: lcosTokens.color.text, minHeight: 30 }}
                       >
                         <RotateCcw className="h-3 w-3" aria-hidden /> 重试
                       </button>
                       {busy !== null && (
-                        <span className="text-[10px]" style={{ color: lcosTokens.color.muted.light }}>
+                        <span className="text-[10px]" style={{ color: lcosTokens.color.muted }}>
                           处理中…
                         </span>
                       )}
@@ -204,7 +204,7 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
           );
         })}
 
-      {receipt && <span className="text-xs" style={{ color: lcosTokens.color.accent.light }}>{receipt}</span>}
+      {receipt && <span className="text-xs" style={{ color: lcosTokens.color.accent }}>{receipt}</span>}
       {errorDetail && state === 'ready' && (
         <span data-lcos-return-error className="text-xs" style={{ color: lcosTokens.color.danger }}>
           复核决定失败 · {errorDetail}

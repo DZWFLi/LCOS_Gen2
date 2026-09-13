@@ -79,8 +79,8 @@ export function LcosComposerHost({ projectId, workspaceId }: LcosComposerHostPro
         {draftRefs.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5">
             {draftRefs.map((ref) => (
-              <span key={`${ref.entityType}:${ref.entityId}`} data-lcos-composer-ref className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]" style={{ background: lcosTokens.color.raised.light, color: lcosTokens.color.text.light }}>
-                <Paperclip className="h-3 w-3" style={{ color: lcosTokens.color.muted.light }} aria-hidden />
+              <span key={`${ref.entityType}:${ref.entityId}`} data-lcos-composer-ref className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>
+                <Paperclip className="h-3 w-3" style={{ color: lcosTokens.color.muted }} aria-hidden />
                 {ref.entityId.slice(0, 16)}
               </span>
             ))}
@@ -100,7 +100,7 @@ export function LcosComposerHost({ projectId, workspaceId }: LcosComposerHostPro
             placeholder="告诉 Agent 下一步要做什么…（Cmd/Ctrl+Enter 提交；空行不可提交）"
             aria-label="Composer 输入"
             className="max-h-40 w-full resize-none bg-transparent text-sm leading-relaxed outline-none"
-            style={{ color: lcosTokens.color.text.light }}
+            style={{ color: lcosTokens.color.text }}
           />
           <button
             type="button"
@@ -109,7 +109,7 @@ export function LcosComposerHost({ projectId, workspaceId }: LcosComposerHostPro
             title={workspaceId === undefined ? '现场未就绪（未解析到 workspace），暂不可提交' : '提交（Cmd/Ctrl+Enter）'}
             onClick={() => void submit()}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40"
-            style={{ background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light }}
+            style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse }}
           >
             <ArrowUp className="h-4 w-4" />
           </button>
@@ -120,12 +120,12 @@ export function LcosComposerHost({ projectId, workspaceId }: LcosComposerHostPro
           </div>
         )}
         {state === 'submitting' && (
-          <div className="px-4 pb-2 text-xs" style={{ color: lcosTokens.color.muted.light }}>
+          <div className="px-4 pb-2 text-xs" style={{ color: lcosTokens.color.muted }}>
             提交中…
           </div>
         )}
         {state === 'done' && receipt && (
-          <div className="px-4 pb-2 text-xs" style={{ color: lcosTokens.color.accent.light }}>
+          <div className="px-4 pb-2 text-xs" style={{ color: lcosTokens.color.accent }}>
             {receipt}
           </div>
         )}

@@ -44,7 +44,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
       aria-label={`${title} · 双击打开会话工作台`}
       className="flex h-full w-full flex-col overflow-hidden"
       style={{
-        background: lcosTokens.color.surface.light,
+        background: lcosTokens.color.surface,
         border: `1px solid ${SPECIES_ACCENT.glyth}2E`,
         borderRadius: lcosTokens.radius.cardSmall,
         boxShadow: lcosTokens.shadow.default,

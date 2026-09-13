@@ -10,6 +10,8 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { createLcosCoreSession } from '../../app/lcosCoreClient';
 import { useLcosReferenceStore } from '../../lcosReferenceState';
+import { sameEntityRef } from '../../referenceBridge';
+import { LcosTaskCard, type LcosTaskCardState } from '../../ui/families';
 import { LcosSurfaceFeedback } from '../../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../../ui/lcosTokens';
 
@@ -22,6 +24,8 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
   const [query, setQuery] = useState('');
+  // 草稿引用 = 真实 presentation state（Selection ≠ Reference）；用于卡面「草稿中」
+  const draftRefs = useLcosReferenceStore((s) => s.draft.orderedEntityRefs);
 
   useEffect(() => {
     setState('loading');
@@ -43,17 +47,28 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
     return items.filter((item) => (item.title ?? '').toLowerCase().includes(q));
   }, [items, query]);
 
+  /**
+   * 7 状态里生产可达的三种（其余 悬停/键盘焦点 由 CSS 表达；预览/已选目标 归属 R5）：
+   * 草稿中 = 该实体已在 Composer 草稿；不可用 = 没有可引用的实体身份；其余为静息。
+   */
+  const cardState = (item: WarehouseItemV1): LcosTaskCardState => {
+    const entityId = item.entityRef?.id;
+    if (!entityId) return '不可用';
+    const ref = { entityType: item.kind, entityId };
+    return draftRefs.some((x) => sameEntityRef(x, ref)) ? '草稿中' : '静息';
+  };
+
   return (
     <div data-lcos-workflow-pool className="flex h-full flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
-        <label className="flex flex-1 items-center gap-2 rounded-xl px-3 py-2" style={{ background: lcosTokens.color.raised.light }}>
-          <Search className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted.light }} aria-hidden />
+        <label className="flex flex-1 items-center gap-2 rounded-xl px-3 py-2" style={{ background: lcosTokens.color.raised }}>
+          <Search className="h-4 w-4 shrink-0" style={{ color: lcosTokens.color.muted }} aria-hidden />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索材料 / 工作流"
             className="w-full bg-transparent text-sm outline-none"
-            style={{ color: lcosTokens.color.text.light }}
+            style={{ color: lcosTokens.color.text }}
           />
         </label>
       </div>
@@ -69,38 +84,36 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
       )}
 
       {state === 'ready' && filtered.length > 0 && (
-        <div className="grid max-h-[46vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 md:grid-cols-4">
+        <div className="flex max-h-[46vh] flex-wrap gap-3 overflow-y-auto pr-1">
           {filtered.map((item) => (
-            <div
+            <LcosTaskCard
               key={`${item.kind}:${item.entityRef.id}`}
-              data-lcos-workflow-card
-              className="flex flex-col overflow-hidden rounded-xl"
-              style={{ aspectRatio: '3 / 4', border: `1px solid ${lcosTokens.color.borderSubtle.light}`, boxShadow: lcosTokens.shadow.default, background: lcosTokens.color.surface.light }}
+              state={cardState(item)}
+              title={item.title ?? '未命名'}
+              meta={`${item.kind} · 卡牌（3:4）`}
+              legacyWorkflowKind={item.kind}
+              footer={
+                <>
+                  <button
+                    type="button"
+                    data-lcos-card-take
+                    onClick={() => useLcosReferenceStore.getState().addEntityToDraft({ entityType: item.kind, entityId: item.entityRef.id })}
+                    className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium"
+                    style={{ color: lcosTokens.color.text }}
+                    title="取用 → 加入 Composer 草稿（未发送）"
+                  >
+                    <PlusCircle className="h-3 w-3" aria-hidden /> 取用
+                  </button>
+                  <span className="text-[9px]" style={{ color: lcosTokens.color.muted }} title="打开/续接尚未接入">
+                    打开（尚未接入）
+                  </span>
+                </>
+              }
             >
-              <div className="flex flex-1 flex-col gap-2 p-3" style={{ background: item.kind === 'conversation' ? 'rgba(32,32,32,0.04)' : lcosTokens.color.raised.light }}>
-                <span className="truncate text-xs font-semibold" style={{ color: lcosTokens.color.text.light }}>
-                  {item.title ?? '未命名'}
-                </span>
-                <span className="mt-auto text-[9px]" style={{ color: lcosTokens.color.muted.light }}>
-                  {item.kind} · 卡牌（3:4）
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-1 border-t px-2 py-1.5" style={{ borderColor: lcosTokens.color.borderSubtle.light }}>
-                <button
-                  type="button"
-                  data-lcos-card-take
-                  onClick={() => useLcosReferenceStore.getState().addEntityToDraft({ entityType: item.kind, entityId: item.entityRef.id })}
-                  className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium"
-                  style={{ color: lcosTokens.color.text.light }}
-                  title="取用 → 加入 Composer 草稿（未发送）"
-                >
-                  <PlusCircle className="h-3 w-3" aria-hidden /> 取用
-                </button>
-                <span className="text-[9px]" style={{ color: lcosTokens.color.muted.light }} title="打开/续接尚未接入">
-                  打开（尚未接入）
-                </span>
-              </div>
-            </div>
+              <span data-lcos-card-preview className="text-[10px] opacity-60">
+                {item.kind === 'conversation' ? '会话' : '材料'}
+              </span>
+            </LcosTaskCard>
           ))}
         </div>
       )}

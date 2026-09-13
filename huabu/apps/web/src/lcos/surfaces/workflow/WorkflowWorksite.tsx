@@ -49,7 +49,7 @@ export function WorkflowWorksite({
             border: '1px solid rgba(0,0,0,0.09)',
             boxShadow: '0 4px 12px rgba(40,48,58,0.075)',
             minHeight: 44,
-            color: lcosTokens.color.text.light,
+            color: lcosTokens.color.text,
           }}
         >
           <Hand className="h-4 w-4" aria-hidden />
@@ -62,15 +62,15 @@ export function WorkflowWorksite({
           data-lcos-workflow-hand
           className="pointer-events-auto fixed left-24 bottom-20 z-30 flex w-[min(520px,calc(100vw-160px))] flex-col rounded-2xl"
           style={{
-            background: lcosTokens.color.surface.light,
+            background: lcosTokens.color.surface,
             border: '1px solid rgba(0,0,0,0.10)',
             boxShadow: '0 12px 40px rgba(40,48,58,0.14)',
             maxHeight: 'calc(100vh - 140px)',
           }}
         >
-          <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ minHeight: 44, borderColor: lcosTokens.color.borderSubtle.light }}>
-            <span className="text-sm font-semibold" style={{ color: lcosTokens.color.text.light }}>手牌 · Card Pool</span>
-            <button type="button" aria-label="关闭手牌" onClick={() => setHandOpen(false)} className="rounded-full p-1" style={{ color: lcosTokens.color.muted.light }}>
+          <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ minHeight: 44, borderColor: lcosTokens.color.borderSubtle }}>
+            <span className="text-sm font-semibold" style={{ color: lcosTokens.color.text }}>手牌 · Card Pool</span>
+            <button type="button" aria-label="关闭手牌" onClick={() => setHandOpen(false)} className="rounded-full p-1" style={{ color: lcosTokens.color.muted }}>
               <X className="h-4 w-4" />
             </button>
           </div>
