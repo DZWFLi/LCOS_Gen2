@@ -11,6 +11,8 @@ import useCanvasStore from '@/store/canvasStore';
 import { LcosGlobalHud } from './LcosGlobalHud';
 import { SURFACE_LABEL, useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
 import { LcosWorksiteStage } from './LcosWorksiteStage';
+import { LcosComposerHost } from '../composer/LcosComposerHost';
+import { ProfessionalWindowStage } from '../professional/ProfessionalWindowStage';
 import { MainWorksite } from '../surfaces/main/MainWorksite';
 import { lcosTokens } from '../ui/lcosTokens';
 
@@ -115,9 +117,9 @@ export function LcosProjectShell({
             ensureCanvas={ensureCanvas}
           />
 
-          {/* Route-level 空区域槽位：Professional Stage / Composer（Wave 5 挂入 body registry） */}
-          <div data-lcos-region="professional-stage" className="hidden" aria-hidden />
-          <div data-lcos-region="composer" className="hidden" aria-hidden />
+          {/* Wave 5：route-level 专业窗口舞台 + 统一 Composer */}
+          <ProfessionalWindowStage projectId={projectId} />
+          <LcosComposerHost projectId={projectId} />
         </>
       )}
     </div>

@@ -32,6 +32,24 @@ export interface LcosLocateRequest {
 
 export type LcosCameraCommandKind = 'zoom-in' | 'zoom-out' | 'fit' | 'reset';
 
+/** Professional body 键（body registry）。 */
+export type LcosProfessionalBodyKey =
+  | 'assembly'
+  | 'reader'
+  | 'conversation'
+  | 'runtime-doctor'
+  | 'capture-inbox'
+  | 'connector-source';
+
+export interface LcosWindow {
+  readonly id: string;
+  readonly bodyKey: LcosProfessionalBodyKey;
+  readonly title: string;
+  /** body 上下文（如 artifactId / projectId）。 */
+  readonly target?: string;
+  readonly active: boolean;
+}
+
 export interface LcosShellUiState {
   projectId: string | null;
   activeSurface: LcosSurfaceKey;
@@ -40,6 +58,8 @@ export interface LcosShellUiState {
   /** 画布内待执行命令（route-level 组件发布，canvas-local overlay 消费）。 */
   cameraRequest: { id: number; kind: LcosCameraCommandKind } | null;
   locateRequest: LcosLocateRequest | null;
+  /** route-level Professional 窗口（只放窗口拓扑 intent；body 数据仍在 Core）。 */
+  windows: readonly LcosWindow[];
   setProject(projectId: string): void;
   setActiveSurface(surface: LcosSurfaceKey): void;
   setSurfaceCanvasId(surface: LcosSurfaceKey, canvasId: string): void;
@@ -48,6 +68,9 @@ export interface LcosShellUiState {
   requestLocate(request: LcosLocateRequest): void;
   consumeCamera(): void;
   consumeLocate(): void;
+  openWindow(bodyKey: LcosProfessionalBodyKey, title: string, target?: string): void;
+  closeWindow(id: string): void;
+  activateWindow(id: string): void;
   clear(): void;
 }
 
@@ -57,6 +80,7 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
   surfaceCanvasId: {},
   cameraRequest: null,
   locateRequest: null,
+  windows: [],
   setProject: (projectId) => set({ projectId }),
   setActiveSurface: (activeSurface) => set({ activeSurface }),
   setSurfaceCanvasId: (surface, canvasId) =>
@@ -67,6 +91,31 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
   requestLocate: (request) => set({ locateRequest: request }),
   consumeCamera: () => set({ cameraRequest: null }),
   consumeLocate: () => set({ locateRequest: null }),
+  openWindow: (bodyKey, title, target) =>
+    set((s) => {
+      const existing = s.windows.find((w) => w.bodyKey === bodyKey && (target === undefined || w.target === target));
+      if (existing) {
+        return { windows: s.windows.map((w) => ({ ...w, active: w.id === existing.id })) };
+      }
+      const id = `${bodyKey}-${Date.now()}`;
+      return { windows: [...s.windows.map((w) => ({ ...w, active: false })), { id, bodyKey, title, target, active: true }] };
+    }),
+  closeWindow: (id) =>
+    set((s) => {
+      const remaining = s.windows.filter((w) => w.id !== id);
+      if (remaining.length === 0) return { windows: [] };
+      const anyActive = remaining.some((w) => w.active);
+      return { windows: anyActive ? remaining : remaining.map((w, i) => (i === remaining.length - 1 ? { ...w, active: true } : w)) };
+    }),
+  activateWindow: (id) =>
+    set((s) => ({ windows: s.windows.map((w) => ({ ...w, active: w.id === id })) })),
   clear: () =>
-    set({ projectId: null, activeSurface: 'main', surfaceCanvasId: {}, cameraRequest: null, locateRequest: null }),
+    set({
+      projectId: null,
+      activeSurface: 'main',
+      surfaceCanvasId: {},
+      cameraRequest: null,
+      locateRequest: null,
+      windows: [],
+    }),
 }));

@@ -35,6 +35,8 @@ export interface LcosReferenceState {
   forgetNode(nodeId: string): void;
   /** Toggle one node's entity in the ordered draft references. */
   toggleNodeReference(nodeId: string): boolean;
+  /**（Wave 5）直接把实体加入草稿（Assembly/卡面条目；Selection≠Reference）。 */
+  addEntityToDraft(ref: CoreEntityRefLike): void;
   /** Ordered read for the Reference Strip. */
   orderedNodeReferences(): readonly CoreEntityRefLike[];
   /** Is this node's entity currently referenced? (badge rendering) */
@@ -70,6 +72,10 @@ export const useLcosReferenceStore = create<LcosReferenceState>((set, get) => ({
     if (!ref) return false;
     set((state) => ({ draft: toggleReference(state.draft, ref) }));
     return true;
+  },
+
+  addEntityToDraft: (ref) => {
+    set((state) => ({ draft: toggleReference(state.draft, ref) }));
   },
 
   orderedNodeReferences: () => orderedReferences(get().draft),

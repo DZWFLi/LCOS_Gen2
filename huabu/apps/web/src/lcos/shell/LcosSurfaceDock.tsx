@@ -21,6 +21,7 @@ export function LcosSurfaceDock({
   ensureCanvas,
 }: LcosSurfaceDockProps): React.JSX.Element {
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
+  const openWindow = useLcosShellStore((s) => s.openWindow);
   const { busySurface, transitionError, switchWorksite } = useLcosWorksiteNav({
     projectId,
     canvasBySurface,
@@ -91,10 +92,11 @@ export function LcosSurfaceDock({
 
       <button
         type="button"
-        disabled
-        title="Assembly（Wave 5 接入，GAP）"
-        className="rounded-full text-sm disabled:opacity-50"
-        style={{ ...lcosHitArea, minHeight: 44, padding: '0 16px', color: lcosTokens.color.muted.light }}
+        data-lcos-surface="assembly"
+        onClick={() => openWindow('assembly', 'Assembly')}
+        title="Assembly · 项目共享仓库"
+        className="rounded-full text-sm transition-colors"
+        style={{ ...lcosHitArea, minHeight: 44, padding: '0 16px', color: lcosTokens.color.text.light }}
       >
         Assembly
       </button>
