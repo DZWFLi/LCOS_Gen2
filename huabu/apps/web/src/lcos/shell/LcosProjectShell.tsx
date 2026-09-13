@@ -59,6 +59,7 @@ export function LcosProjectShell({
           {/* 工作现场舞台（唯一 Canvas） */}
           <div className="absolute inset-0">
             <LcosWorksiteStage
+              projectId={projectId}
               surface={active}
               canvasId={canvasBySurface[active]}
               ensureCanvas={() => ensureCanvas(active)}

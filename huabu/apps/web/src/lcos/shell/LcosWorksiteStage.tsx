@@ -6,15 +6,15 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Loading } from '@/components/Common/Loading';
-import { Canvas } from '@/components/Panels/Canvas/Canvas';
 import useCanvasStore from '@/store/canvasStore';
 
+import { CanvasHostBoundary } from '../host/CanvasHostBoundary';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
-
 import type { LcosSurfaceKey } from '../shell/lcosShellStore';
 
 export interface LcosWorksiteStageProps {
+  readonly projectId: string;
   readonly surface: LcosSurfaceKey;
   readonly canvasId?: string;
   readonly ensureCanvas: () => Promise<string | undefined>;
@@ -22,6 +22,7 @@ export interface LcosWorksiteStageProps {
 }
 
 export function LcosWorksiteStage({
+  projectId,
   surface,
   canvasId,
   ensureCanvas,
@@ -104,7 +105,7 @@ export function LcosWorksiteStage({
 
   return (
     <div data-lcos-worksite-stage={surface} className="relative h-full w-full overflow-hidden">
-      <Canvas />
+      <CanvasHostBoundary projectId={projectId} chromeMode="lcos" />
     </div>
   );
 }

@@ -12,8 +12,10 @@
 | `CanvasLayerPanel::CanvasLayerPanel` | MainLayout.leftPanel | REPLACE | buildTreeItems/search/focus 抽 helper → Navigator/Context instruments | no | yes | Wave 4 |
 | `PreviewWorkspacePanel` | MainLayout.rightPanel | REPLACE | preview target/tab/session/Escape 复用 → Reader/Work View | no | yes | Wave 5 |
 | `CenterArea.tsx::CenterArea` | MainLayout children | REPLACE | `LcosWorksiteStage` 直接挂 `CanvasHostBoundary`；Handbook/Settings/Bot 动作由 LCOS 入口接管 | no | yes | Wave 1–2 |
-| `Canvas.tsx` | CenterArea | KEEP KERNEL | 唯一 ReactFlow；新增 chromeMode/slots；LCOS mode 隐藏 NodeToolbar/Controls/MiniMap | yes（唯一一份） | yes | Wave 2 |
-| `NodeToolbar (CanvasToolbar.tsx)` | Canvas | KEEP COMMAND-HIDE UI | add resource/undo/redo 命令 → Composer/Action Arc | no (LCOS mode) | yes | Wave 2/5 |
+| `Canvas.tsx` | CenterArea | KEEP KERNEL | 唯一 ReactFlow；新增 chromeMode/slots；LCOS mode 隐藏 NodeToolbar/Controls/MiniMap | yes（唯一一份） | yes | Wave 2 ✓ |
+| `NodeToolbar (CanvasToolbar.tsx)` | Canvas bottom-center Panel | KEEP COMMAND-HIDE UI | add resource/undo/redo 命令 → Composer/Action Arc | no (LCOS mode ✓) | yes | Wave 2 ✓ 浏览器验证 |
+| `Controls (CanvasZoomLevel/Interactivity)` | Canvas bottom-left | KEEP COMMAND-HIDE UI | LCOS camera controls Wave 4 提供（Figma HUD 左下 52）；ctrl+wheel/中键/触摸 pinch 仍走 kernel | no (LCOS mode ✓) | yes | Wave 2 ✓ |
+| `MiniMap` | Canvas bottom-right | KEEP COMMAND-HIDE UI | Wave 4 Locator 取代 | no (LCOS mode ✓) | yes | Wave 2 ✓ |
 | `ChatPanel` | PreviewWorkspace chat tab | REPLACE(视觉)/KEEP KERNEL(transport) | useAgentStream/session/retry/waiting_input 复用 → ConversationWorkView | no | yes | Wave 8 |
 | `WindowChrome` | RootLayout | KEEP KERNEL(OS 框架) | Electron 窗口机械留 | yes | n/a | Wave 1 |
 | `GlobalModals` | RootLayout | KEEP COMMAND-HIDE UI | Settings/Shortcuts 单例；入口由 LCOS chrome 触发 | yes(单例) | yes | Wave 1 |

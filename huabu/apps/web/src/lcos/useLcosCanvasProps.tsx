@@ -29,6 +29,7 @@ import type { CanvasHostExtension } from '@/lcos-seam/types';
 import useCanvasStore from '@/store/canvasStore';
 
 import { LcosHostOverlay } from './LcosHostOverlay';
+import { useLcosHostStore } from './host/lcosHostState';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
@@ -58,6 +59,8 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     );
     const rt = createLcosRuntime({ ...cfg, projectId });
     runtimeRef.current = rt;
+    // 当前会话 host 透传：overlay/控制器读取 store，retarget 后不冻结在初始 host。
+    useLcosHostStore.getState().setHost(rt.host);
     // click suppressor 归 runtime 生命周期（审计 §4.4）——安装一次，卸载时 dispose。
     suppressorDisposeRef.current?.();
     suppressorDisposeRef.current = installReferenceClickSuppressor();
@@ -77,6 +80,7 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     return () => {
       runtimeRef.current?.dispose();
       runtimeRef.current = null;
+      useLcosHostStore.getState().setHost(null);
       suppressorDisposeRef.current?.();
       suppressorDisposeRef.current = null;
     };
@@ -89,6 +93,7 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     const rt = runtimeRef.current;
     if (!rt) return;
     rt.retarget({ canvasId });
+    useLcosHostStore.getState().setHost(rt.host);
     void (async () => {
       try {
         await rt.host.reconcile('project-open');

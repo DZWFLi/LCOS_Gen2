@@ -404,11 +404,18 @@ type CanvasProps = {
   shortcutsDisabled?: boolean;
   /** LCOS host seam: renderers/overlays/recognizers injected by the LCOS host. */
   hostExtension?: CanvasHostExtension;
+  /**
+   * LCOS chrome mode: `lcos` hides Huabu product chrome（NodeToolbar / Controls /
+   * MiniMap）而不关闭 kernel 事件与命令路径；`huabu` 为默认（原行为）。
+   * 命令仍可用——LCOS 通过 Composer / Action Arc / 系统菜单调用同一 action。
+   */
+  chromeMode?: 'huabu' | 'lcos';
 };
 
 export const Canvas: React.FC<CanvasProps> = ({
   shortcutsDisabled = false,
   hostExtension,
+  chromeMode = 'huabu',
 }) => {
   // LCOS host seam: merge host renderers over Huabu's built-in nodeTypes.
   // Collisions with built-ins throw in dev and are refused (warn) in prod.
@@ -1678,9 +1685,11 @@ export const Canvas: React.FC<CanvasProps> = ({
           wrapperRef={wrapperRef}
           onPan={shiftLassoScreenPoints}
         />
-        <Panel position="bottom-center" className="mb-6">
-          <NodeToolbar activeTool={tool} onToolChange={setTool} />
-        </Panel>
+        {chromeMode !== 'lcos' && (
+          <Panel position="bottom-center" className="mb-6">
+            <NodeToolbar activeTool={tool} onToolChange={setTool} />
+          </Panel>
+        )}
         {!isBoxSelecting && <MultiSelectResizer />}
         {!isBoxSelecting && <SelectionOutlines />}
         {!isBoxSelecting && !hasStrokeSelection && <MultiSelectToolbar />}
@@ -1708,14 +1717,16 @@ export const Canvas: React.FC<CanvasProps> = ({
           <Fragment key={overlay.key}>{overlay.node}</Fragment>
         ))}
 
-        <Controls position="bottom-left" showInteractive={false}>
-          <CanvasZoomLevel />
-          <CanvasInteractivityControl
-            locked={interactivityLocked}
-            onToggle={() => setInteractivityLocked((prev) => !prev)}
-          />
-        </Controls>
-        {minimapEnabled && (
+        {chromeMode !== 'lcos' && (
+          <Controls position="bottom-left" showInteractive={false}>
+            <CanvasZoomLevel />
+            <CanvasInteractivityControl
+              locked={interactivityLocked}
+              onToggle={() => setInteractivityLocked((prev) => !prev)}
+            />
+          </Controls>
+        )}
+        {chromeMode !== 'lcos' && minimapEnabled && (
           <MiniMap
             pannable
             zoomable
