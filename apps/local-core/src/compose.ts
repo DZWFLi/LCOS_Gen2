@@ -40,9 +40,14 @@ import { ReorganizeService } from './reorganize-service.js'
 import { MutationSafetyService } from './mutation-safety-service.js'
 import { FeedbackRevisionService } from './feedback-revision-service.js'
 import { ContinuityRuntimeService } from './continuity-runtime-service.js'
+import { ConversationContinuationService } from './conversation-continuation-service.js'
 import { ReceiverRuntimeService } from './receiver-runtime-service.js'
 import { SessionLifecycleService } from './session-lifecycle-service.js'
 import { ConversationIdentityService } from './conversation-identity-service.js'
+import { ConversationWorkViewProjectionService } from './conversation-work-view-projection-service.js'
+import { HuabuAgentletContinuationAdapterV1 } from './huabu-agentlet-continuation-adapter.js'
+import { DevFakeAgentletTransportV1 } from './dev-fake-agentlet-transport.js'
+import { HuabuAgentletGatewayTransportV1 } from './huabu-agentlet-gateway-transport.js'
 import { WarehouseService } from './warehouse-service.js'
 import { AssemblyApplyService } from './assembly-apply-service.js'
 import { ProjectSummaryService } from './project-summary-service.js'
@@ -112,9 +117,12 @@ export interface LocalCoreServices {
   readonly mutationSafety: MutationSafetyService | undefined
   readonly feedbackRevision: FeedbackRevisionService | undefined
   readonly continuityRuntime: ContinuityRuntimeService | undefined
+  readonly conversationContinuation: ConversationContinuationService | undefined
   readonly receiverRuntime: ReceiverRuntimeService | undefined
   readonly sessionLifecycle: SessionLifecycleService | undefined
   readonly conversationIdentity: ConversationIdentityService | undefined
+  readonly workView: ConversationWorkViewProjectionService | undefined
+  readonly recoveryAdapter: HuabuAgentletContinuationAdapterV1 | undefined
   readonly warehouse: WarehouseService | undefined
   readonly resultSlots: ResultSlotService | undefined
   readonly assemblyApply: AssemblyApplyService | undefined
@@ -193,6 +201,8 @@ export function composeLocalCoreServices(options: LocalCoreServerOptions = {}): 
     : new ContinuityRuntimeService(metadata, runtimeRegistry, attentionRuntime, projectEvents)
   // RECEIVER-0 只依赖 metadata + 事件总线（不依赖 attention runtime），承接关系层独立可用。
   const receiverRuntime = metadata === undefined ? undefined : new ReceiverRuntimeService(metadata, projectEvents)
+  // GEN2 Sprint 1A（T6）：continuation operation journal —— 只依赖 metadata + 事件总线。
+  const conversationContinuation = metadata === undefined ? undefined : new ConversationContinuationService(metadata, projectEvents)
   // Phase 5 Live Session Binding：会话七态持久化 + run 事件驱动（G3 taxonomy 落地）。
   const sessionLifecycle = metadata === undefined ? undefined : new SessionLifecycleService(metadata, projectEvents)
   // Conversation Identity Bridge（20260827 P0）：承接会话 ↔ 导入会话 canonical 链 + 出生谱系。
@@ -212,6 +222,26 @@ export function composeLocalCoreServices(options: LocalCoreServerOptions = {}): 
   const conversationIdentity = metadata === undefined || conversations === undefined
     ? undefined
     : new ConversationIdentityService(metadata, conversations, sessionLifecycle, projectEvents)
+  const workView = metadata === undefined || conversationIdentity === undefined
+    ? undefined
+    : new ConversationWorkViewProjectionService(metadata, conversationIdentity, conversationContinuation)
+  // T7 recovery adapter：优先真实 Huabu Agentlet Gateway transport（组 1 接线）；
+  // 仅当显式 `LCOS_RECOVERY_TRANSPORT=fake`（dev/测试）强制注入 MOCK transport；
+  // 未配置 gateway URL 且非 fake 时 adapter 未配置 → recovery 动作 503 UNAVAILABLE。
+  let recoveryAdapter: HuabuAgentletContinuationAdapterV1 | undefined = undefined
+  const transportMode = process.env.LCOS_RECOVERY_TRANSPORT ?? (process.env.HUABU_AGENTLET_GATEWAY_URL === undefined ? 'none' : 'real')
+  if (transportMode === 'fake') {
+    recoveryAdapter = new HuabuAgentletContinuationAdapterV1(new DevFakeAgentletTransportV1(), { adapterId: 'dev-fake' })
+  } else if (transportMode === 'real' && process.env.HUABU_AGENTLET_GATEWAY_URL !== undefined) {
+    recoveryAdapter = new HuabuAgentletContinuationAdapterV1(
+      new HuabuAgentletGatewayTransportV1({
+        gatewayUrl: process.env.HUABU_AGENTLET_GATEWAY_URL,
+        ...(process.env.HUABU_AGENTLET_SPAWN_COMMAND === undefined ? {} : { spawnCommand: process.env.HUABU_AGENTLET_SPAWN_COMMAND }),
+        ...(process.env.HUABU_AGENTLET_SPAWN_CWD === undefined ? {} : { spawnCwd: process.env.HUABU_AGENTLET_SPAWN_CWD }),
+      }),
+      { adapterId: 'huabu-agentlet-gateway' },
+    )
+  }
   if (options.runtimeApplicationService !== undefined && sessionLifecycle !== undefined) {
     options.runtimeApplicationService.attachSessionLifecycle(sessionLifecycle)
   }
@@ -262,6 +292,8 @@ export function composeLocalCoreServices(options: LocalCoreServerOptions = {}): 
     runtimeApplication: options.runtimeApplicationService,
     sessionLifecycle,
     conversationIdentity,
+    workView,
+    recoveryAdapter,
     activeContext,
     contextProposals: options.contextProposalStore ?? new ContextProposalStore(metadata, projectEvents),
     runEventListeners: new Map<string, Set<() => void>>(),
@@ -305,6 +337,7 @@ export function composeLocalCoreServices(options: LocalCoreServerOptions = {}): 
     mutationSafety,
     feedbackRevision,
     continuityRuntime,
+    conversationContinuation,
     receiverRuntime,
     warehouse,
     resultSlots,

@@ -158,6 +158,7 @@ import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterCo
 import type { PointerRecognizer } from '@/handler/pointerRouter';
 import type { FrameFitResult, NestableNode } from '@huabu/shared/canvas-engine';
 import { mergeNodeTypes } from '../../../lcos-seam/mergeNodeTypes';
+import { NodeBodyResolverContext } from '../../../lcos-seam/nodeBodySlot';
 import type { CanvasHostExtension } from '../../../lcos-seam/types';
 
 const nodeTypes = {
@@ -1521,11 +1522,12 @@ export const Canvas: React.FC<CanvasProps> = ({
         }
       }}
     >
-      <ReactFlow
-        className={cn(
-          isInitialViewportPending && 'invisible',
-          isStructuredReflowing && 'structured-reflow',
-        )}
+      <NodeBodyResolverContext.Provider value={hostExtension?.resolveNodeBody}>
+        <ReactFlow
+          className={cn(
+            isInitialViewportPending && 'invisible',
+            isStructuredReflowing && 'structured-reflow',
+          )}
         defaultViewport={defaultViewport}
         deleteKeyCode={null}
         nodes={displayNodes}
@@ -1727,6 +1729,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           <SketchOverlay rfInstance={rfInstanceRef.current} />
         )}
       </ReactFlow>
+      </NodeBodyResolverContext.Provider>
 
       {isInitialViewportPending && (
         <Loading

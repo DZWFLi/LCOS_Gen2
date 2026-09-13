@@ -1,0 +1,256 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import type { ContinuationSubmitRequestV1 } from '@local-creative-os/contracts'
+import { ContinuationStaleRevisionError, ConversationContinuationService, RecoveryActionUnsupportedError } from '../src/conversation-continuation-service.js'
+import { HuabuAgentletContinuationAdapterV1 } from '../src/huabu-agentlet-continuation-adapter.js'
+import { DevFakeAgentletTransportV1 } from '../src/dev-fake-agentlet-transport.js'
+import { SqliteMetadataRepository } from '../src/metadata-repository.js'
+import { ProjectEventHub } from '../src/project-events/project-event-hub.js'
+import { ReceiverRuntimeService } from '../src/receiver-runtime-service.js'
+import { createMvpSampleSnapshot } from '../src/mvp-sample-project.js'
+import { createLocalCoreServer, type LocalCoreServer } from '../src/server.js'
+
+const cleanup: string[] = []
+const repositories: SqliteMetadataRepository[] = []
+const servers: LocalCoreServer[] = []
+
+async function setup() {
+  const root = await mkdtemp(join(tmpdir(), 'lcos-recovery-action-'))
+  cleanup.push(root)
+  const graph = createMvpSampleSnapshot(join(root, 'project'), '2026-09-12T00:00:00.000Z')
+  const metadata = new SqliteMetadataRepository(join(root, 'metadata.sqlite'))
+  repositories.push(metadata)
+  metadata.save(graph)
+  const events = new ProjectEventHub()
+  const projectId = String(graph.project.id)
+  const service = new ConversationContinuationService(metadata, events)
+  const receivers = new ReceiverRuntimeService(metadata, events)
+  const conversation = receivers.connectConversation({
+    projectId, conversationRef: 'recovery-target', executorId: 'e', provider: 'codex', label: '恢复目标',
+  })
+  const transport = new DevFakeAgentletTransportV1()
+  const adapter = new HuabuAgentletContinuationAdapterV1(transport, { adapterId: 'test-fake' })
+  return { root, metadata, projectId, conversationId: conversation.id, service, adapter, transport }
+}
+
+function submitInput(projectId: string, conversationId: string, operationId: string): ContinuationSubmitRequestV1 {
+  return {
+    schemaVersion: 1, operationId, projectId, connectedConversationId: conversationId,
+    mode: 'continue_existing', contextInheritance: 'inherit', checkout: 'shared', provider: 'codex',
+  }
+}
+
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.close()))
+  for (const repository of repositories.splice(0)) {
+    try { repository.close() } catch { /* already closed */ }
+  }
+  for (const path of cleanup.splice(0)) void rm(path, { recursive: true, force: true, maxRetries: 3 }).catch(() => { /* best effort */ })
+})
+
+describe('executeRecoveryAction（intent → T6 service → T7 adapter → receipt → journal）', () => {
+  it('recover_external：adapter createSession 成功 → external_create confirmed + evidence', async () => {
+    const { service, projectId, conversationId, adapter } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-1'))
+    const fresh = await service.executeRecoveryAction(projectId, 'op-1', 'recover_external', adapter)
+    expect(fresh.steps.external_create).toBe('confirmed')
+    expect(fresh.externalEvidence?.externalSessionId).toBeTruthy()
+    expect(fresh.status).toBe('binding')
+  })
+
+  it('recover_external：transport 超时 → outcome_unknown + 只允许 reconcile（绝不二次 create 自动重试）', async () => {
+    const { service, projectId, conversationId, adapter, transport } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-2'))
+    transport.failNextSpawnOnce()
+    const fresh = await service.executeRecoveryAction(projectId, 'op-2', 'recover_external', adapter)
+    expect(fresh.steps.external_create).toBe('outcome_unknown')
+    expect(fresh.status).toBe('outcome_unknown')
+    expect(fresh.allowedActions.map((a) => a.action)).toEqual(['reconcile', 'cancel_request'])
+  })
+
+  it('recover_bind：外部已确认 + bind 失败 → adapter continueExisting resumed → core_bind confirmed', async () => {
+    const { service, projectId, conversationId, adapter } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-3'))
+    const external = await service.executeRecoveryAction(projectId, 'op-3', 'recover_external', adapter)
+    expect(external.steps.external_create).toBe('confirmed')
+    service.advanceStep(projectId, 'op-3', { step: 'core_bind', outcome: 'failed', errorEvidence: 'bind-timeout' })
+    const fresh = await service.executeRecoveryAction(projectId, 'op-3', 'recover_bind', adapter)
+    expect(fresh.steps.core_bind).toBe('confirmed')
+    expect(fresh.status).toBe('attaching')
+  })
+
+  it('retry_projection：T1 未接线 → RecoveryActionUnsupportedError（前端禁用按钮）', async () => {
+    const { service, projectId, conversationId, adapter } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-4'))
+    const external = await service.executeRecoveryAction(projectId, 'op-4', 'recover_external', adapter)
+    expect(external.steps.external_create).toBe('confirmed')
+    service.advanceStep(projectId, 'op-4', { step: 'core_bind', outcome: 'confirmed' })
+    service.advanceStep(projectId, 'op-4', { step: 'attach', outcome: 'confirmed' })
+    service.advanceStep(projectId, 'op-4', { step: 'projection', outcome: 'failed' })
+    await expect(service.executeRecoveryAction(projectId, 'op-4', 'retry_projection', adapter))
+      .rejects.toBeInstanceOf(RecoveryActionUnsupportedError)
+  })
+
+  it('cancel_request：本地意图 requested + adapter cancel accepted → cancel 保持 requested（不冒充 cancelled）', async () => {
+    const { service, projectId, conversationId, adapter } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-5'))
+    await service.executeRecoveryAction(projectId, 'op-5', 'recover_external', adapter)
+    const fresh = await service.executeRecoveryAction(projectId, 'op-5', 'cancel_request', adapter)
+    expect(fresh.cancel).toBe('requested')
+    expect(fresh.status).toBe('recovering')
+  })
+
+  it('防重/幂等：settled 后再次执行同一动作被拒绝（不重复副作用）', async () => {
+    const { service, projectId, conversationId, adapter } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-6'))
+    await service.executeRecoveryAction(projectId, 'op-6', 'recover_external', adapter)
+    await expect(service.executeRecoveryAction(projectId, 'op-6', 'recover_external', adapter))
+      .rejects.toThrow(/not allowed/)
+  })
+
+  it('stale expectedRevision → ContinuationStaleRevisionError', async () => {
+    const { service, projectId, conversationId, adapter } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-7'))
+    await expect(service.executeRecoveryAction(projectId, 'op-7', 'recover_external', adapter, 99))
+      .rejects.toBeInstanceOf(ContinuationStaleRevisionError)
+  })
+
+  it('重启恢复：outcome_unknown 后关库重开 → 读回 unknown + reconcile', async () => {
+    const { root, projectId, conversationId, service, adapter, transport } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-8'))
+    transport.failNextSpawnOnce()
+    await service.executeRecoveryAction(projectId, 'op-8', 'recover_external', adapter)
+    const databasePath = join(root, 'metadata.sqlite')
+    repositories.forEach((repo) => { try { repo.close() } catch { /* noop */ } })
+    repositories.length = 0
+
+    const reopened = new SqliteMetadataRepository(databasePath)
+    repositories.push(reopened)
+    const events = new ProjectEventHub()
+    const serviceB = new ConversationContinuationService(reopened, events)
+    const projection = serviceB.read(projectId, 'op-8')
+    expect(projection?.steps.external_create).toBe('outcome_unknown')
+    expect(projection?.allowedActions.map((a) => a.action)).toEqual(['reconcile', 'cancel_request'])
+  })
+})
+
+describe('POST .../recovery-actions（HTTP，fake transport env）', () => {
+  it('recover_external → Work View 回读 fresh projection；重复点击 409；会话隔离；adapter 未配置 503', async () => {
+    const { root } = await setup()
+    const databasePath = join(root, 'metadata.sqlite')
+    repositories.forEach((repo) => { try { repo.close() } catch { /* noop */ } })
+    repositories.length = 0
+
+    const prev = process.env.LCOS_RECOVERY_TRANSPORT
+    process.env.LCOS_RECOVERY_TRANSPORT = 'fake'
+    try {
+      const metadata = new SqliteMetadataRepository(databasePath)
+      repositories.push(metadata)
+      const graph = createMvpSampleSnapshot(join(root, 'project-http'), '2026-09-12T00:00:00.000Z')
+      metadata.save(graph)
+      const httpProjectId = String(graph.project.id)
+      const events = new ProjectEventHub()
+      const receivers = new ReceiverRuntimeService(metadata, events)
+      const conversationA = receivers.connectConversation({
+        projectId: httpProjectId, conversationRef: 'http-target-a', executorId: 'e', provider: 'codex', label: 'HTTP 恢复 A',
+      })
+      const conversationB = receivers.connectConversation({
+        projectId: httpProjectId, conversationRef: 'http-target-b', executorId: 'e', provider: 'codex', label: 'HTTP 恢复 B',
+      })
+
+      const server = createLocalCoreServer({ metadataRepository: metadata })
+      servers.push(server)
+      const address = await server.start()
+      const baseUrl = `http://127.0.0.1:${address.port}`
+      const headers = { 'content-type': 'application/json' }
+
+      const submitResponse = await fetch(`${baseUrl}/projects/${httpProjectId}/conversation-continuations`, {
+        method: 'POST', headers, body: JSON.stringify({
+          input: { operationId: 'op-http', mode: 'continue_existing', contextInheritance: 'inherit', checkout: 'shared', provider: 'codex', connectedConversationId: conversationA.id },
+        }),
+      })
+      expect(submitResponse.status).toBe(201)
+      await fetch(`${baseUrl}/projects/${httpProjectId}/conversation-continuations`, {
+        method: 'POST', headers, body: JSON.stringify({
+          input: { operationId: 'op-b', mode: 'continue_existing', contextInheritance: 'inherit', checkout: 'shared', provider: 'codex', connectedConversationId: conversationB.id },
+        }),
+      })
+
+      const actionResponse = await fetch(`${baseUrl}/projects/${httpProjectId}/conversation-continuations/op-http/recovery-actions`, {
+        method: 'POST', headers, body: JSON.stringify({ input: { action: 'recover_external', expectedRevision: 0 } }),
+      })
+      expect(actionResponse.status).toBe(200)
+      const body = await actionResponse.json() as { value: { steps: { external_create: string }; status: string } }
+      expect(body.value.steps.external_create).toBe('confirmed')
+      expect(body.value.status).toBe('binding')
+
+      // Work View 回读：同会话操作已更新为 confirmed；另一会话操作不混入（切换会话隔离）。
+      const wvA = await fetch(`${baseUrl}/projects/${httpProjectId}/connected-conversations/${conversationA.id}/work-view`)
+      const bodyA = await wvA.json() as { value: { operations: Array<{ operationId: string; steps: { external_create?: string }; status: string }> } }
+      const opA = bodyA.value.operations.find((op) => op.operationId === 'op-http')
+      expect(opA?.steps.external_create).toBe('confirmed')
+      expect(opA?.status).toBe('binding')
+      expect(bodyA.value.operations.find((op) => op.operationId === 'op-b')).toBeUndefined()
+
+      const wvB = await fetch(`${baseUrl}/projects/${httpProjectId}/connected-conversations/${conversationB.id}/work-view`)
+      const bodyB = await wvB.json() as { value: { operations: Array<{ operationId: string }> } }
+      expect(bodyB.value.operations.map((op) => op.operationId)).toEqual(['op-b'])
+
+      // 重复点击：settled 后再次执行同一动作 → 409（不重复副作用）。
+      const duplicate = await fetch(`${baseUrl}/projects/${httpProjectId}/conversation-continuations/op-http/recovery-actions`, {
+        method: 'POST', headers, body: JSON.stringify({ input: { action: 'recover_external' } }),
+      })
+      expect(duplicate.status).toBe(409)
+    } finally {
+      if (prev === undefined) delete process.env.LCOS_RECOVERY_TRANSPORT
+      else process.env.LCOS_RECOVERY_TRANSPORT = prev
+    }
+  })
+
+  it('adapter 未配置 → recovery 动作 503 UNAVAILABLE', async () => {
+    const { root } = await setup()
+    const databasePath = join(root, 'metadata.sqlite')
+    repositories.forEach((repo) => { try { repo.close() } catch { /* noop */ } })
+    repositories.length = 0
+
+    const prev = process.env.LCOS_RECOVERY_TRANSPORT
+    delete process.env.LCOS_RECOVERY_TRANSPORT
+    try {
+      const metadata = new SqliteMetadataRepository(databasePath)
+      repositories.push(metadata)
+      const graph = createMvpSampleSnapshot(join(root, 'project-http'), '2026-09-12T00:00:00.000Z')
+      metadata.save(graph)
+      const httpProjectId = String(graph.project.id)
+      const events = new ProjectEventHub()
+      const receivers = new ReceiverRuntimeService(metadata, events)
+      const conversation = receivers.connectConversation({
+        projectId: httpProjectId, conversationRef: 'http-target', executorId: 'e', provider: 'codex', label: 'HTTP 恢复',
+      })
+
+      const server = createLocalCoreServer({ metadataRepository: metadata })
+      servers.push(server)
+      const address = await server.start()
+      const baseUrl = `http://127.0.0.1:${address.port}`
+      const headers = { 'content-type': 'application/json' }
+
+      await fetch(`${baseUrl}/projects/${httpProjectId}/conversation-continuations`, {
+        method: 'POST', headers, body: JSON.stringify({
+          input: { operationId: 'op-no-adapter', mode: 'continue_existing', contextInheritance: 'inherit', checkout: 'shared', provider: 'codex', connectedConversationId: conversation.id },
+        }),
+      })
+
+      const actionResponse = await fetch(`${baseUrl}/projects/${httpProjectId}/conversation-continuations/op-no-adapter/recovery-actions`, {
+        method: 'POST', headers, body: JSON.stringify({ input: { action: 'recover_external' } }),
+      })
+      expect(actionResponse.status).toBe(503)
+      const body = await actionResponse.json() as { error: { code: string } }
+      expect(body.error.code).toBe('UNAVAILABLE')
+    } finally {
+      if (prev === undefined) delete process.env.LCOS_RECOVERY_TRANSPORT
+      else process.env.LCOS_RECOVERY_TRANSPORT = prev
+    }
+  })
+})

@@ -35,6 +35,11 @@ export interface SpaceEntityProjectionSource {
   sourceKind?: string;
   sourceRunId?: string;
   managed?: boolean;
+  /**
+   * 创建时的机械落位（T1-G05：正式落位由 Huabu layout owner 接管；此处只是
+   * 避免同一批投影全部叠在 DEFAULT_POSITION）。binding 复用时忽略。
+   */
+  position?: Point;
 }
 
 const DEFAULT_POSITION: Point = { x: 0, y: 0 };
@@ -83,11 +88,24 @@ export class ProjectToSpaceProjection {
   /**
    * Project each Artifact node; returns the binding for each, idempotently.
    * Backwards-compatible convenience over projectEntity('artifact').
+   * 机械级联落位（T1-G05，与 projectConversations 同规则）：同一批新投影
+   * 按 index 错开，避免全部叠在 DEFAULT_POSITION；binding 复用时忽略。
    */
   async projectArtifacts(artifacts: ArtifactProjectionSource[]): Promise<ProjectionBinding[]> {
     const out: ProjectionBinding[] = [];
+    let index = 0;
     for (const artifact of artifacts) {
-      out.push(await this.projectEntity({ projectId: artifact.projectId, entityType: 'artifact', entityId: artifact.artifactId, kind: artifact.kind, title: artifact.title }));
+      out.push(
+        await this.projectEntity({
+          projectId: artifact.projectId,
+          entityType: 'artifact',
+          entityId: artifact.artifactId,
+          kind: artifact.kind,
+          title: artifact.title,
+          position: { x: index * 40, y: index * 40 },
+        }),
+      );
+      index += 1;
     }
     return out;
   }
@@ -132,7 +150,7 @@ export class ProjectToSpaceProjection {
           {
             nodeType,
             data: { label: input.title },
-            position: { ...DEFAULT_POSITION },
+            position: input.position === undefined ? { ...DEFAULT_POSITION } : { ...input.position },
             size: { ...DEFAULT_SIZE },
           },
         ],

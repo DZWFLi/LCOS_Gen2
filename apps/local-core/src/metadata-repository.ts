@@ -75,6 +75,7 @@ import type {
   ResourceDescriptorV0,
   ImportBatchRefV1,
   RetryRunResult,
+  ContinuationOperationJournalRowV1,
 } from '@local-creative-os/contracts'
 
 type Row = Record<string, SQLInputValue | undefined>
@@ -298,7 +299,9 @@ export class SqliteMetadataRepository {
     if (current === 49) { this.#migrate_050_from_v49(); current = 50 }
     if (current === 50) { this.#migrate_051_from_v50(); current = 51 }
     if (current === 51) { this.#migrate_052_from_v51(); current = 52 }
-    if (current !== 52) throw new Error(`Unsupported metadata schema version ${current}.`)
+    if (current === 52) { this.#migrate_053_from_v52(); current = 53 }
+    if (current === 53) { this.#migrate_054_from_v53(); current = 54 }
+    if (current !== 54) throw new Error(`Unsupported metadata schema version ${current}.`)
   }
 
   #migrate_037_from_v36(): void {
@@ -373,6 +376,17 @@ export class SqliteMetadataRepository {
       CREATE INDEX IF NOT EXISTS idx_search_document_chunks_model
         ON search_document_chunks(model);
       PRAGMA user_version = 39;
+      COMMIT;
+    `)
+  }
+
+  #migrate_054_from_v53(): void {
+    // T2 C2-1D（20260913）：Worksite stable canvasId——Core 保存"长期工作现场的稳定画布"，
+    // Huabu 保存 camera/几何；SurfaceDock/Worksite 切换据此解析目标画布。可空（存量现场无映射）。
+    this.#database.exec(`
+      BEGIN;
+      ALTER TABLE workspaces ADD COLUMN canvas_id TEXT;
+      PRAGMA user_version = 54;
       COMMIT;
     `)
   }
@@ -587,6 +601,29 @@ export class SqliteMetadataRepository {
       COMMIT;
     `)
   }
+
+  #migrate_053_from_v52(): void {
+    // GEN2 Sprint 1A（T6）：continuation operation journal。
+    // Provider 外部 session 与本地 Core 不是同一事务：operationId 稳定主键保存
+    // external create / Core bind / attach / projection 四步事实、cancel 意图、
+    // external evidence 与 revision，跨重启可恢复补绑；重复 submit 不再 create。
+    // 步骤状态存放于 journal_json（整体 JSON），projection 由 service 纯推导。
+    this.#database.exec(`
+      BEGIN;
+      CREATE TABLE IF NOT EXISTS continuation_operation_journal (
+        operation_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        journal_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_continuation_operation_journal_project
+        ON continuation_operation_journal(project_id, updated_at DESC);
+      PRAGMA user_version = 53;
+      COMMIT;
+    `)
+  }
+
   #migrate_046_from_v45(): void {
     // F6 follow-up（20260828 补充冻结）：capture materialize 产物回链——
     // resolvedArtifactId/resolvedViewId 使 capture→surface 的 apply 可安全重试（幂等复用）。
@@ -2333,6 +2370,15 @@ export class SqliteMetadataRepository {
 
   getWorkspaces(projectId: string): Workspace[] {
     return (this.#database.prepare('SELECT * FROM workspaces WHERE project_id = ? ORDER BY sort_index, rowid').all(projectId as SQLInputValue) as Row[]).map((r) => this.#workspace(r))
+  }
+
+  /** T2 C2-1D：工作现场稳定画布写入（首次切换创建画布后回写；幂等 upsert canvas_id）。 */
+  updateWorkspaceCanvasId(projectId: string, workspaceId: string, canvasId: string): Workspace | undefined {
+    const result = this.#database.prepare(
+      'UPDATE workspaces SET canvas_id = ?, updated_at = ? WHERE project_id = ? AND id = ?',
+    ).run(canvasId, new Date().toISOString(), projectId as SQLInputValue, workspaceId as SQLInputValue)
+    if (Number(result.changes) !== 1) return undefined
+    return this.getWorkspace(workspaceId)
   }
 
   getWorkspace(workspaceId: string): Workspace | undefined {
@@ -4549,6 +4595,15 @@ export class SqliteMetadataRepository {
     return rows.map((row) => this.#runFromRow(row))
   }
 
+  /** 按 receiver_conversation_id 列出承接会话关联的 Run（Work View attention section 数据源）。 */
+  listRunsByReceiverConversation(projectId: string, connectedConversationId: string, limit = 20): readonly Run[] {
+    const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)))
+    const rows = this.#database.prepare(
+      'SELECT * FROM runs WHERE project_id = ? AND receiver_conversation_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?',
+    ).all(projectId as SQLInputValue, connectedConversationId as SQLInputValue, safeLimit) as Row[]
+    return rows.map((row) => this.#runFromRow(row))
+  }
+
   listRunsNeedingSync(): readonly Run[] {
     return (this.#database.prepare(`
       SELECT r.* FROM runs r
@@ -5490,9 +5545,9 @@ export class SqliteMetadataRepository {
       referencedTable: 'projects',
       referencedId: String(value.projectId),
     }, `
-      INSERT INTO workspaces (id, project_id, scope_id, name, intent, viewport, focused_node_ids, visible_layers, context_policy, frame_bounds, preferred_surface, version, updated_at, sort_index)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_index), -1) + 1 FROM workspaces WHERE project_id = ?))
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name, intent=excluded.intent, scope_id=excluded.scope_id, viewport=excluded.viewport, focused_node_ids=excluded.focused_node_ids, visible_layers=excluded.visible_layers, context_policy=excluded.context_policy, frame_bounds=excluded.frame_bounds, preferred_surface=excluded.preferred_surface, version=excluded.version, updated_at=excluded.updated_at
+      INSERT INTO workspaces (id, project_id, scope_id, name, intent, viewport, focused_node_ids, visible_layers, context_policy, frame_bounds, preferred_surface, canvas_id, version, updated_at, sort_index)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_index), -1) + 1 FROM workspaces WHERE project_id = ?))
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name, intent=excluded.intent, scope_id=excluded.scope_id, viewport=excluded.viewport, focused_node_ids=excluded.focused_node_ids, visible_layers=excluded.visible_layers, context_policy=excluded.context_policy, frame_bounds=excluded.frame_bounds, preferred_surface=excluded.preferred_surface, canvas_id=excluded.canvas_id, version=excluded.version, updated_at=excluded.updated_at
     `, [
       value.id as SQLInputValue, value.projectId as SQLInputValue, value.scopeId as SQLInputValue,
       value.name, value.intent, JSON.stringify(value.viewport),
@@ -5500,6 +5555,7 @@ export class SqliteMetadataRepository {
       value.contextPolicy,
       value.frameBounds === undefined ? null : JSON.stringify(value.frameBounds),
       value.preferredSurface ?? null,
+      value.canvasId ?? null,
       value.version ?? 0,
       value.updatedAt,
       value.projectId as SQLInputValue,
@@ -5822,11 +5878,13 @@ export class SqliteMetadataRepository {
     const updatedAt = String(row.updated_at)
     const frameBounds = row.frame_bounds === null || row.frame_bounds === undefined ? undefined : json<Workspace['frameBounds']>(row.frame_bounds as SQLInputValue)
     const preferredSurface = row.preferred_surface === null || row.preferred_surface === undefined ? undefined : String(row.preferred_surface)
+    const canvasId = row.canvas_id === null || row.canvas_id === undefined ? undefined : String(row.canvas_id)
     const version = row.version as number | undefined
     return {
       id, projectId, scopeId, name, intent, viewport, focusedViewIds, visibleLayers, contextPolicy,
       ...(frameBounds === undefined ? {} : { frameBounds }),
       ...(preferredSurface === undefined ? {} : { preferredSurface }),
+      ...(canvasId === undefined ? {} : { canvasId }),
       ...(version === undefined ? {} : { version }),
       updatedAt,
     }
@@ -6043,6 +6101,29 @@ export class SqliteMetadataRepository {
   listSkillProposals(projectId: string): readonly SkillProposalV1[] {
     const rows = this.#database.prepare(`SELECT proposal_json FROM skill_proposals WHERE project_id = ? ORDER BY created_at DESC`).all(projectId) as Row[]
     return rows.map((row) => json<SkillProposalV1>(row.proposal_json as SQLInputValue))
+  }
+
+  // GEN2 Sprint 1A（T6）：continuation operation journal（migration v53）。
+  // journal_json 存整体行 JSON（四步事实 + cancel + evidence + revision）；
+  // status/allowedActions 由 contracts 纯投影推导，不在此持久化第二结论。
+  saveContinuationOperationJournal(row: ContinuationOperationJournalRowV1): void {
+    if (row.schemaVersion !== 1) throw new Error('ContinuationOperationJournalRow schemaVersion must be 1.')
+    const now = new Date().toISOString()
+    this.#database.prepare(`
+      INSERT INTO continuation_operation_journal(operation_id, project_id, journal_json, created_at, updated_at)
+      VALUES(?, ?, ?, ?, ?)
+      ON CONFLICT(operation_id) DO UPDATE SET journal_json = excluded.journal_json, updated_at = excluded.updated_at
+    `).run(row.operationId, row.projectId, JSON.stringify(row), row.createdAt, now)
+  }
+
+  getContinuationOperationJournal(projectId: string, operationId: string): ContinuationOperationJournalRowV1 | undefined {
+    const row = this.#database.prepare(`SELECT journal_json FROM continuation_operation_journal WHERE project_id = ? AND operation_id = ?`).get(projectId, operationId) as Row | undefined
+    return row === undefined ? undefined : json<ContinuationOperationJournalRowV1>(row.journal_json as SQLInputValue)
+  }
+
+  listContinuationOperationJournals(projectId: string): readonly ContinuationOperationJournalRowV1[] {
+    const rows = this.#database.prepare(`SELECT journal_json FROM continuation_operation_journal WHERE project_id = ? ORDER BY updated_at DESC`).all(projectId) as Row[]
+    return rows.map((row) => json<ContinuationOperationJournalRowV1>(row.journal_json as SQLInputValue))
   }
 
   saveImportBatch(value: ImportBatchRefV1): void {

@@ -40,3 +40,19 @@ export interface ResourceConnectorCapabilityV1 {
   readonly supportsImport: boolean
   readonly supportsSync: boolean
 }
+
+/** T6/T7 §3.5 方向（T5 P0-05）：connector source 只读投影（capability + 会话状态，不建第二 connector truth）。 */
+export type ConnectorSourceActionV1 = 'scan' | 'import' | 'reauthorize'
+
+export interface ConnectorSourceProjectionV1 {
+  readonly schemaVersion: 1
+  readonly connector: string
+  readonly displayName: string
+  readonly access: ResourceConnectorAccessV1
+  readonly sourceKind: ResourceConnectorCapabilityV1['sourceKind']
+  readonly contentTypes: readonly string[]
+  readonly session:
+    | { readonly status: 'none' }
+    | { readonly status: 'active'; readonly scanId: string; readonly vaultName?: string; readonly noteCount?: number; readonly expiresAt: string }
+  readonly allowedActions: readonly ConnectorSourceActionV1[]
+}

@@ -69,6 +69,8 @@ export type {
   CaptureSpaceOrganizeResultV1,
   CaptureMaterializeResultV1,
   CaptureSpacePayloadPreviewV1,
+  CaptureOperationProjectionV1,
+  CaptureOperationActionV1,
 } from './capture.js'
 export type { ReorganizePreviewV0, ReorganizeProposalV0 } from './reorganize.js'
 export type { CompiledContextPromptV1, ContextCacheTelemetryV1, ContextPromptCachePlanV1 } from './context-prompt.js'
@@ -100,6 +102,7 @@ export type { SurfaceSelectionV0 } from './selection.js'
 export { normalizeSurfaceSelectionV0 } from './selection.js'
 export type { DotGlyphCellLevelV0, DotGlyphCellV0, DotGlyphMotionPresetV0, DotGlyphV0 } from './visuals.js'
 export { validateDotGlyphV0 } from './visuals.js'
+export type { ComposerSubmissionKindV1, ComposerAcknowledgementV1, ComposerSubmitActionV1, ComposerOwnerRefV1, ComposerSubmitProjectionV1 } from './composer-submit.js'
 
 // Re-add types that were removed from domain (keep contracts boundary stable)
 export interface WorkspaceQuery {
@@ -922,5 +925,13 @@ export * from './revision-workflow.js'
 export * from './continuity.js'
 
 export * from './receiver.js'
+
+export * from './conversation-continuation.js'
+
+export * from './work-view.js'
+
+export * from './provider-capability.js'
+
+export * from './continuation-provider.js'
 
 export * from './boundary-evaluator.js'

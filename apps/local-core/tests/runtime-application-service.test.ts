@@ -31,6 +31,7 @@ afterEach(() => {
 
 class FakeBridge implements BridgeRuntimePort {
   createError: Error | undefined
+  answerInputError: Error | undefined
   cancelledTaskIds: string[] = []
   answeredInputs: Array<{ taskId: string; requestId: string; text?: string; selectedOptions?: readonly string[] }> = []
   async createTask(envelope: BridgeTaskEnvelopeV0): Promise<BridgeTaskIdentity> {
@@ -46,6 +47,7 @@ class FakeBridge implements BridgeRuntimePort {
   async findTaskByRunId(): Promise<BridgeTaskIdentity | undefined> { return undefined }
   async getResult(): Promise<BridgeResultEnvelopeV0 | undefined> { return undefined }
   async answerInput(taskId: string, response: { readonly requestId: string; readonly text?: string; readonly selectedOptions?: readonly string[] }): Promise<void> {
+    if (this.answerInputError !== undefined) throw this.answerInputError
     this.answeredInputs.push({ taskId, ...response })
   }
   async cancelTask(taskId: string): Promise<void> { this.cancelledTaskIds.push(taskId) }
@@ -215,6 +217,63 @@ describe('RuntimeApplicationService', () => {
       'run.input_resolved',
       'run.queued',
     ])
+  })
+
+  it('keeps the input editable when answering fails: run stays waiting_input and request stays pending', async () => {
+    const { bridge, repository, service, snapshot } = setup()
+    const result = await service.create(snapshot.project.id, {
+      instruction: '分析当前资料。',
+      outputIntent: 'analyze',
+      requestedProvider: 'codex',
+    })
+    const runId = result.review.run.id
+    await service.dispatch(runId)
+    const request: RunInputRequestV1 = {
+      schemaVersion: 1, requestId: 'input-app-fail', runId: String(runId),
+      question: '按方案 A 还是 B？', options: ['A', 'B'], allowFreeText: true,
+      status: 'pending', selectedOptions: [], createdAt: now,
+    }
+    repository.saveRunInputRequest(request)
+    repository.updateRunStatus(runId, 'waiting_input', now)
+
+    bridge.answerInputError = new Error('bridge answer timed out')
+    const queuedBefore = repository.getRunEvents(runId).filter((event) => event.type === 'run.queued').length
+    await expect(service.answerInput(runId, { requestId: request.requestId, text: '按 A 继续', selectedOptions: ['A'] }))
+      .rejects.toThrow('bridge answer timed out')
+
+    expect(repository.getRun(runId)?.status).toBe('waiting_input') // 未错误推进
+    expect(repository.getRunInputRequest(request.requestId)?.status).toBe('pending') // 输入保留可重试
+    expect(repository.getRunEvents(runId).filter((event) => event.type === 'run.queued')).toHaveLength(queuedBefore)
+
+    bridge.answerInputError = undefined
+    const retried = await service.answerInput(runId, { requestId: request.requestId, text: '按 A 继续', selectedOptions: ['A'] })
+    expect(retried.providerError).toBeUndefined()
+    expect(repository.getRun(runId)?.status).toBe('queued')
+  })
+
+  it('answers the same waiting run idempotently: late duplicate submit does not call the bridge twice', async () => {
+    const { bridge, repository, service, snapshot } = setup()
+    const result = await service.create(snapshot.project.id, {
+      instruction: '分析当前资料。',
+      outputIntent: 'analyze',
+      requestedProvider: 'codex',
+    })
+    const runId = result.review.run.id
+    await service.dispatch(runId)
+    const request: RunInputRequestV1 = {
+      schemaVersion: 1, requestId: 'input-app-dup', runId: String(runId),
+      question: '按方案 A 还是 B？', options: ['A', 'B'], allowFreeText: false,
+      status: 'pending', selectedOptions: [], createdAt: now,
+    }
+    repository.saveRunInputRequest(request)
+    repository.updateRunStatus(runId, 'waiting_input', now)
+
+    await service.answerInput(runId, { requestId: request.requestId, selectedOptions: ['A'] })
+    const late = await service.answerInput(runId, { requestId: request.requestId, selectedOptions: ['A'] })
+
+    expect(late.providerError).toBeUndefined()
+    expect(repository.getRunInputRequest(request.requestId)?.status).toBe('answered')
+    expect(bridge.answeredInputs).toHaveLength(1) // 迟到重复回包不重复副作用
   })
 
   it('cancels a bound Run through the Bridge and records run.cancelled', async () => {

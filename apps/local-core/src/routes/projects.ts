@@ -11,6 +11,8 @@ import type {
 import type { ProjectId } from '@local-creative-os/domain'
 import { createProjectRoot, rollbackCreatedProjectRoot, validateProjectRoot } from '../project-root.js'
 import { indexProjectRoot, inspectProjectRoot } from '../project-root-indexer.js'
+import { composerSubmitProjectionV1 } from '../composer-submit-projection.js'
+import type { ConversationContinuationService } from '../conversation-continuation-service.js'
 import {
   formatMetadataRouteError,
   routeRequireMetadata,
@@ -25,6 +27,8 @@ export interface ProjectsRouteContext extends RouteHttpContext {
   readonly allowedRoot: string | undefined
   readonly maxDocumentPreviewBytes: number
   readonly createProjectIdFn: (name: string) => string
+  /** T6 continuation journal（composer submit projection 读取）。 */
+  readonly continuation?: ConversationContinuationService
 }
 
 /**
@@ -179,6 +183,40 @@ export async function handleProjectsRoute(ctx: ProjectsRouteContext): Promise<bo
 
   const graphMatch = /^\/projects\/([^/]+)\/graph$/.exec(pathname)
   const railOrderMatch = /^\/projects\/([^/]+)\/view-rail-order$/.exec(pathname)
+  const workspacesMatch = /^\/projects\/([^/]+)\/workspaces$/.exec(pathname)
+  const workspaceItemMatch = /^\/projects\/([^/]+)\/workspaces\/([^/]+)$/.exec(pathname)
+  if (method === 'GET' && workspacesMatch !== null) {
+    // T2 C2-1D：工作现场列表（含 stable canvasId），SurfaceDock/Worksite 切换据此解析目标画布。
+    const metadata = routeRequireMetadata(ctx); if (metadata === undefined) return true
+    const projectId = decodeURIComponent(workspacesMatch[1] ?? '')
+    if (routeRequireProject(projectId, { metadata, response, helpers: ctx.helpers }) === undefined) return true
+    sendJson(response, 200, { ok: true, value: metadata.getWorkspaces(projectId) })
+    return true
+  }
+  if (method === 'PUT' && workspaceItemMatch !== null) {
+    // T2 C2-1D：首次切换创建 Huabu 画布后回写 stable canvasId。
+    const metadata = routeRequireMetadata(ctx); if (metadata === undefined) return true
+    const projectId = decodeURIComponent(workspaceItemMatch[1] ?? '')
+    const workspaceId = decodeURIComponent(workspaceItemMatch[2] ?? '')
+    if (routeRequireProject(projectId, { metadata, response, helpers: ctx.helpers }) === undefined) return true
+    let input: unknown
+    try { input = await readJsonBody(request, controller.signal) } catch {
+      sendJson(response, 400, failure('INVALID_ARGUMENT', 'Request body must be valid JSON.'))
+      return true
+    }
+    const body = isRecord(input) && 'input' in input && isRecord(input.input) ? input.input : input
+    if (!isRecord(body) || typeof body.canvasId !== 'string' || body.canvasId.length < 1) {
+      sendJson(response, 400, failure('INVALID_ARGUMENT', 'workspace canvasId (string) is required.'))
+      return true
+    }
+    const updated = metadata.updateWorkspaceCanvasId(projectId, workspaceId, body.canvasId)
+    if (updated === undefined) {
+      sendJson(response, 404, failure('NOT_FOUND', 'Workspace not found in project.'))
+      return true
+    }
+    sendJson(response, 200, { ok: true, value: updated })
+    return true
+  }
   if (method === 'GET' && railOrderMatch !== null) {
     const metadata = routeRequireMetadata(ctx); if (metadata === undefined) return true
     const projectId = decodeURIComponent(railOrderMatch[1] ?? '')
@@ -325,6 +363,23 @@ export async function handleProjectsRoute(ctx: ProjectsRouteContext): Promise<bo
     } catch (error: unknown) {
       sendJson(response, 409, failure('CONFLICT', error instanceof Error ? error.message : 'Document could not be read.'))
     }
+    return true
+  }
+
+  const composerSubmitProjectionMatch = /^\/projects\/([^/]+)\/command-drafts\/([^/]+)\/submit-projection$/.exec(pathname)
+  if (method === 'GET' && composerSubmitProjectionMatch !== null) {
+    const metadata = routeRequireMetadata(ctx); if (metadata === undefined) return true
+    const projectId = decodeURIComponent(composerSubmitProjectionMatch[1] ?? '')
+    const composerAnchor = decodeURIComponent(composerSubmitProjectionMatch[2] ?? '')
+    if (routeRequireProject(projectId, { metadata, response, helpers: ctx.helpers }) === undefined) return true
+    const workspaceParam = url.searchParams.get('workspaceId')
+    const workspaceId = workspaceParam === null || workspaceParam === '' ? null : workspaceParam
+    const value = composerSubmitProjectionV1(metadata, ctx.continuation, projectId, workspaceId, composerAnchor)
+    if (value === undefined) {
+      sendJson(response, 404, failure('NOT_FOUND', 'Command Draft not found for composer submit projection.'))
+      return true
+    }
+    sendJson(response, 200, { ok: true, value })
     return true
   }
 

@@ -87,6 +87,18 @@ export class ObsidianConnectorSessionStore {
     return this.#scans.get(scanId)
   }
 
+  /** T7（P0-05）：会话摘要列表（connector source 投影读取；先清理过期会话）。 */
+  list(): readonly { readonly connector: 'obsidian'; readonly scanId: string; readonly vaultName: string; readonly noteCount: number; readonly expiresAt: string }[] {
+    this.cleanup()
+    return [...this.#scans.values()].map(({ scan }) => ({
+      connector: 'obsidian' as const,
+      scanId: scan.scanId,
+      vaultName: scan.vaultName,
+      noteCount: scan.noteCount,
+      expiresAt: scan.expiresAt,
+    }))
+  }
+
   cleanup(): void {
     const now = Date.now()
     for (const [id, value] of this.#scans) {

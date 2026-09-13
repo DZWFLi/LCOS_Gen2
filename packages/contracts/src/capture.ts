@@ -203,3 +203,22 @@ export interface CaptureSpacePayloadPreviewV1 {
   readonly path?: string
   readonly truncated?: boolean
 }
+
+/** T6 §3.3：capture operation 只读投影（receipt/staging/materialize 聚合，不建第二 Capture truth）。 */
+export type CaptureOperationActionV1 = 'preview' | 'apply' | 'reconcile' | 'locate' | 'retry_failed_items'
+
+export interface CaptureOperationProjectionV1 {
+  readonly schemaVersion: 1
+  readonly operationId: string
+  readonly kind: string
+  readonly capturedAt: string
+  readonly stagingItemIds: readonly string[]
+  /** 逐项结果：materialize 后回链 artifact/view。 */
+  readonly materializationRefs: readonly { readonly artifactId: string; readonly viewId: string }[]
+  readonly targetResolution:
+    | { readonly status: 'resolved'; readonly projectId: string }
+    | { readonly status: 'unresolved'; readonly projectId: null }
+  /** confirmed=存在 materialize 回链；unconfirmed=无 receipt 可核对（只 reconcile，不重抓）。 */
+  readonly outcome: 'confirmed' | 'unconfirmed'
+  readonly allowedActions: readonly CaptureOperationActionV1[]
+}

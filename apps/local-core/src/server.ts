@@ -42,6 +42,7 @@ import { failure } from './errors.js'
 import { getHealthStatus } from './health.js'
 import { ExplicitProjectCatalog } from './project-catalog.js'
 import { createProjectRoot, rollbackCreatedProjectRoot, validateProjectRoot } from './project-root.js'
+import { captureOperationProjectionsV1 } from './capture-operation-projection.js'
 import { MetadataForeignKeyConstraintError, SqliteMetadataRepository } from './metadata-repository.js'
 import { FileRegistryService } from './file-registry-service.js'
 import { FileObservationService } from './file-observation-service.js'
@@ -85,6 +86,7 @@ import { handleResourcesRoute } from './routes/resources.js'
 import { handleRuntimeRoute } from './routes/runtime.js'
 import { handleF6AssemblyRoute } from './routes/f6-assembly.js'
 import { handleConversationIdentityRoute } from './routes/conversation-identity.js'
+import { handleWorkViewRoute } from './routes/work-view.js'
 import { handleRunsRoute } from './routes/runs.js'
 import { handlePresentationsRoute } from './routes/presentations.js'
 import { handleProjectEventsRoute, handleRealtimeDebugRoute } from './routes/project-events.js'
@@ -104,6 +106,7 @@ import { handleSpatialBindingsRoute } from './routes/spatial-bindings.js'
 import { handleRevisionWorkflowsRoute } from './routes/revision-workflows.js'
 import { handleContinuityRoute } from './routes/continuity.js'
 import { handleReceiverRoute } from './routes/receiver.js'
+import { handleConversationContinuationRoute } from './routes/conversation-continuation.js'
 import { handleWorkspaceStatesRoute } from './routes/workspace-states.js'
 import { handleNavigationMarkersRoute } from './routes/navigation-markers.js'
 import { handleColorPinsRoute } from './routes/color-pins.js'
@@ -355,7 +358,7 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
     resourceReader, matcher, contextManifest, runtimeReview, runtimeApplication, activeContext,
     contextProposals, runEventListeners, obsidian, obsidianSessions, connectorRegistry,
     ownsConversationService, conversations, previewWorker, presentation, curation, search, curationCommand, semantic, warehouse, resultSlots, assemblyApply, projectSummary, skillCatalog, skillPackages, skillProposals, companionProjections, curatorDispatch, skillAuthorDispatch,
-    runtimeRegistry, intelligence, captureStaging, resolveProjectAffinity, captureApplication, captureWatch, captureSpace, reorganize, sessionReadSet, spaceSandbox, agentletRuntime, spatialRetrieval, attentionRuntime, boundaryEvaluator, projectEvents, projectMutations, mutationSafety, feedbackRevision, continuityRuntime, receiverRuntime, sessionLifecycle, conversationIdentity,
+    runtimeRegistry, intelligence, captureStaging, resolveProjectAffinity, captureApplication, captureWatch, captureSpace, reorganize, sessionReadSet, spaceSandbox, agentletRuntime, spatialRetrieval, attentionRuntime, boundaryEvaluator, projectEvents, projectMutations, mutationSafety, feedbackRevision, continuityRuntime, conversationContinuation, receiverRuntime, sessionLifecycle, conversationIdentity, workView, recoveryAdapter,
   } = services
   metadata?.setRunEventSink?.((event) => {
     const payloadProjectId = (event.payload as { projectId?: string } | null)?.projectId
@@ -743,6 +746,20 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
         const limit = Number(url.searchParams.get('limit'))
         const snapshot = captureSpace.snapshot(Number.isFinite(limit) && limit > 0 ? limit : 500)
         sendJson(response, 200, { ok: true, value: { schemaVersion: 1, ...snapshot } })
+        return
+      }
+
+      // T6 §3.3：capture operation 只读投影（Assembly SourceBay[capture] 数据源；含 pending+resolved）。
+      const captureOperationsMatch = /^\/projects\/([^/]+)\/capture-operations$/.exec(pathname)
+      if (method === 'GET' && captureOperationsMatch !== null) {
+        if (captureStaging === undefined) {
+          sendJson(response, 503, failure('UNAVAILABLE', 'Capture staging is not configured.'))
+          return
+        }
+        const captureProjectId = decodeURIComponent(captureOperationsMatch[1] ?? '')
+        if (metadata === undefined || routeRequireProject(captureProjectId, { metadata, response, helpers: routeHelpers }) === undefined) return
+        const value = captureOperationProjectionsV1(captureStaging.listRecent(365 * 24 * 60 * 60_000, 500), captureProjectId)
+        sendJson(response, 200, { ok: true, value })
         return
       }
 
@@ -1162,6 +1179,7 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
         allowedRoot: options.allowedRoot,
         maxDocumentPreviewBytes: MAX_DOCUMENT_PREVIEW_BYTES,
         createProjectIdFn: createProjectId,
+        ...(conversationContinuation === undefined ? {} : { continuation: conversationContinuation }),
         helpers: routeHelpers,
       })) return
       if (await handleCanvasRoute({
@@ -1400,6 +1418,16 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
         conversationIdentity,
         helpers: routeHelpers,
       })) return
+      if (await handleWorkViewRoute({
+        method,
+        pathname,
+        request,
+        response,
+        signal: controller.signal,
+        metadata,
+        workView,
+        helpers: routeHelpers,
+      })) return
       if (await handleRetrievalRoute({
         method,
         pathname,
@@ -1511,6 +1539,11 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
       })) return
       if (await handleContinuityRoute({
         method, pathname, url, request, response, signal: controller.signal, metadata, continuityRuntime,
+        helpers: routeHelpers,
+      })) return
+      // ==================== GEN2 Sprint 1A（T6）continuation operation journal 路由 ====================
+      if (await handleConversationContinuationRoute({
+        method, pathname, url, request, response, signal: controller.signal, metadata, continuation: conversationContinuation, adapter: recoveryAdapter,
         helpers: routeHelpers,
       })) return
       // ==================== RECEIVER-0 会话承接路由 ====================

@@ -14,6 +14,43 @@ import type { PointerRecognizer } from '@/handler/pointerRouter';
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
 
 /**
+ * Neutral body-slot input for the T1 Glyth seam. Deliberately domain-free:
+ * only Huabu node facts (id / native type / node data) plus the default
+ * body; no LCOS entity types, no projection semantics.
+ */
+export interface CanvasNodeBodySlotInput {
+  readonly nodeId: string;
+  readonly nodeType: string;
+  /** Huabu node data — opaque; a resolved body component reads what it needs. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly data: Readonly<Record<string, any>>;
+}
+
+/**
+ * Neutral binding-aware body resolver (T1 Glyth seam). The host app resolves
+ * a native node's body override from nodeId + native type + node data;
+ * returning `undefined` keeps the native body untouched. Only the host app
+ * decides which nodes get a replacement body (e.g. conversation-bound
+ * nodes) — this seam never knows LCOS/Conversation specifics.
+ */
+export type CanvasNodeBodyResolver = (
+  input: CanvasNodeBodySlotInput,
+) => ComponentType<CanvasNodeBodySlotInput> | undefined;
+
+/**
+ * Reactive handle for the body seam. The resolution may change asynchronously
+ * (e.g. the host app's binding cache is still syncing); the consumer
+ * subscribes so a late binding swaps the body in place on the same node.
+ * `subscribe` returns an unsubscribe function. `resolve` must return a
+ * stable value for a stable input (component reference or undefined) so the
+ * consumer can diff snapshots without churn.
+ */
+export interface CanvasNodeBodySeam {
+  readonly resolve: CanvasNodeBodyResolver;
+  readonly subscribe: (listener: () => void) => () => void;
+}
+
+/**
  * A node renderer supplied by the host app. Deliberately mirrors React
  * Flow's own `NodeTypes` value looseness (`ComponentType<any>`): opaque
  * host-side adapters (whose props generics we cannot know here) must stay
@@ -66,4 +103,12 @@ export interface CanvasHostExtension {
   readonly recognizers?: readonly CanvasHostRecognizer[];
   /** Optional semantic connect: a node-id connect gesture -> Core relation -> edge. */
   readonly connectIntent?: CanvasHostConnectIntent;
+  /**
+   * Optional neutral body seam (T1 Glyth seam): resolves a replacement body
+   * for a native node from nodeId + native type + node data, and notifies the
+   * native node body junction when the resolution may have changed (late
+   * binding). Consumed via a stable context (see nodeBodySlot.tsx) — never
+   * replaces a built-in node renderer, never a second renderer registry.
+   */
+  readonly resolveNodeBody?: CanvasNodeBodySeam;
 }

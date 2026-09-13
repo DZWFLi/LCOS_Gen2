@@ -30,10 +30,10 @@ afterEach(() => {
   }
 })
 
-describe('projection_bindings (schema v52 + route)', () => {
-  it('migrates to schema v52 and creates the projection_bindings table', () => {
+describe('projection_bindings (schema v54 + route)', () => {
+  it('migrates to schema v54 and creates the projection_bindings table', () => {
     const { repo, dbPath } = createRepo()
-    expect(userVersion(dbPath)).toBe(52)
+    expect(userVersion(dbPath)).toBe(54)
     // Upsert without error proves the table exists and accepts the identity columns.
     repo.createProject({ id: 'p-g0' as never, name: 'g0', rootPath: '/tmp/g0' })
     repo.upsertProjectionBinding({ projectId: 'p-g0', canvasId: 'c1', spatialKind: 'node', spatialId: 'n1', entityType: 'artifact', entityId: 'a1' })

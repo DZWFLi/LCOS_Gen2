@@ -73,6 +73,12 @@ export interface HostSeam {
   overlays: LcosOverlayDescriptor[];
   recognizers: LcosRecognizerDescriptor[];
   connectIntent: SemanticConnectIntent;
+  /**
+   * Neutral binding-aware body resolver (T1 Glyth seam). Opaque: the host app
+   * supplies a resolver that maps native node facts -> replacement body or
+   * undefined (native body). See huabu lcos-seam CanvasHostExtension.
+   */
+  resolveNodeBody: unknown;
 }
 
 /** Optional injections when building the seam (A01: renderer registration; A03: recognizers). */
@@ -83,6 +89,8 @@ export interface HostSeamOptions {
   readonly overlays?: readonly LcosOverlayDescriptor[];
   /** Pointer recognizers to append to Huabu's canvas pointer router. */
   readonly recognizers?: readonly LcosRecognizerDescriptor[];
+  /** Neutral body resolver (T1 Glyth seam); absent = native bodies everywhere. */
+  readonly resolveNodeBody?: unknown;
 }
 
 /**
@@ -97,6 +105,7 @@ export function createHostSeam(host: Gen2Host | (() => Gen2Host), options: HostS
     extraRenderers: [...(options.renderers ?? [])],
     overlays: [...(options.overlays ?? [])],
     recognizers: [...(options.recognizers ?? [])],
+    resolveNodeBody: options.resolveNodeBody,
     connectIntent: {
       onConnect: async (ctx) => {
         const resolution = resolveConnectKind(ctx);

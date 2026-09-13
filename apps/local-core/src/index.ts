@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { createLocalCoreServer, LOCAL_CORE_DEV_PORT } from './server.js'
 import { SqliteMetadataRepository } from './metadata-repository.js'
 import { ensureMvpSampleProject } from './mvp-sample-project.js'
+import { ensureRealDevProject } from './real-dev-project.js'
 import { ContextManifestService } from './context-manifest-service.js'
 import { RestBridgeRuntimeClient } from './bridge-rest-client.js'
 import { RuntimeAdapterService } from './runtime-adapter.js'
@@ -16,6 +17,7 @@ import { RuntimeReviewService } from './runtime-review-service.js'
 
 export { getHealthStatus } from './health.js'
 export { ExplicitProjectCatalog } from './project-catalog.js'
+export { ensureRealDevProject, REAL_DEV_PROJECT_ID } from './real-dev-project.js'
 export { validateProjectRoot } from './project-root.js'
 export { createLocalCoreServer, LOCAL_CORE_DEV_PORT } from './server.js'
 export { SqliteMetadataRepository } from './metadata-repository.js'
@@ -92,7 +94,11 @@ async function main(): Promise<void> {
   }
   const metadataRepository = new SqliteMetadataRepository(databasePath, { disposableOnly: false })
   const apiToken = process.env.LOCAL_CORE_API_TOKEN ?? randomBytes(32).toString('base64url')
-  if (process.env.LOCAL_CORE_DISABLE_MVP_SAMPLE !== '1') {
+  // dev 默认种入真实工作台项目；MVP sample 仅当显式 LOCAL_CORE_ENABLE_MVP_SAMPLE=1（保留为测试 fixture，不做前端默认）。
+  const devWorkspaceRoot = process.env.LOCAL_CORE_DEV_WORKSPACE_ROOT
+    ?? fileURLToPath(new URL('../.data/lcos-dev-workspace', import.meta.url))
+  ensureRealDevProject(metadataRepository, devWorkspaceRoot)
+  if (process.env.LOCAL_CORE_ENABLE_MVP_SAMPLE === '1') {
     const sampleRoot = process.env.LOCAL_CORE_MVP_SAMPLE_ROOT
       ?? fileURLToPath(new URL('../.data/mvp-sample-project', import.meta.url))
     ensureMvpSampleProject(metadataRepository, sampleRoot)

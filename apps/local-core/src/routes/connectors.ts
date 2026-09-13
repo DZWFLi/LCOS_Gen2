@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { ProjectId } from '@local-creative-os/domain'
+import { connectorSourceProjectionsV1 } from '../connector-source-projection.js'
 import type { ResourceConnectorRegistry } from '../connectors/connector-port.js'
 import type { ObsidianConnectorSessionStore, ObsidianReadOnlyConnector } from '../connectors/obsidian-connector.js'
 import type { DirectoryPickerResult } from '../native-directory-picker.js'
@@ -36,6 +37,17 @@ export async function handleConnectorsRoute(ctx: ConnectorsRouteContext): Promis
 
   if (method === 'GET' && pathname === '/connectors') {
     sendJson(response, 200, { ok: true, value: connectorRegistry.capabilities() })
+    return true
+  }
+
+  // T7（P0-05）：connector source 投影（Assembly SourceBay[sources] 数据源）。
+  const connectorSourcesMatch = /^\/projects\/([^/]+)\/connector-sources$/.exec(pathname)
+  if (method === 'GET' && connectorSourcesMatch !== null) {
+    const db = routeRequireMetadata(ctx); if (db === undefined) return true
+    const connectorProjectId = decodeURIComponent(connectorSourcesMatch[1] ?? '')
+    if (routeRequireProject(connectorProjectId, { metadata: db, response, helpers: ctx.helpers }) === undefined) return true
+    const value = connectorSourceProjectionsV1(connectorRegistry.capabilities(), obsidianSessions.list())
+    sendJson(response, 200, { ok: true, value })
     return true
   }
 

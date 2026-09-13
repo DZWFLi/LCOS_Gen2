@@ -26,6 +26,7 @@ import { isMac } from '@/utils/platform';
 
 import { MissingFileBanner } from '../MissingFileBanner';
 import { NodeWrapper } from '../NodeWrapper';
+import { useResolvedNodeBody } from '@/lcos-seam/nodeBodySlot';
 import { useTrackNoteFixedHeight } from './heightMemory';
 import {
   NOTE_CONTENT_HOST_CLASS,
@@ -91,6 +92,19 @@ export const NoteNode = memo(
     // too. The body renders identically either way; this only gates the
     // measurement proposal and the observers that feed it.
     const isFixedHeight = useHeightMode(id) === 'fixed';
+
+    // T1 Glyth seam: the host app may resolve a replacement body for this
+    // native note (e.g. a conversation-bound note renders its identity body
+    // instead of the Milkdown preview). The seam is neutral and optional:
+    // absent / undefined / error all keep the native note body. It is
+    // REACTIVE: a late binding (async reconcile) notifies the consumer, which
+    // swaps the body in place on the same node — nodeId/geometry/selection/
+    // undo never change.
+    const BodyOverride = useResolvedNodeBody({
+      nodeId: id,
+      nodeType: 'note',
+      data: data as Readonly<Record<string, unknown>>,
+    });
 
     // The wrapper hosts the height-measurement infrastructure and the
     // layout shell; `MilkdownPreview` mounts the editor
@@ -457,7 +471,13 @@ export const NoteNode = memo(
                     !hasAccent && 'bg-surface',
                   )}
                 >
-                  {hydrated ? (
+                  {BodyOverride ? (
+                    <BodyOverride
+                      nodeId={id}
+                      nodeType="note"
+                      data={data as Readonly<Record<string, unknown>>}
+                    />
+                  ) : hydrated ? (
                     <MilkdownPreview
                       markdown={markdown}
                       canvasId={canvasId ?? undefined}

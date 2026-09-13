@@ -44,6 +44,8 @@ export interface HuabuCanvasHostExtension {
       surface: string,
     ): Promise<SemanticConnectOutcome>;
   };
+  /** Neutral binding-aware body resolver (T1 Glyth seam); opaque resolver fn. */
+  readonly resolveNodeBody?: unknown;
 }
 
 /**
@@ -85,5 +87,6 @@ export function hostExtensionFromSeam(seam: HostSeam): HuabuCanvasHostExtension 
             seam.connectIntent.onConnectNodes(fromNodeId, toNodeId, surface),
         }
       : undefined,
+    resolveNodeBody: seam.resolveNodeBody,
   };
 }

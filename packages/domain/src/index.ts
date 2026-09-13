@@ -180,6 +180,8 @@ export interface Workspace {
   readonly contextPolicy: WorkspaceContextPolicy
   readonly frameBounds?: WorkspaceFrameBounds
   readonly preferredSurface?: string
+  /** T2 C2-1D：长期工作现场的稳定画布（Huabu canvasId）；SurfaceDock/Worksite 切换据此解析。 */
+  readonly canvasId?: string
   readonly version?: number
   readonly updatedAt: IsoDateTime
 }

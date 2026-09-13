@@ -89,6 +89,20 @@ export {
   overlayZ,
   overlayLayers,
 } from './interaction/overlayArbitration.js';
+
+export { createContinuationLocalIntentV1 } from './interaction/continuationIntent.js';
+export type { ContinuationIntentBindingV1, ContinuationLocalIntentV1, ContinuationLocalIntentKindV1 } from './interaction/continuationIntent.js';
+export { CONTINUATION_ACTION_DESCRIPTORS, describeContinuationActionV1, intentKindForContinuationActionV1, assertKnownContinuationActionsV1 } from './interaction/actionArcModel.js';
+export type { ContinuationActionDescriptorV1 } from './interaction/actionArcModel.js';
+export { createT3InteractionSnapshotV1, isT3SnapshotStaleV1 } from './interaction/t3InteractionSnapshot.js';
+export type { T3InteractionSnapshotV1, T3InteractionSnapshotInputV1 } from './interaction/t3InteractionSnapshot.js';
+
+export { resolveCanonicalConversationTargetV1, resolveCanonicalWorkViewTargetV1, resolveCanonicalViewTargetV1 } from './navigation/canonicalTargetResolver.js';
+export type { CanonicalNavigationTargetV1, CanonicalTargetResolveStatusV1, CanonicalTargetResolveOutcomeV1, ConversationTargetInputV1 } from './navigation/canonicalTargetResolver.js';
+export { targetFromCaptureReceiptV1 } from './navigation/captureReceiptTarget.js';
+export type { CaptureReceiptTargetResultV1, CaptureReceiptTargetInputV1 } from './navigation/captureReceiptTarget.js';
+export { focusOccurrenceV1 } from './navigation/focusOccurrence.js';
+export type { FocusOccurrenceOutcomeV1, FocusOccurrenceInputV1, FocusOccurrenceStatusV1 } from './navigation/focusOccurrence.js';
 export type {
   OverlayKind,
   OverlayInput,
@@ -102,11 +116,66 @@ export { descriptorFor, familiesFor } from './presentation/rendererRegistry.js';
 export { resolveVisualFamily, huabuNodeTypeForFamily } from './presentation/visualFamily.js';
 export type { LcosVisualFamily, VisualFamilySource } from './presentation/visualFamily.js';
 
+export { FIGMA_ENTRY_GROUP_STATES, mapFigmaStateToT5StatusV1, assertAllFigmaStatesMappedV1 } from './presentation/figmaStateMap.js';
+export type { FigmaEntryGroupV1, T5PresentationStatusV1 } from './presentation/figmaStateMap.js';
+
 export { huabuNodeTypeForPresentation } from './spatial/projectToSpaceProjection.js';
+
+// T2 C2-3A Locator（纯几何 + 瞬态状态，React-free）— Wave 0 从 bb047e2 选择性救回。
+export { computeLocatorGeometry, toScreenRect } from './spatial/locatorGeometry.js';
+export type {
+  LocatorGeometry,
+  LocatorGeometryInput,
+  LocatorStateKind,
+  ScreenRect,
+} from './spatial/locatorGeometry.js';
+export { reduceLocatorState, initialLocatorState } from './interaction/locatorState.js';
+export type { LocatorAction, LocatorPhase, LocatorState } from './interaction/locatorState.js';
+export { reduceArrivalState, initialArrivalState } from './interaction/arrivalState.js';
+export type { ArrivalAction, ArrivalPhase, ArrivalState } from './interaction/arrivalState.js';
+export type { SpatialFocusMode, SpatialFocusPort, SpatialFocusResult } from './spatial/spatialFocusPort.js';
 
 export { createLcosHostRuntime, DOCK_GAP_REGISTRY } from './host/createLcosHostRuntime.js';
 export type { LcosEndpointConfig, LcosHostRuntime, CreateLcosRuntimeDeps, PhaseCDock, DockGapRegistry } from './host/createLcosHostRuntime.js';
 export type { RendererFamily, PresentationSpecies, PresentationDescriptor, NodeCapability, CoreEntityRefLoose } from './presentation/rendererRegistry.js';
+
+export { CoreConversationClient } from './backend/conversations.js';
+export { CoreAssemblyClient } from './backend/assembly.js';
+export { CoreRailwayClient } from './backend/railway.js';
+export type { RailwayOrderWriteInputV1 } from './backend/railway.js';
+export { CoreContinuationClient } from './backend/continuation.js';
+export { CoreRunClient } from './backend/runs.js';
+export type { CreateRunInputV1 } from './backend/runs.js';
+export { CoreDraftClient } from './backend/drafts.js';
+export { CoreCaptureClient } from './backend/captures.js';
+export { CoreConnectorClient } from './backend/connectors.js';
+export { CoreHealthClient } from './backend/health.js';
+
+export { composerViewStateV1, COMPOSER_VIEW_STATES_V1 } from './composer/composerSubmitMapper.js';
+export type { ComposerViewStateV1, ComposerSubmitOutcomeV1, ComposerViewInputV1 } from './composer/composerSubmitMapper.js';
+export { ComposerController } from './composer/composerController.js';
+export type { ComposerControllerStateV1, ComposerReferenceLikeV1 } from './composer/composerController.js';
+
+export { professionalRegionRefV1, rectsOverlapV1, placeProfessionalRegionV1 } from './windows/professionalWindowLayout.js';
+export type { ProfessionalBodyKeyV1, ProfessionalRectV1, ProfessionalRegionRefV1, ProfessionalWindowEnvironmentV1 } from './windows/professionalWindowLayout.js';
+
+export { createEmptyConversationWorkViewV1 } from './lcos/conversation/conversationWorkViewModel.js';
+export type { ConversationWorkViewSectionKindV1, ConversationWorkViewSectionStatusV1, ConversationWorkViewSectionStateV1, ConversationWorkViewStateV1 } from './lcos/conversation/conversationWorkViewModel.js';
+export { ConversationWorkViewController } from './lcos/conversation/conversationWorkViewController.js';
+export { AssemblySourceBayController } from './lcos/assembly/assemblySourceBayController.js';
+export type { AssemblySourceTabV1, AssemblySourceBayStateV1 } from './lcos/assembly/assemblySourceBayController.js';
+export { assemblyCardViewV1, referenceKeyForAssemblyItem } from './lcos/assembly/assemblyCardView.js';
+export type { AssemblyCardSpeciesV1, AssemblyCardViewStateV1 } from './lcos/assembly/assemblyCardView.js';
+export { CaptureInboxController } from './lcos/capture/captureInboxController.js';
+export type { CaptureInboxControllerStateV1 } from './lcos/capture/captureInboxController.js';
+export { captureInboxViewStateV1, captureOperationActionLabelV1 } from './lcos/capture/captureInboxMapper.js';
+export type { CaptureInboxViewStateV1, CaptureInboxViewInputV1 } from './lcos/capture/captureInboxMapper.js';
+export { ConnectorSourceController } from './lcos/connector/connectorSourceController.js';
+export type { ConnectorSourceControllerStateV1 } from './lcos/connector/connectorSourceController.js';
+export { connectorSourceViewStateV1 } from './lcos/connector/connectorSourceMapper.js';
+export type { ConnectorSourceViewStateV1, ConnectorSourceViewInputV1 } from './lcos/connector/connectorSourceMapper.js';
+export { runtimeDoctorViewStateV1 } from './lcos/doctor/runtimeDoctorMapper.js';
+export type { RuntimeDoctorViewStateV1, RuntimeDoctorViewInputV1 } from './lcos/doctor/runtimeDoctorMapper.js';
 
 export {
   HUABU_PROTOCOL_VERSION,

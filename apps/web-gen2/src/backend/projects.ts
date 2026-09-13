@@ -3,6 +3,7 @@
 // (those are not part of the current Core->Huabu G0 loop).
 
 import type { ProjectGraphSnapshot } from '@local-creative-os/contracts';
+import type { Workspace } from '@local-creative-os/domain';
 import { HttpClient } from './client.js';
 import { coreRequest } from './coreTypes.js';
 
@@ -33,6 +34,31 @@ export class CoreProjectClient {
       this.http,
       'GET',
       `/projects/${encodeURIComponent(projectId)}/graph`,
+    );
+  }
+
+  /** GET /projects/:projectId/workspaces -> 工作现场列表（含 stable canvasId；T2 C2-1D）。 */
+  getWorkspaces(projectId: string, signal?: AbortSignal): Promise<readonly Workspace[]> {
+    return coreRequest<readonly Workspace[]>(
+      this.http,
+      'GET',
+      `/projects/${encodeURIComponent(projectId)}/workspaces`,
+      { signal },
+    );
+  }
+
+  /** PUT /projects/:projectId/workspaces/:id — 首次切换创建画布后回写 stable canvasId。 */
+  updateWorkspaceCanvasId(
+    projectId: string,
+    workspaceId: string,
+    canvasId: string,
+    signal?: AbortSignal,
+  ): Promise<Workspace> {
+    return coreRequest<Workspace>(
+      this.http,
+      'PUT',
+      `/projects/${encodeURIComponent(projectId)}/workspaces/${encodeURIComponent(workspaceId)}`,
+      { signal, body: { canvasId } },
     );
   }
 }
