@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 import { readFileSync } from 'node:fs';
@@ -158,8 +158,10 @@ export default defineConfig(({ mode }) => {
         },
         // LCOS: same-origin path to Local Core. Rewrite the prefix so the Core
         // receives its canonical `/projects/...` routes without the proxy prefix.
+        // 目标可配（R0-6）：隔离 e2e 环境用 `VITE_LCOS_CORE_TARGET` 指向自己的
+        // Core 实例，避免 e2e 与用户 dev 数据互相污染。默认仍是 dev Core。
         '/lcos-core': {
-          target: 'http://127.0.0.1:43121',
+          target: env.VITE_LCOS_CORE_TARGET || 'http://127.0.0.1:43121',
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/lcos-core/, ''),
         },

@@ -19,6 +19,9 @@ apps/local-core/.data/
 # Disposable artifact from an early Phase 2 Lite cwd-path validation.
 apps/local-core/apps/local-core/.data/
 
+# R0-6 隔离 e2e profile（独立 Core DB / Huabu 画布库 / 日志）；禁止进仓库，也不许被当成用户 dev 数据
+.e2e-data/
+
 # Local handoff package; its contents are tracked as source documents.
 Local_Creative_OS_Codex_Development_Package_20260719_073944.zip
 

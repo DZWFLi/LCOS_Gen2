@@ -95,6 +95,7 @@ export function LcosWorksiteStage({
         {/* 恢复：画布引用失效/缺失 → 重建并回写 workspace.canvasId（真实 createCanvas） */}
         <button
           type="button"
+          data-lcos-recover-canvas
           disabled={recreating}
           onClick={() => {
             setRecreating(true);

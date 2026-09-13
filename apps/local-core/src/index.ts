@@ -117,12 +117,20 @@ async function main(): Promise<void> {
     new RuntimeResultIngestionService(metadataRepository, bridge),
     runtimeReviewService,
   )
+  // 写请求的 Origin 白名单：dev 默认只允许 5173（server.ts 内置默认）。
+  // 隔离 e2e profile 跑在别的 web 端口上，需要显式追加自己的 origin（R0-6）：
+  //   LOCAL_CORE_ALLOWED_ORIGINS=http://localhost:5273,http://127.0.0.1:5273
+  const allowedOrigins = (process.env.LOCAL_CORE_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
   const server = createLocalCoreServer({
     port,
     metadataRepository,
     runtimeReviewService,
     runtimeApplicationService,
     apiToken,
+    ...(allowedOrigins.length === 0 ? {} : { allowedOrigins }),
   })
   const address = await server.start()
   process.stdout.write(`Local Core Phase 2 listening on http://${address.host}:${address.port}\n`)
