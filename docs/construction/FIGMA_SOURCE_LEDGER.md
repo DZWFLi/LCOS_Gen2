@@ -19,7 +19,7 @@ PNG 只做整页视觉走查；exact node/component/variant、variables/styles�
 | FIG-FAM-FB | 统一 / SurfaceFeedback `5391:357`｜轴 `呈现` | loading / empty / normal / focus / disabled / error / recovery（7） | h38 · pad 10/12 · gap 8 · r16 · 图标 18 | `lcos/ui/LcosSurfaceFeedback.tsx`（族根 `data-lcos-family="surface-feedback"`） | Assembly / Atlas / Workflow 等宿主（loading/empty/error） | 7 呈现全渲染 | loading / empty / error / normal | focus / disabled / recovery 由宿主按需给，不伪造 |
 | FIG-FAM-COL | 集合 / 上下文跨视图 `5333:96`（轴 `组织` × `呈现`）+ 工作流跨视图 `5334:46`（轴 `呈现`） | 事情/时间 × 总览/主画布/装配；工作流现场/主画布/装配（248×244） | 变体框 248×244（page 13 未随 structures/ 导出 → 内层细分几何不在本次证据内） | `lcos/ui/families/LcosCollectionSurface.tsx` | `lcos/surfaces/context/ContextAtlasStage.tsx`（体块 248×244、列间 32） | 9 体块（6 + 3） | 总览（组织轴已可达：事情/时间真实切换） | 主画布 / 装配 / 工作流跨视图 → R4 |
 | FIG-FAM-CARD | 工作流 / 取用卡 `5335:110`｜轴 `状态` | 静息 / 悬停 / 预览 / 已选目标 / 草稿中 / 不可用 / 键盘焦点（7）（224×324 3:4） | 变体框 224×324（同上，page 13 未导出结构） | `lcos/ui/families/LcosTaskCard.tsx` | `lcos/surfaces/workflow/WorkflowCardPool.tsx` | 7 状态全渲染 | 静息 / 草稿中（真实 draft 引用）/ 不可用（无可引用身份）/ 悬停 / 键盘焦点（:focus-within） | 预览 / 已选目标 → R5（Workflow/Hand/Cards） |
-| FIG-FAM-PORTAL | 产品 Portal / 目标预览状态 `5348:1151`｜轴 `状态` | 可预览 / 加载中 / 旧缓存 / 部分预览 / 预览失败 / 目标缺失（6）（440×360） | 变体框 440×360（同上，page 13 未导出结构） | `lcos/ui/families/LcosPortalPreview.tsx` | `lcos/professional/PortalPreviewBody.tsx`（窗口 body）+ `lcos/nodes/PortalNodeBody.tsx`（双击触发，读原生 `canvasRef.data.targetCanvasId`） | 6 状态全渲染 | 可预览 / 目标缺失（由真实 targetCanvasId 推导） | 加载中 / 旧缓存 / 部分预览 / 预览失败 → R4（窗口内渲染目标现场） |
+| FIG-FAM-PORTAL | 产品 Portal / 目标预览状态 `5348:1151`｜轴 `状态` | 可预览 / 加载中 / 旧缓存 / 部分预览 / 预览失败 / 目标缺失（6）（440×360） | 变体框 440×360（同上，page 13 未导出结构） | `lcos/ui/families/LcosPortalPreview.tsx` | **gallery** + `lcos/professional/PortalPreviewBody.tsx`（窗口 body，已接入 `LcosProfessionalBodyKey`）+ `lcos/nodes/PortalNodeBody.tsx`（seam 会为原生 `canvasRef` 返回它） | 6 状态全渲染 | ⚠ **生产不可达（R1 记录更正）**：唯一 junction 消费方是 `NoteNode`（nodeType=`note`），原生 Portal 是 `canvasRef` 节点，永远不会向 junction 请求 body；因此 Portal 族目前只有 gallery + 机制就位。 | 生产触发 + 窗口内渲染目标现场 → **R4**（Portal 机械须改为 Huabu `canvasRef` + `SpacePreviewViewport`） |
 
 族根契约：一律带 `data-lcos-family="<kebab>"` + `data-lcos-variant="<Figma 取值原文>"`（导航/铁路等另有 `data-lcos-*` 部件锚点）。变体样式集中在 `lcos/ui/families/lcos-families.css`，只允许引用 token 变量。
 
@@ -67,5 +67,13 @@ PNG 只做整页视觉走查；exact node/component/variant、variables/styles�
 3. `manifest.limitations` 原样保留：无 Code Connect 生产绑定；窗口 chrome 只规定 header 几何，docking/grouping 运行时仍是 source binding；Navigator loading/error/degraded 共用壳几何，需就近组合反馈原语；**深色值是导出的，但本次人工走查只看过浅色**（R1 已用 e2e 断计算样式变化，未做人工深色走查）。
 4. SVG 资产 `svg/5385-212.svg`、`5385-215.svg`、`5385-218.svg`（导航岛 Pin 角标）尚未采用：当前用 lucide `Pin` + 22×22 圆角底近似，未使用 Figma 原生 SVG。
 5. `lcos/ui/presets.ts` 为空文件（0 字节），Wave 0 遗留；本 Wave 未使用。
+6. **R1 记录更正（2026-09-14 R2 期间发现）**：R1 曾把 Portal 记为"生产入口已打通"。复核后确认 **不成立** —— `resolveNodeBody` 的唯一消费方是 `NoteNode`（`nodeType=note`），原生 Portal 节点是 `canvasRef`，不会经过这个 junction；seam 里 `canvasRef → portal` 的分支只有在"某天有 canvasRef 的 junction 消费方"时才生效。Portal 族的真实生产触发属于 R4。此项按诚实剩余处理，不计入 R1 完成。
+
+## 五、R2 新增：落位 / junction / 命令面（详见 `docs/handoffs/GEN2_R2_MainVerticalSlice_20260914.md`）
+
+- 落位：`apps/web-gen2/src/spatial/gen1Placement.ts`（GEN1 `placeNewNodesIncrementally` A 级采用；provenance 在文件头）。`ProjectToSpaceProjection.projectBatch` 取代 `index*40` 级联，并串行化同 canvas 批次。
+- junction：`apps/web-gen2/src/presentation/rendererRegistry.ts::createNodeCardRegistry`（GEN1 `nodeCardRegistry` B 级换壳）+ `lcos/nodes/lcosNodeCardRegistry.ts`（宿主注册点，唯一注册表）；`createLcosNodePresentationSeam` 是唯一 resolve。
+- 真实内容位：`apps/web-gen2/src/presentation/projectedNodeDescriptor.ts`（Core kind/availability/managed/revision → 次级行 + 物种），经 `listNodeBindings()` → `useLcosReferenceStore` 的 `descriptor` 抵达物种 body。
+- 命令面：`lcos/navigation/LcosActionArc.tsx` + `lcosNodeCommands.ts`（T3，右键节点；未接线命令显式标 GAP）。
 
 > 规则：编码任一可见组件前，先从此表（或母表 grep 该 node）找到一行，绑定真实 target/caller/producer/fallback；缺 token/asset 时先核 `token-style-component-manifest.json` 与 exports 资产目录，禁止截图裁片冒充资产。

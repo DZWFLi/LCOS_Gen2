@@ -113,13 +113,21 @@ export type {
 export { SurfaceRegistry } from './spatial/surfacePort.js';
 export type { SurfaceDescriptor, SurfacePort, SurfacePorts, SurfaceCapability, SurfaceKeyName } from './spatial/surfacePort.js';
 
-export { descriptorFor, familiesFor } from './presentation/rendererRegistry.js';
+export { descriptorFor, familiesFor, createNodeCardRegistry } from './presentation/rendererRegistry.js';
+export type { NodeCardRegistry } from './presentation/rendererRegistry.js';
 
 export { resolveVisualFamily, huabuNodeTypeForFamily } from './presentation/visualFamily.js';
 export type { LcosVisualFamily, VisualFamilySource } from './presentation/visualFamily.js';
 
 export { resolveNodeSpecies, resolveNodeSpeciesFromEntityType, NODE_SPECIES_LABEL } from './presentation/nodeSpecies.js';
 export type { LcosNodeSpecies, NodeSpeciesSource } from './presentation/nodeSpecies.js';
+
+export {
+  buildNodeSecondaryLine,
+  describeProjectedEntity,
+  resolveNodeSpeciesFromFacts,
+} from './presentation/projectedNodeDescriptor.js';
+export type { ProjectedEntityFacts, ProjectedNodeDescriptor } from './presentation/projectedNodeDescriptor.js';
 
 export { FIGMA_ENTRY_GROUP_STATES, mapFigmaStateToT5StatusV1, assertAllFigmaStatesMappedV1 } from './presentation/figmaStateMap.js';
 export type { FigmaEntryGroupV1, T5PresentationStatusV1 } from './presentation/figmaStateMap.js';

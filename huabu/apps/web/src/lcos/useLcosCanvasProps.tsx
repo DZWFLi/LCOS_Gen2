@@ -34,6 +34,7 @@ import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
 import { LcosHostOverlay } from './LcosHostOverlay';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
+import { LcosActionArc } from './navigation/LcosActionArc';
 import { LcosCameraControls } from './navigation/LcosCameraControls';
 import { LcosCanvasCommands } from './navigation/LcosCanvasCommands';
 import { createLcosNodePresentationSeam } from './nodes/createLcosNodePresentationSeam';
@@ -77,6 +78,8 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
         // Wave 4：canvas-local 相机/命令（唯一 Huabu camera，非第二视图）
         { key: 'lcos/canvas-commands', node: <LcosCanvasCommands /> },
         { key: 'lcos/camera-controls', node: <LcosCameraControls /> },
+        // R2：节点命令菜单（T3 Action Arc）—— 画布内唯一节点命令入口
+        { key: 'lcos/action-arc', node: <LcosActionArc /> },
         // Wave 9：相机移动期间暂停呼吸动画/投影（只写 DOM 属性，不重渲染）
         { key: 'lcos/camera-motion', node: <LcosCameraMotionPolicy /> },
       ],
@@ -119,8 +122,19 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
         for (const binding of bindings) {
           useLcosReferenceStore.getState().registerNodeEntity(
             binding.spatialId,
-            { entityType: binding.entityType, entityId: binding.entityId },
+            {
+              entityType: binding.entityType,
+              entityId: binding.entityId,
+              // R2：把从 Core 快照派生的呈现描述（真实 kind/可用性/revision）一起登记，
+              // 供单一 junction 决定物种与次级行；没有描述就如实不带。
+              ...(binding.descriptor ? { descriptor: binding.descriptor } : {}),
+            },
           );
+        }
+        // dev-only：绑定登记的完成信号（R2 e2e 用它作为"节点身份已就绪"的确定性等待点，
+        // 避免在 store 尚未填充时对命令可用性做假失败判定）。
+        if (import.meta.env.DEV) {
+          console.info(`[lcos] bindings registered: ${bindings.length}`);
         }
       } catch (error) {
         console.warn('[lcos] project-open reconcile failed', error);

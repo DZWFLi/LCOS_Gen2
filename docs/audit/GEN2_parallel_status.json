@@ -1,6 +1,6 @@
 {
   "schema": "lcos-gen2-parallel-status/1",
-  "updatedAt": "2026-09-14T03:05:00+08:00",
+  "updatedAt": "2026-09-14T04:10:00+08:00",
   "repo": "E:/OS开发/LCOS_GEN2",
   "branch": "frontend-reconstruction-v2",
   "baseCommit": "685e02a5b7c0f698cdf356436f975cbd4b573964",
@@ -132,6 +132,7 @@
         "深色模式只有 e2e 计算样式断言，未做人工走查",
         "Figma 原生 Pin SVG（5385-212/215/218）未采用，暂用 lucide 近似",
         "未达变体归属：WindowChrome 停靠/分组→R3；Collection 主画布/装配/工作流跨视图、Portal 加载中/旧缓存/部分预览/预览失败→R4；TaskCard 预览/已选目标→R5",
+        "【R2 期间更正】Portal 族生产不可达：resolveNodeBody 唯一消费方是 NoteNode（nodeType=note），原生 Portal 是 canvasRef，不会经过该 junction → Portal 生产触发归 R4",
         "全量 vitest 有 1 个与本 Wave 无关的既有失败（Milkdown blockFingerprintParity），只登记未改"
       ],
       "reviewedBy": null
@@ -140,14 +141,43 @@
       "taskId": "R2",
       "owner": "integrator",
       "worktree": "E:/OS开发/LCOS_GEN2",
-      "ownedPaths": ["huabu/apps/web/src/lcos/{host,nodes,shell,ui,surfaces/main}/**", "apps/web-gen2 共享 client/controller"],
-      "status": "planned",
-      "blockedBy": "R1_READY_FOR_REVIEW（R1 提交后开始；无外部依赖）",
+      "ownedPaths": [
+        "huabu/apps/web/src/lcos/{host,nodes,shell,ui,surfaces/main,navigation}/**",
+        "apps/web-gen2/src/{spatial,presentation,host}/**",
+        "scripts/e2e/r2-main-vertical-slice.mjs"
+      ],
+      "status": "ready_for_review",
+      "blockedBy": "用户第一轮可见验收（14 号文档 R2 明确要求在此暂停）",
       "outputCommit": null,
-      "evidencePaths": [],
+      "evidencePaths": [
+        "docs/handoffs/GEN2_R2_MainVerticalSlice_20260914.md",
+        "scripts/e2e/r2-main-vertical-slice.mjs",
+        ".e2e-data/shots/r2-main-1440.png",
+        ".e2e-data/shots/r2-action-arc-1440.png",
+        "apps/web-gen2/src/spatial/gen1Placement.ts",
+        "apps/web-gen2/src/presentation/projectedNodeDescriptor.ts",
+        "apps/web-gen2/src/presentation/rendererRegistry.ts",
+        "huabu/apps/web/src/lcos/nodes/lcosNodeCardRegistry.ts",
+        "huabu/apps/web/src/lcos/navigation/LcosActionArc.tsx"
+      ],
+      "exitConditions": {
+        "不再出现 3 个 280x220 节点以 40px 级联重叠": "达成：index*40 两处删除；单测（真实尺寸不重叠）+ 浏览器实测 3 节点分散",
+        "Main 1440 与 main-final.png 一致": "待用户人眼验收（机器只证明不重叠/壳正确/命令可用）",
+        "真实节点在远/中/近 LOD 都有可辨身份": "部分：LOD 与物种 body 已在；文本族投影走 Huabu TextNode，无真实内容位",
+        "所有节点命令由 LCOS Action Arc/菜单/快捷键到达": "部分：Action Arc 5 组命令；旧工具条显示/动作两组未接线",
+        "旧 Huabu 产品 UI 在 LCOS DOM 中不挂载": "部分：NodeToolbar/Controls/MiniMap 已不挂载；NodeFloatingToolbar/EdgeStyleToolbar 仍挂载",
+        "单一 NodePresentation Junction": "达成：唯一 resolve + 唯一注册表（NODE_SPECIES_BODY 第二张表已删除）",
+        "renderer registry 成为 production caller": "达成：GEN1 nodeCardRegistry 换壳 + 宿主注册点",
+        "静态/单测": "web-gen2 247/247；huabu lcos 96/96；两侧 tsc + eslint exit 0",
+        "浏览器": "scripts/e2e/r2-main-vertical-slice.mjs 三场景 ok:true"
+      },
       "gaps": [
-        "统一 NodePresentation Junction / renderer registry 成为 production caller / 可达物种 / 真实内容位 / GEN1 placement / T3 Action Arc / 旧可见壳退役 / Composer 接 receiver 待做",
-        "R2 完成后必须停下等用户第一次视觉验收"
+        "落位不避让 HUD 占用矩形（Composer/Dock 屏幕空间）→ R3 safeRect",
+        "物种可达性受 Core 图限制：working/draft/collection/workflow-collection/decision/prompt-frame/context-reference 无 producer",
+        "文本族投影无真实内容位（Huabu TextNode 空编辑器占位）—— 需用户裁定是否允许画布就地编辑 Core 投影",
+        "旧可见壳未退役：NodeFloatingToolbar / EdgeStyleToolbar 仍挂载（Action Arc 只覆盖 5 类命令，先退役=删能力）",
+        "R1 记录更正：Portal 族生产不可达（junction 唯一消费方 NoteNode，canvasRef 不经过它）→ R4",
+        "本轮 e2e 抓出并修复的两个真实缺陷已有回归测试：落位用请求尺寸而非 Huabu 真实尺寸；StrictMode 双挂载导致同实体重复投影"
       ],
       "reviewedBy": null
     },

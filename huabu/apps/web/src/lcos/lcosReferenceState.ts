@@ -23,13 +23,25 @@ import {
   type ReferenceControllerState,
 } from './referenceBridge';
 
+import type { ProjectedNodeDescriptor } from '@local-creative-os/web-gen2';
+
+/**
+ * 节点 → Core 实体引用（R2 起附带呈现描述）。
+ * descriptor 是**呈现事实**（kind/可用性/revision → 次级行 + 物种），由 host 在
+ * reconcile 后从 Core 快照派生；它不参与引用相等（sameEntityRef 只比 entityType/entityId），
+ * 也不落库、不复制真值。
+ */
+export interface LcosNodeEntityRef extends CoreEntityRefLike {
+  readonly descriptor?: ProjectedNodeDescriptor;
+}
+
 export interface LcosReferenceState {
   /** nodeId → Core entity ref, populated at projection time. */
-  nodeEntityRefs: ReadonlyMap<string, CoreEntityRefLike>;
+  nodeEntityRefs: ReadonlyMap<string, LcosNodeEntityRef>;
   /** Ordered explicit references of the active composer draft. */
   draft: ReferenceControllerState<CoreEntityRefLike>;
 
-  registerNodeEntity(nodeId: string, ref: CoreEntityRefLike): void;
+  registerNodeEntity(nodeId: string, ref: LcosNodeEntityRef): void;
   /** Clear the whole binding-derived node->ref cache (re-sync after reconcile). */
   resetNodeEntities(): void;
   forgetNode(nodeId: string): void;

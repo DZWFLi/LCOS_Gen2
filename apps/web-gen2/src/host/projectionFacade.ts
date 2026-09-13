@@ -27,8 +27,11 @@ import { ProjectionBindingRegistry, type EntityType, type ProjectionBinding } fr
 import { ProjectToSpaceProjection, type ArtifactProjectionSource } from '../spatial/projectToSpaceProjection.js';
 import { RelationProjection, type CoreEntityRef, type CoreRelationWriter, type RelationKind } from '../spatial/relationProjection.js';
 import { ReconciliationRunner } from '../spatial/reconciliationRunner.js';
+import { describeProjectedEntity } from '../presentation/projectedNodeDescriptor.js';
 import { HostLifecycleReconciler, type ReconcileTrigger } from './lifecycleReconciler.js';
 import { connectSemantic, type SemanticConnectResult } from './hostConnectIntent.js';
+
+import type { ProjectedEntityFacts, ProjectedNodeDescriptor } from '../presentation/projectedNodeDescriptor.js';
 
 export interface Gen2HostDeps {
   /** HttpClient pointed at Local Core (Domain Truth). */
@@ -144,25 +147,20 @@ export class Gen2Host {
     const conversations = await this.conversations.listConnectedConversations(
       this.projectId,
     );
-    const out: ProjectionBinding[] = [];
-    let index = 0;
-    for (const conversation of conversations) {
-      if (conversation.conversationRef.startsWith('pending-')) continue;
-      out.push(
-        await this.nodeProjector.projectEntity({
+    // 只投影已确认身份（`pending-*` 不是身份，绝不伪造 Glyth）。
+    // 落位与 artifact 走同一个 projectBatch（GEN1 placeNewNodesIncrementally），
+    // 不再有第二套 `index * 40` 级联。
+    return this.nodeProjector.projectBatch(
+      conversations
+        .filter((conversation) => !conversation.conversationRef.startsWith('pending-'))
+        .map((conversation) => ({
           projectId: this.projectId,
-          entityType: 'conversation',
+          entityType: 'conversation' as const,
           entityId: conversation.id,
-          kind: 'text',
+          kind: 'text' as const,
           title: conversation.label,
-          // 机械级联落位（T1-G05）：避免同一批 Glyth 全部叠在默认原点；
-          // binding 复用时忽略，已有节点原位不动。
-          position: { x: index * 40, y: index * 40 },
-        }),
-      );
-      index += 1;
-    }
-    return out;
+        })),
+    );
   }
 
   /**
@@ -183,15 +181,26 @@ export class Gen2Host {
    * All node bindings for this project/canvas — the reference-store cache
    * source (P0-5): identity derives from ProjectionBinding, never from the
    * frontend guessing a Core ref.
+   *
+   * R2：同一次读取附带**呈现描述**（真实 kind/managed/availability/revision →
+   * 次级行 + 物种），供单一 NodePresentation Junction 使用。没有 Core 元数据的
+   * 绑定就不带 descriptor（前端按 entityType 降级，不编造内容）。
    */
   async listNodeBindings(): Promise<
-    { spatialId: string; entityType: CoreEntityRef['entityType']; entityId: string }[]
+    {
+      spatialId: string;
+      entityType: CoreEntityRef['entityType'];
+      entityId: string;
+      descriptor?: ProjectedNodeDescriptor;
+    }[]
   > {
     const all = await this.bindings.list();
+    const facts = await this.readArtifactFacts();
     const out: {
       spatialId: string;
       entityType: CoreEntityRef['entityType'];
       entityId: string;
+      descriptor?: ProjectedNodeDescriptor;
     }[] = [];
     for (const b of all) {
       if (
@@ -199,14 +208,42 @@ export class Gen2Host {
         b.canvasId === this.canvasId &&
         b.spatialKind === 'node'
       ) {
+        const entityType = b.entityType as CoreEntityRef['entityType'];
+        const known = facts.get(`${entityType}:${b.entityId}`);
         out.push({
           spatialId: b.spatialId,
-          entityType: b.entityType as CoreEntityRef['entityType'],
+          entityType,
           entityId: b.entityId,
+          ...(known ? { descriptor: describeProjectedEntity(known) } : {}),
         });
       }
     }
     return out;
+  }
+
+  /** Core 图快照 → 呈现事实表（只读；失败不阻断打开，但会明确告警而非静默）。 */
+  private async readArtifactFacts(): Promise<ReadonlyMap<string, ProjectedEntityFacts>> {
+    const map = new Map<string, ProjectedEntityFacts>();
+    try {
+      const graph = await this.projects.getProjectGraph(this.projectId);
+      for (const artifact of graph?.artifacts ?? []) {
+        const facts: ProjectedEntityFacts = {
+          entityType: 'artifact',
+          entityId: String(artifact.id),
+          title: String(artifact.title ?? artifact.id),
+          artifactKind: String(artifact.kind),
+          ...(artifact.managed === undefined ? {} : { managed: artifact.managed }),
+          ...(artifact.availability === undefined ? {} : { availability: String(artifact.availability) }),
+          ...(artifact.currentRevisionId === undefined
+            ? {}
+            : { currentRevisionId: String(artifact.currentRevisionId) }),
+        };
+        map.set(`artifact:${facts.entityId}`, facts);
+      }
+    } catch (error) {
+      console.warn('[lcos] 读取 Core 图快照失败，节点将退回无描述的诚实降级', error);
+    }
+    return map;
   }
 
   /** Run reconciliation on demand (startup / after a mutation / on reconnect). */

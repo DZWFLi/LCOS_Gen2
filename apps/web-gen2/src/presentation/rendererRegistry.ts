@@ -128,3 +128,46 @@ export function familiesFor(surface: SurfaceKeyName): readonly RendererFamily[] 
       return ['lcos/entity', 'lcos/conversation', 'lcos/instrument', 'lcos/external-file'];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Node card registry（R2）
+//
+// GEN1 donor 机制换壳（B 级）：`nodeCardRegistry.{registerNodeCard, resolveNodeCard}`
+//   owner: DZWFLi；repo: LCOS-local-creativeOS（只读 donor）
+//   path: apps/web/src/features/canvas/nodeCardRegistry.tsx（本地读取 commit f084158；
+//         审计引用 ref 3e99769，SOURCE_ADOPTION_LEDGER T1-A06）
+//   license: 该库无 LICENSE 文件（自有库，仅内部复用）
+//
+// 换壳点：GEN1 注册的是 React 卡片组件；这里注册的是**任意渲染载荷 TCard**，
+// 于是 web-gen2 保持框架无关（不 import React），由宿主把组件注册进来。
+// 唯一性：同一个 species 只能有一个 owner —— 重复注册直接抛错，
+// 避免"两套渲染器各自注册、谁最后注册谁生效"的静默覆盖（那正是旧前端的病灶）。
+// ---------------------------------------------------------------------------
+
+export interface NodeCardRegistry<TSpecies extends string, TCard> {
+  registerNodeCard(species: TSpecies, card: TCard): void;
+  resolveNodeCard(species: TSpecies): TCard | undefined;
+  isRegistered(species: TSpecies): boolean;
+  registeredSpecies(): readonly TSpecies[];
+}
+
+export function createNodeCardRegistry<TSpecies extends string, TCard>(): NodeCardRegistry<TSpecies, TCard> {
+  const cards = new Map<TSpecies, TCard>();
+  return {
+    registerNodeCard(species, card) {
+      if (cards.has(species)) {
+        throw new Error(`node card registry: species「${species}」已有 owner，拒绝重复注册`);
+      }
+      cards.set(species, card);
+    },
+    resolveNodeCard(species) {
+      return cards.get(species);
+    },
+    isRegistered(species) {
+      return cards.has(species);
+    },
+    registeredSpecies() {
+      return [...cards.keys()];
+    },
+  };
+}

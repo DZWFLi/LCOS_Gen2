@@ -18,6 +18,7 @@ import {
 
 
 import { useLcosDensity } from './useLcosDensity';
+import { useLcosReferenceStore } from '../lcosReferenceState';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { CanvasNodeBodySlotInput } from '@/lcos-seam/types';
@@ -81,12 +82,19 @@ export function LcosSpeciesBodyContent({
   species,
   title,
   density,
+  secondary,
 }: {
   species: LcosNodeSpecies;
   title: string;
   density: 'mark' | 'summary' | 'working' | 'reading';
+  /**
+   * 真实次级行（来自 Core 元数据：kind/受管/可用性/revision）。
+   * 有真实事实就显示真实事实；没有就退回该物种的**形态说明**（说清这是什么，不假装有数据）。
+   */
+  secondary?: string;
 }): JSX.Element {
   const root = { display: 'flex', flexDirection: 'column' as const, gap: 6, width: '100%', minWidth: 0 };
+  const meta = (fallback: string): JSX.Element => <MetaLine text={secondary ?? fallback} />;
 
   switch (species) {
     case 'source':
@@ -97,7 +105,7 @@ export function LcosSpeciesBodyContent({
             <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: SPECIES_ACCENT.source }} aria-hidden />
             <div className="min-w-0 flex-1">
               <TitleLine text={title} />
-              {density === 'reading' && <MetaLine text="来源文件 · 只读原始" />}
+              {density === 'reading' && meta('来源文件 · 只读原始')}
             </div>
           </div>
         </div>
@@ -111,7 +119,7 @@ export function LcosSpeciesBodyContent({
             <span aria-hidden className="mt-1 h-3 w-1 shrink-0 rounded-full" style={{ background: SPECIES_ACCENT.working }} />
             <div className="min-w-0 flex-1">
               <TitleLine text={title} />
-              {density === 'reading' && <MetaLine text="当前加工 · 活跃" />}
+              {density === 'reading' && meta('当前加工 · 活跃')}
             </div>
           </div>
         </div>
@@ -125,7 +133,7 @@ export function LcosSpeciesBodyContent({
             <Sparkles className="h-3 w-3" style={{ color: SPECIES_ACCENT.draft }} aria-hidden />
           </div>
           <TitleLine text={title} />
-          {density === 'reading' && <MetaLine text="AI 产出 · 待 Review，尚未成为 Current" />}
+          {density === 'reading' && meta('AI 产出 · 待 Review，尚未成为 Current')}
         </div>
       );
 
@@ -137,7 +145,7 @@ export function LcosSpeciesBodyContent({
             <SpeciesChip label="引用" accent={SPECIES_ACCENT['context-reference']} />
           </div>
           <TitleLine text={title} />
-          {density === 'reading' && <MetaLine text="来源锚点 · 可定位" />}
+          {density === 'reading' && meta('来源锚点 · 可定位')}
         </div>
       );
 
@@ -151,7 +159,7 @@ export function LcosSpeciesBodyContent({
             </div>
           )}
           <TitleLine text={title} />
-          {density === 'reading' && <MetaLine text="执行状态 · 以真实回执为准" />}
+          {density === 'reading' && meta('执行状态 · 以真实回执为准')}
         </div>
       );
 
@@ -163,7 +171,7 @@ export function LcosSpeciesBodyContent({
             <SpeciesChip label="决策" accent={SPECIES_ACCENT.decision} />
           </div>
           <TitleLine text={title} />
-          {density === 'reading' && <MetaLine text="版本标记 · 可恢复" />}
+          {density === 'reading' && meta('版本标记 · 可恢复')}
         </div>
       );
 
@@ -180,7 +188,7 @@ export function LcosSpeciesBodyContent({
             </span>
             <div className="min-w-0 flex-1">
               <TitleLine text={title} />
-              {density === 'reading' && <MetaLine text="会话 · 双击打开工作台" />}
+              {density === 'reading' && meta('会话 · 双击打开工作台')}
             </div>
           </div>
         </div>
@@ -194,7 +202,7 @@ export function LcosSpeciesBodyContent({
             <SpeciesChip label="集合" accent={SPECIES_ACCENT.collection} />
           </div>
           <TitleLine text={title} />
-          {density === 'reading' && <MetaLine text="按事情/时间组织 · 可展开" />}
+          {density === 'reading' && meta('按事情/时间组织 · 可展开')}
         </div>
       );
 
@@ -217,7 +225,7 @@ export function LcosSpeciesBodyContent({
             <SpeciesChip label="入口" accent={SPECIES_ACCENT.portal} />
           </div>
           <TitleLine text={title} />
-          {density === 'reading' && <MetaLine text="投影锚点 · 进入现场" />}
+          {density === 'reading' && meta('投影锚点 · 进入现场')}
         </div>
       );
 
@@ -257,6 +265,8 @@ function LcosSpeciesBody({
 }): JSX.Element {
   const density = useLcosDensity();
   const title = titleOf(input.data as Readonly<Record<string, unknown>> | undefined);
+  // R2 真实内容位：次级行来自 host 在 reconcile 后派生的 Core 元数据（kind/受管/可用性/revision）。
+  const secondary = useLcosReferenceStore((s) => s.nodeEntityRefs.get(input.nodeId)?.descriptor?.secondaryLine);
   return (
     <div
       data-lcos-species-body
@@ -270,25 +280,17 @@ function LcosSpeciesBody({
         padding: 10,
       }}
     >
-      <LcosSpeciesBodyContent species={species} title={title} density={density} />
+      <LcosSpeciesBodyContent species={species} title={title} density={density} secondary={secondary} />
     </div>
   );
 }
 
-/** 物种 → body 组件（单一注册表；未命中由 seam 返回 native fallback）。 */
-export const NODE_SPECIES_BODY: Readonly<Record<LcosNodeSpecies, ComponentType<CanvasNodeBodySlotInput>>> = {
-  source: (input) => <LcosSpeciesBody species="source" input={input} />,
-  working: (input) => <LcosSpeciesBody species="working" input={input} />,
-  draft: (input) => <LcosSpeciesBody species="draft" input={input} />,
-  'context-reference': (input) => <LcosSpeciesBody species="context-reference" input={input} />,
-  run: (input) => <LcosSpeciesBody species="run" input={input} />,
-  decision: (input) => <LcosSpeciesBody species="decision" input={input} />,
-  glyth: (input) => <LcosSpeciesBody species="glyth" input={input} />,
-  collection: (input) => <LcosSpeciesBody species="collection" input={input} />,
-  'workflow-collection': (input) => <LcosSpeciesBody species="workflow-collection" input={input} />,
-  portal: (input) => <LcosSpeciesBody species="portal" input={input} />,
-  'prompt-frame': (input) => <LcosSpeciesBody species="prompt-frame" input={input} />,
-  unknown: (input) => <LcosSpeciesBody species="unknown" input={input} />,
-};
+/**
+ * 物种 → body 组件工厂。全应用只有 `lcosNodeCardRegistry` 使用它；
+ * 这里不再对外导出一张并行的物种表（R2：单一 junction + 单一注册表）。
+ */
+export function speciesBodyFor(species: LcosNodeSpecies): ComponentType<CanvasNodeBodySlotInput> {
+  return (input) => <LcosSpeciesBody species={species} input={input} />;
+}
 
 void NODE_SPECIES_LABEL; // 标签表供未来无障碍/工具提示使用

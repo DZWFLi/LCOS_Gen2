@@ -117,3 +117,38 @@ huabu typecheck / local-core tsc                  → 0 / 0
 5. 未达变体归属：WindowChrome 停靠/分组→R3；Collection 主画布/装配/工作流跨视图、Portal 加载中/旧缓存/部分预览/预览失败→R4；TaskCard 预览/已选目标→R5。
 
 **下一步**：进入 R2 Main 垂直切片（Launcher+Shell+HUD → 单一 NodePresentation Junction → renderer registry 成为 production caller → 可达物种 → 真实内容位 → GEN1 placement → T3 Action Arc → 退役旧可见壳 → Composer 接 receiver）。**R2 完成后停下等用户第一次视觉验收，验收前不启动 R3/R4/R5 源码写入。**
+
+---
+
+## 04:10 条目 4 — R2 Main 垂直切片就绪，停在用户视觉验收点
+
+**HEAD / Git**
+- R1 提交 `6cdfc93` 之后本轮改动尚未提交（本条目之后提交一个本地 commit）
+- 改动面：apps/web-gen2（落位/描述/注册表/门面）+ huabu/apps/web（junction/注册表/物种 body/Action Arc）+ scripts/e2e/r2-* + 文档
+
+**已完成（对照 R2 九条施工顺序）**
+1. **GEN1 落位采用**：`apps/web-gen2/src/spatial/gen1Placement.ts`（A 级原样搬运 `placeNewNodesIncrementally` + `paddedRectsOverlap`，provenance 写进文件头）；`ProjectToSpaceProjection.projectBatch` 取代 `projectArtifacts` / `projectionFacade.projectConversations` 两处 `index*40` 级联；已有 binding 复用 → 用户锚点永不被重排。
+2. **单一 junction**：删除第二张物种表 `NODE_SPECIES_BODY`，改为注册进 `lcosNodeCardRegistry`（宿主唯一注册点）；机制来自 GEN1 `nodeCardRegistry`（B 级换壳，放进 `web-gen2 rendererRegistry.ts::createNodeCardRegistry`，框架无关）；seam 只问注册表，未注册/未知一律诚实回退 native。
+3. **真实内容位**：新增 `projectedNodeDescriptor.ts`（Core kind/availability/managed/revision → 真实次级行 + 物种解析），经 `Gen2Host.listNodeBindings()` 的 `descriptor` 进入 `useLcosReferenceStore`，由物种 body 渲染。
+4. **T3 Action Arc**：`LcosActionArc`（右键节点）+ 纯函数 `buildLcosNodeCommands`，5 组命令；真实可用：打开（会话工作台/阅读器/入口预览）、引用/取消引用、文本↔笔记、删除（未绑定）、适合画面；未接线 4 项显式标 `尚未接线（GAP）` 并禁用。
+
+**测试与退出码**
+- `apps/web-gen2`: typecheck exit 0；`npm test` **247/247**（新增 6 + 4 + 5 条）
+- `huabu/apps/web`: tsc exit 0；eslint（改动面）exit 0；`vitest run src/lcos` **17 files / 96 tests**
+- `node scripts/e2e/r2-main-vertical-slice.mjs`（隔离环境 reset 后全新数据）三场景 **ok:true**
+  - placement：3 节点 (93,192)(740,192)(740,708) 真实尺寸 607×82，两两不重叠
+  - junction/chrome/commands：MiniMap=0 / Controls=0 / Railway=1；Action Arc 5 组 9 命令；绑定节点「打开」「引用」可用；Esc 关闭
+- 截图：`.e2e-data/shots/r2-main-1440.png`、`r2-action-arc-1440.png`
+
+**本轮 e2e 抓出的两个真实缺陷（都已修 + 加回归测试）**
+1. 落位用**请求尺寸**（280×220）判定格点，而 Huabu 会按内容重新定尺寸（实测 607×82）→ 两个新节点落在同一格。改为"建一个 → 读回真实尺寸 → 作为下一个障碍"。
+2. 开发模式 StrictMode 双挂载 runtime → 两次 reconcile 并发读到同一份空 outline → 同一个 artifact 被投影成两个同坐标节点。改为同 canvas 投影批次串行（`PROJECTION_QUEUE`），并加回归测试。
+
+**GAP / PARTIAL（不得改写为完成）**
+1. 落位不避让 HUD 占用矩形（Composer/Dock 是屏幕空间浮层）→ R3 safeRect 话题。
+2. 物种可达性受 Core 图限制：working/draft/collection/workflow-collection/decision/prompt-frame/context-reference 仍无 producer。
+3. **文本族投影无真实内容位**：markdown/text artifact 走 Huabu TextNode（不经 junction），显示空编辑器占位 → 需要用户裁定"画布上是否允许就地编辑 Core 投影"。
+4. **旧可见壳未退役**：NodeFloatingToolbar / EdgeStyleToolbar 仍挂载（Action Arc 只覆盖 5 类命令；先退役=删能力，触红线），待 R3 与命令接线补齐后一次性切换。
+5. **R1 记录更正**：Portal 族"生产入口已打通"不成立（junction 唯一消费方是 NoteNode，canvasRef 不经过它）→ 已在 FIGMA_SOURCE_LEDGER §四.6 更正，归属 R4。
+
+**下一步（硬停）**：按 14 号文档"在此暂停一次，请用户做第一轮可见验收"。R3/R4/R5 的**源码写入**在验收通过前不启动；三个只读 Scout 的 Work Packet 与 R2 期间新发现（Portal 不可达、落位与 HUD 冲突、物种 producer 缺口）已回填状态文件。
