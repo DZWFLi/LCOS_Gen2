@@ -34,6 +34,9 @@ export async function runScenario({
   headless = true,
   // 允许出现的 HTTP 状态（默认只允许 <400）；例如 expect 404 的场景写 [404]
   allowHttp = [],
+  // 允许出现的 console error 文本模式（仅用于"失败是场景本身要验证的条件"，
+  // 例如 stale canvas 场景的 404 日志）。摘要里仍然完整打印全部 console error。
+  allowConsoleErrorsMatching = [],
   body,
 }) {
   const failures = [];
@@ -103,8 +106,11 @@ export async function runScenario({
   let ok = false;
   try {
     await body(h);
+    const unexpectedConsole = consoleErrors.filter(
+      (text) => !allowConsoleErrorsMatching.some((pattern) => pattern.test(text)),
+    );
     const unexpectedHttp = httpRecords.filter((r) => !r.allowed);
-    h.requireTrue(consoleErrors.length === 0, `出现 console error：${consoleErrors.join(' | ')}`);
+    h.requireTrue(unexpectedConsole.length === 0, `出现 console error：${unexpectedConsole.join(' | ')}`);
     h.requireTrue(pageErrors.length === 0, `出现 pageerror：${pageErrors.join(' | ')}`);
     h.requireTrue(
       unexpectedHttp.length === 0,
