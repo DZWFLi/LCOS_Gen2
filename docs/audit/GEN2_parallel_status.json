@@ -12,21 +12,32 @@
       "taskId": "R0",
       "owner": "integrator",
       "worktree": "E:/OS开发/LCOS_GEN2",
-      "ownedPaths": ["scripts/e2e/**", "docs/audit/**", "huabu/apps/web/vite.config.ts", "根 config"],
-      "status": "running",
-      "outputCommit": "d249395",
+      "ownedPaths": ["scripts/e2e/**", "docs/audit/**", "huabu/apps/web/vite.config.ts", "apps/local-core/src/index.ts"],
+      "status": "reviewed",
+      "outputCommit": "3b06e7f",
+      "commits": ["d249395 harness", "c93bce6 隔离 fixture/profile", "88f6838 ensureCanvas(recreate)", "323094a harness 白名单模式", "3b06e7f R0 证据包"],
+      "reviewedBy": "integrator（依 16 号文档预授权：退出条件全部满足后自动进入 R1）",
       "evidencePaths": [
         "docs/audit/GEN2_R0_未提交Diff冻结证据_20260914.md",
-        "docs/audit/GEN2_R0_Readback_20260914.md"
+        "docs/audit/GEN2_R0_Readback_20260914.md",
+        "docs/handoffs/GEN2_R0_Stabilization_20260914.md",
+        "docs/audit/GEN2_night_log_20260914.md"
       ],
+      "exitConditions": {
+        "textNode特例已撤除": true,
+        "ensureCanvas独立提交": "88f6838（仅 LcosProjectShell.tsx 参数透传 + handoff）",
+        "e2e真实失败非零": "ok=0 / missing=1 / console-error=1 三例实测",
+        "fixture可从空隔离目录重建": "reset 删除 .e2e-data 后 up 重新种入 lcos-gen2-dev 与 canvas-lcos-main/context/workflow（ID 可复现）",
+        "stale→recreate→persist→reload": "r0-stale-canvas.mjs exit 0",
+        "Main fresh console/page error 为零": "仅剩场景前提的 404（已白名单）",
+        "工作区干净": true,
+        "handoff 标注 junction/placement/Figma 属 R1/R2": true
+      },
       "gaps": [
-        "R0-A TextNode 临时特例已撤（TextNode.tsx 回到 HEAD，工作区仅剩 ensureCanvas 候选 Diff）",
-        "R0-5 已建：scripts/e2e/_harness.mjs + r0-harness-selftest.mjs；反证 ok=0 / missing=1 / error=1（证据：本文件同目录夜间日志）",
-        "R0-6 未做：隔离 fixture/profile（需 Core DB/端口 + Huabu HUABU_DATA_DIR + Vite 代理 43121 硬编码点可配）",
-        "R0-3 未做：ensureCanvas(recreate) 独立提交与 8 步验收（stale→recreate→persist→reload）",
-        "R0 docs 切片（audit/handoff）未提交"
-      ],
-      "reviewedBy": null
+        "wave1..wave10 旧 e2e 脚本尚未迁移到 fail-fast harness（安排在各自 Recovery Wave 前）",
+        "Huabu 画布持久化的具体文件仍未精确定位（storage/disk 只见 workspaces.json，但画布跨重启存活）",
+        "reset 在刚 down 后偶发日志句柄占用，需重试一次（未加自动重试）"
+      ]
     },
     {
       "taskId": "R3-professional-scout",

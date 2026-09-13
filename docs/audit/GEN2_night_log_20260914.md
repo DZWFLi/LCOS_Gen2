@@ -42,3 +42,44 @@
 **未开始**：R1（设计系统 → 组件族）、R2（Main 垂直切片）。R2 完成后停止写源码并等用户第一次视觉验收。
 
 **硬阻塞**：无。
+
+---
+
+## 02:05 条目 2 — R0 全部退出条件达成（R0 = reviewed），准备进入 R1
+
+**HEAD / Git**：`685e02a` → `d249395` → `c93bce6` → `88f6838` → `323094a` → `3b06e7f`；工作区**干净**（`git status --porcelain` 为空）。
+
+**本轮完成**
+1. **R0-A**：撤掉 TextNode 临时特例（回到 HEAD），冻结证据保留。
+2. **R0-5**：harness 三例反证成立（ok=0 / missing=1 / console-error=1），并支持"场景前提型 console error 白名单"（摘要仍全量打印）。
+3. **R0-6**：隔离 e2e profile 落地（Core 43131 / Huabu server 3011 / web 5273，数据全在 `.e2e-data/`）。**空目录可重建已实测**：`reset` 删除目录后 `up` 重新种入同一 fixture（`lcos-gen2-dev` + `canvas-lcos-main/context/workflow`）。
+4. **R0-3**：`ensureCanvas(recreate)` 独立提交；stale → recreate → persist → reload → 再进不重复创建 **全链 exit 0**。
+
+**过程中发现并修掉的真实缺陷/坑（都留了证据）**
+- `LcosProjectShell` 零参闭包吞掉 `recreate` → Main 恢复按钮点了没反应（真缺陷，已修）；
+- Core 写请求 Origin 白名单默认只含 5173 → 隔离端口写入 403（新增 `LOCAL_CORE_ALLOWED_ORIGINS`，默认行为不变）；
+- Vite `/lcos-core` 目标硬编码 43121 → 隔离环境会打到用户 dev Core（改为 `VITE_LCOS_CORE_TARGET`）；
+- 空 `HUABU_DATA_DIR` 必须配 `HUABU_WORKSPACE`，否则 app 被重定向到 `/setup` 首启向导；
+- PowerShell 5.1 按 ANSI 解析 `.ps1` → 脚本内含中文会解析失败（改为 ASCII-only）；
+- `.ps1` 用 `Select-Object -Last` 会缓冲输出，导致"看起来卡住"（改用文件重定向读取）。
+
+**测试与退出码**
+```text
+node scripts/e2e/r0-harness-selftest.mjs ok      → 0
+node scripts/e2e/r0-harness-selftest.mjs missing → 1
+node scripts/e2e/r0-harness-selftest.mjs error   → 1
+node scripts/e2e/r0-stale-canvas.mjs             → 0（空目录重建后再次 0）
+huabu typecheck / local-core tsc                  → 0 / 0
+```
+
+**R0 退出条件**：8 项全绿（明细见 `GEN2_parallel_status.json` 的 `R0.exitConditions`）。
+**状态**：R0 = `reviewed`（依 16 号文档预授权自动进入 R1）。三路 Scout = `scouting`（packet 已落盘，未 reviewed）。
+
+**R1 计划（接下来做）**
+1. 读 `token-style-component-manifest.json` 全量，建立"现有 token/CSS 变量 ↔ Figma alias"对照表；
+2. CSS custom properties 作为渲染入口，TS token 只导语义引用（禁止复制同值常量）；
+3. 先做共享组件族：ProjectShell / NavigatorIsland / Railway / ProfessionalWindowChrome / SurfaceFeedback / Collection / TaskCard / Portal；
+4. dev-only component gallery（覆盖 variant 与 disabled/loading/error/degraded/selected/focus/reduced-motion）；
+5. 回填 `FIGMA_SOURCE_LEDGER.md`（node/component/variant/token/asset → code target → production caller）。
+
+**硬阻塞**：无。隔离环境保持运行（43131/3011/5273），用户 dev 栈（43121/3001/5173）未受影响。
