@@ -17,7 +17,6 @@
 // 渲染层 = canvas-local overlay + recognizers + connect intent + binding-aware
 // node body seam（Wave 3）；产品整机 UI 全部走 route-level Shell，不在这里叠。
 
-import { useEffect, useRef, useState } from 'react';
 
 import {
   createHostSeam,
@@ -25,17 +24,21 @@ import {
   type HostSeam,
   type LcosHostRuntime,
 } from '@local-creative-os/web-gen2';
+import { useEffect, useRef, useState } from 'react';
 
-import type { CanvasHostExtension } from '@/lcos-seam/types';
 import useCanvasStore from '@/store/canvasStore';
 
-import { LcosHostOverlay } from './LcosHostOverlay';
 import { useLcosHostStore } from './host/lcosHostState';
-import { useLcosReferenceStore } from './lcosReferenceState';
-import { createLcosNodePresentationSeam } from './nodes/createLcosNodePresentationSeam';
-import { createLcosRecognizers } from './lcosRecognizers';
 import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
+import { LcosHostOverlay } from './LcosHostOverlay';
+import { createLcosRecognizers } from './lcosRecognizers';
+import { useLcosReferenceStore } from './lcosReferenceState';
+import { LcosCameraControls } from './navigation/LcosCameraControls';
+import { LcosCanvasCommands } from './navigation/LcosCanvasCommands';
+import { createLcosNodePresentationSeam } from './nodes/createLcosNodePresentationSeam';
 import { installReferenceClickSuppressor } from './referenceClickSuppressor';
+
+import type { CanvasHostExtension } from '@/lcos-seam/types';
 
 export interface LcosCanvasProps {
   hostExtension?: CanvasHostExtension;
@@ -68,7 +71,12 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     suppressorDisposeRef.current = installReferenceClickSuppressor();
     // seam 的 connect provider 指向同一个 runtime 对象（host getter 恒取当前 host）。
     const seam: HostSeam = createHostSeam(() => rt.host, {
-      overlays: [{ key: 'lcos/host-overlay', node: <LcosHostOverlay /> }],
+      overlays: [
+        { key: 'lcos/host-overlay', node: <LcosHostOverlay /> },
+        // Wave 4：canvas-local 相机/命令（唯一 Huabu camera，非第二视图）
+        { key: 'lcos/canvas-commands', node: <LcosCanvasCommands /> },
+        { key: 'lcos/camera-controls', node: <LcosCameraControls /> },
+      ],
       recognizers: createLcosRecognizers().map((recognizer) => ({ recognizer })),
       // Wave 3：binding-aware 全节点 presentation seam（原生 body 仅 fallback）。
       resolveNodeBody: createLcosNodePresentationSeam(),

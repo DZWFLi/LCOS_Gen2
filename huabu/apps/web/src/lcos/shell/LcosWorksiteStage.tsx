@@ -11,6 +11,7 @@ import useCanvasStore from '@/store/canvasStore';
 import { CanvasHostBoundary } from '../host/CanvasHostBoundary';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
+
 import type { LcosSurfaceKey } from '../shell/lcosShellStore';
 
 export interface LcosWorksiteStageProps {

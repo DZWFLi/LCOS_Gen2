@@ -34,6 +34,7 @@ export function LcosProjectRoute(): React.JSX.Element {
       projectName={worksite.projectName}
       surface={normalized}
       canvasBySurface={worksite.surfaceCanvasId}
+      surfaceByWorkspace={worksite.surfaceByWorkspace}
       ensureCanvas={worksite.ensureSurfaceCanvas}
       ensureError={worksite.statusDetail}
       shellStatus={worksite.status}

@@ -1,15 +1,17 @@
 // LcosProjectShell — LCOS 项目级 Shell（Figma ProjectShell 5386:436；route-level 唯一组合根）。
-// 组成：项目身份胶囊（顶左）+ WorksiteStage（唯一 Canvas 舞台）+ SurfaceDock（底 24 常驻）。
-// Global HUD/Railway/Professional Stage/Composer 在后续 Wave 挂入（Wave 4/5），
-// 此处只放有真实动作的可见元素；未接线入口一律不渲染（避免死按钮）。
+// 组成：项目身份胶囊（顶左）+ 三现场舞台（唯一 Canvas）+ GlobalHud（Navigator/Railway/Dock/camera）。
+// Professional Stage / Composer 在 Wave 5 挂入；未接线入口一律不渲染（避免死按钮）。
 
 import { ChevronLeft } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
+import useCanvasStore from '@/store/canvasStore';
+
+import { LcosGlobalHud } from './LcosGlobalHud';
 import { SURFACE_LABEL, useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
-import { LcosSurfaceDock } from './LcosSurfaceDock';
 import { LcosWorksiteStage } from './LcosWorksiteStage';
+import { MainWorksite } from '../surfaces/main/MainWorksite';
 import { lcosTokens } from '../ui/lcosTokens';
 
 export interface LcosProjectShellProps {
@@ -17,6 +19,7 @@ export interface LcosProjectShellProps {
   readonly projectName: string | null;
   readonly surface: LcosSurfaceKey;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
+  readonly surfaceByWorkspace: Readonly<Map<string, LcosSurfaceKey>>;
   readonly ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
   readonly ensureError?: string;
   readonly shellStatus: 'loading' | 'ready' | 'offline' | 'error';
@@ -28,6 +31,7 @@ export function LcosProjectShell({
   projectName,
   surface,
   canvasBySurface,
+  surfaceByWorkspace,
   ensureCanvas,
   ensureError,
   shellStatus,
@@ -36,6 +40,7 @@ export function LcosProjectShell({
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
   const setActiveSurface = useLcosShellStore((s) => s.setActiveSurface);
   const setProject = useLcosShellStore((s) => s.setProject);
+  const mainNodeCount = useCanvasStore((s) => s.nodes.length);
 
   useEffect(() => {
     setProject(projectId);
@@ -56,15 +61,26 @@ export function LcosProjectShell({
         </div>
       ) : (
         <>
-          {/* 工作现场舞台（唯一 Canvas） */}
+          {/* 工作现场舞台（唯一 Canvas）；Main 用主现场壳（空态引导），Context/Workflow 用通用舞台 */}
           <div className="absolute inset-0">
-            <LcosWorksiteStage
-              projectId={projectId}
-              surface={active}
-              canvasId={canvasBySurface[active]}
-              ensureCanvas={() => ensureCanvas(active)}
-              ensureError={ensureError}
-            />
+            {active === 'main' ? (
+              <MainWorksite
+                projectId={projectId}
+                surface={active}
+                canvasId={canvasBySurface[active]}
+                canvasNodeCount={mainNodeCount}
+                ensureCanvas={() => ensureCanvas(active)}
+                ensureError={ensureError}
+              />
+            ) : (
+              <LcosWorksiteStage
+                projectId={projectId}
+                surface={active}
+                canvasId={canvasBySurface[active]}
+                ensureCanvas={() => ensureCanvas(active)}
+                ensureError={ensureError}
+              />
+            )}
           </div>
 
           {/* 项目身份胶囊（顶左；点击返回项目列表） */}
@@ -91,10 +107,11 @@ export function LcosProjectShell({
             </Link>
           </div>
 
-          {/* 底部现场切换 Dock */}
-          <LcosSurfaceDock
+          {/* 全局 HUD：Navigator 岛 / Railway / Dock / FocusWhere */}
+          <LcosGlobalHud
             projectId={projectId}
             canvasBySurface={canvasBySurface}
+            surfaceByWorkspace={surfaceByWorkspace}
             ensureCanvas={ensureCanvas}
           />
 

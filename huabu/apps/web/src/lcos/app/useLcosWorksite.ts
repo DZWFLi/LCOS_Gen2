@@ -25,6 +25,8 @@ export interface LcosWorksiteState {
   readonly projectName: string | null;
   readonly workspaces: readonly Workspace[];
   readonly surfaceCanvasId: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
+  /** workspaceId → surface（FocusWhere 跨现场行映射用）。 */
+  readonly surfaceByWorkspace: Readonly<Map<string, LcosSurfaceKey>>;
   ensureSurfaceCanvas(surface: LcosSurfaceKey): Promise<string | undefined>;
   retry(): void;
 }
@@ -38,6 +40,7 @@ const SURFACE_PREFERENCE: Readonly<Record<LcosSurfaceKey, string>> = {
 export function useLcosWorksite(projectId: string): LcosWorksiteState {
   const session: LcosCoreSession = useMemo(() => createLcosCoreSession(), []);
   const [workspaces, setWorkspaces] = useState<readonly Workspace[]>([]);
+  const [surfaceByWorkspace, setSurfaceByWorkspace] = useState<Readonly<Map<string, LcosSurfaceKey>>>(new Map());
   const [projectName, setProjectName] = useState<string | null>(null);
   const [status, setStatus] = useState<WorksiteStatus>('loading');
   const [statusDetail, setStatusDetail] = useState<string | undefined>(undefined);
@@ -60,10 +63,13 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
         const matched = list.find((p) => p.id === projectId);
         setProjectName(matched?.name ?? null);
         const map: Partial<Record<LcosSurfaceKey, string>> = {};
+        const workspaceSurface = new Map<string, LcosSurfaceKey>();
         for (const workspace of ws) {
           const pref = workspace.preferredSurface as LcosSurfaceKey | undefined;
+          if (pref) workspaceSurface.set(String(workspace.id), pref);
           if (pref && workspace.canvasId !== undefined) map[pref] = workspace.canvasId;
         }
+        setSurfaceByWorkspace(workspaceSurface);
         setSurfaceCanvasMap(map);
         setWorkspaces(ws);
         setStatus('ready');
@@ -109,6 +115,7 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
     projectName,
     workspaces,
     surfaceCanvasId,
+    surfaceByWorkspace,
     ensureSurfaceCanvas,
     retry,
   };

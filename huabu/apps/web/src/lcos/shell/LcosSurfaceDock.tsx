@@ -4,15 +4,9 @@
 
 import { Blocks } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
-import useCanvasStore from '@/store/canvasStore';
-
-import {
-  LCOS_SURFACES,
-  useLcosShellStore,
-  type LcosSurfaceKey,
-} from './lcosShellStore';
+import { LCOS_SURFACES, useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
+import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { lcosHitArea, lcosTokens } from '../ui/lcosTokens';
 
 export interface LcosSurfaceDockProps {
@@ -26,37 +20,19 @@ export function LcosSurfaceDock({
   canvasBySurface,
   ensureCanvas,
 }: LcosSurfaceDockProps): React.JSX.Element {
-  const navigate = useNavigate();
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
-  const setActiveSurface = useLcosShellStore((s) => s.setActiveSurface);
-  const [busy, setBusy] = useState<LcosSurfaceKey | null>(null);
-  const [transitionError, setTransitionError] = useState<string | undefined>(undefined);
+  const { busySurface, transitionError, switchWorksite } = useLcosWorksiteNav({
+    projectId,
+    canvasBySurface,
+    ensureCanvas,
+  });
+  const [toast, setToast] = useState<string | undefined>(undefined);
 
-  const switchWorksite = (surface: LcosSurfaceKey): void => {
-    if (busy === surface) return;
-    setTransitionError(undefined);
-    const existing = canvasBySurface[surface];
-    if (existing !== undefined) {
-      setActiveSurface(surface);
-      void useCanvasStore.getState().switchCanvas(existing);
-      navigate(`/projects/${encodeURIComponent(projectId)}/${surface}`);
-      return;
-    }
-    setBusy(surface);
-    void (async () => {
-      try {
-        const created = await ensureCanvas(surface);
-        if (created !== undefined) {
-          setActiveSurface(surface);
-          await useCanvasStore.getState().switchCanvas(created);
-          navigate(`/projects/${encodeURIComponent(projectId)}/${surface}`);
-        }
-      } catch (error) {
-        setTransitionError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setBusy(null);
-      }
-    })();
+  const handleSwitch = (surface: LcosSurfaceKey): void => {
+    setToast(undefined);
+    void switchWorksite(surface).then(() => {
+      if (transitionError) setToast(transitionError);
+    });
   };
 
   return (
@@ -86,7 +62,7 @@ export function LcosSurfaceDock({
 
       {LCOS_SURFACES.map(({ key, label }) => {
         const active = activeSurface === key;
-        const creating = busy === key;
+        const creating = busySurface === key;
         return (
           <button
             key={key}
@@ -94,7 +70,7 @@ export function LcosSurfaceDock({
             disabled={creating}
             data-lcos-surface={key}
             data-lcos-surface-active={active ? 'true' : 'false'}
-            onClick={() => switchWorksite(key)}
+            onClick={() => handleSwitch(key)}
             title={`${label} · ${canvasBySurface[key] !== undefined ? '现场画布' : '首次进入会建立现场画布'}`}
             className="rounded-full text-sm transition-colors disabled:opacity-60"
             style={{
@@ -123,7 +99,7 @@ export function LcosSurfaceDock({
         Assembly
       </button>
 
-      {transitionError && (
+      {toast && (
         <div
           className="absolute -top-11 left-1/2 -translate-x-1/2 rounded-full px-3 py-1.5 text-xs whitespace-nowrap"
           style={{
@@ -132,7 +108,7 @@ export function LcosSurfaceDock({
             boxShadow: lcosTokens.glass.shadow,
           }}
         >
-          {transitionError}
+          {toast}
         </div>
       )}
     </div>

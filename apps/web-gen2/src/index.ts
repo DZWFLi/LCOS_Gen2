@@ -103,6 +103,8 @@ export { targetFromCaptureReceiptV1 } from './navigation/captureReceiptTarget.js
 export type { CaptureReceiptTargetResultV1, CaptureReceiptTargetInputV1 } from './navigation/captureReceiptTarget.js';
 export { focusOccurrenceV1 } from './navigation/focusOccurrence.js';
 export type { FocusOccurrenceOutcomeV1, FocusOccurrenceInputV1, FocusOccurrenceStatusV1 } from './navigation/focusOccurrence.js';
+export { occurrenceRowLabel, SURFACE_LABEL as OCCURRENCE_SURFACE_LABEL } from './navigation/occurrenceLabel.js';
+export type { OccurrenceRowSource } from './navigation/occurrenceLabel.js';
 export type {
   OverlayKind,
   OverlayInput,
