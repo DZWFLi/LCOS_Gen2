@@ -116,6 +116,9 @@ export { descriptorFor, familiesFor } from './presentation/rendererRegistry.js';
 export { resolveVisualFamily, huabuNodeTypeForFamily } from './presentation/visualFamily.js';
 export type { LcosVisualFamily, VisualFamilySource } from './presentation/visualFamily.js';
 
+export { resolveNodeSpecies, resolveNodeSpeciesFromEntityType, NODE_SPECIES_LABEL } from './presentation/nodeSpecies.js';
+export type { LcosNodeSpecies, NodeSpeciesSource } from './presentation/nodeSpecies.js';
+
 export { FIGMA_ENTRY_GROUP_STATES, mapFigmaStateToT5StatusV1, assertAllFigmaStatesMappedV1 } from './presentation/figmaStateMap.js';
 export type { FigmaEntryGroupV1, T5PresentationStatusV1 } from './presentation/figmaStateMap.js';
 

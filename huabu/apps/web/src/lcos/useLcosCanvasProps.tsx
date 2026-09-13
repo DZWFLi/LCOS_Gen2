@@ -14,7 +14,8 @@
 //
 // hostExtension 只构建一次（renderers/overlays/recognizers 引用稳定），connectIntent
 // 经 seam 的 host provider 读取当前 host —— retarget 后仍指向同一 runtime 的新 host。
-// 渲染层只挂 overlay + recognizers + connect intent；不再有任何 LCOS 自绘 renderer。
+// 渲染层 = canvas-local overlay + recognizers + connect intent + binding-aware
+// node body seam（Wave 3）；产品整机 UI 全部走 route-level Shell，不在这里叠。
 
 import { useEffect, useRef, useState } from 'react';
 
@@ -31,6 +32,7 @@ import useCanvasStore from '@/store/canvasStore';
 import { LcosHostOverlay } from './LcosHostOverlay';
 import { useLcosHostStore } from './host/lcosHostState';
 import { useLcosReferenceStore } from './lcosReferenceState';
+import { createLcosNodePresentationSeam } from './nodes/createLcosNodePresentationSeam';
 import { createLcosRecognizers } from './lcosRecognizers';
 import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
 import { installReferenceClickSuppressor } from './referenceClickSuppressor';
@@ -68,6 +70,8 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     const seam: HostSeam = createHostSeam(() => rt.host, {
       overlays: [{ key: 'lcos/host-overlay', node: <LcosHostOverlay /> }],
       recognizers: createLcosRecognizers().map((recognizer) => ({ recognizer })),
+      // Wave 3：binding-aware 全节点 presentation seam（原生 body 仅 fallback）。
+      resolveNodeBody: createLcosNodePresentationSeam(),
     });
     // hostExtensionFromSeam returns the mirrored (web-gen2) shape; the Huabu
     // consumer re-declares the same structural type, so an explicit cast is
