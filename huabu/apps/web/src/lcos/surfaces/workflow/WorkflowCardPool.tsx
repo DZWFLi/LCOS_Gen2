@@ -96,8 +96,8 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
                 >
                   <PlusCircle className="h-3 w-3" aria-hidden /> 取用
                 </button>
-                <span className="text-[9px]" style={{ color: lcosTokens.color.muted.light }} title="打开/续接 Wave 8">
-                  打开 · Wave 8
+                <span className="text-[9px]" style={{ color: lcosTokens.color.muted.light }} title="打开/续接尚未接入">
+                  打开（尚未接入）
                 </span>
               </div>
             </div>

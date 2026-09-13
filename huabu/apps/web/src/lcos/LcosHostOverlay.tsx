@@ -15,7 +15,6 @@ import React from 'react';
 
 import useCanvasStore from '@/store/canvasStore';
 
-import { LcosComposerShell } from './LcosComposerShell';
 import { LcosDropPreview } from './LcosDropPreview';
 import { useLcosDropStore } from './lcosDropState';
 
@@ -43,8 +42,10 @@ export const LcosHostOverlay: React.FC = () => {
     resizing: false,
     selected: hasSelection,
     hovered: false,
-    // 拖拽/落位时 composer 让道；其余时刻交还给 composer 自决（非 empty draft 即开）。
-    composerOpen: !dropActive,
+    // Wave 10 退役：画布级不再产出 composer。唯一 Composer 是 route-level
+    // `LcosComposerHost`（Wave 5 C06 接管 A04 shell）。继续在这里渲染第二个
+    // 输入面 = 两套产品壳同时出现在有草稿时。
+    composerOpen: false,
     actionArcOpen: false,
     workViewOpen: false,
     dropPreview,
@@ -53,13 +54,7 @@ export const LcosHostOverlay: React.FC = () => {
     referenceBadge: false,
   });
 
-  const showComposer = has(visible, 'composer');
   const showDrop = has(visible, 'drop-preview');
 
-  return (
-    <>
-      {showComposer && <LcosComposerShell />}
-      {showDrop && <LcosDropPreview />}
-    </>
-  );
+  return <>{showDrop && <LcosDropPreview />}</>;
 };

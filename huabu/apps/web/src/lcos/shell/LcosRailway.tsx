@@ -39,7 +39,7 @@ export function LcosRailway({ projectId, canvasBySurface, ensureCanvas }: LcosRa
         const order = await client.read(projectId);
         if (cancelled) return;
         if (order?.orderedRefs && order.orderedRefs.length > 0) {
-          setRailInfo(`+${order.orderedRefs.length} 个长期现场（重排 Wave 9）`);
+          setRailInfo(`+${order.orderedRefs.length} 个长期现场`);
         }
       } catch {
         if (!cancelled) setRailInfo('rail order 读取失败（默认现场骨架）');

@@ -54,7 +54,7 @@ export function LcosSurfaceDock({
     >
       {/* Navigator placeholder — Wave 4 接入搜索岛；窄屏隐藏（搜索岛本身已在顶左常驻） */}
       <div
-        title="Navigator（Wave 4 接入）"
+        title="Navigator（未启用）"
         className="mr-1 hidden items-center justify-center rounded-full sm:flex"
         style={{ width: 44, height: 44, color: lcosTokens.color.muted.light, opacity: 0.55, cursor: 'not-allowed' }}
         aria-hidden

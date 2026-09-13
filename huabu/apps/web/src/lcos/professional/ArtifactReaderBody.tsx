@@ -76,7 +76,7 @@ export function ArtifactReaderBody({ artifactId }: ArtifactReaderBodyProps): Rea
       <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl p-6" style={{ background: lcosTokens.color.surface.light, border: `1px solid ${lcosTokens.color.borderSubtle.light}` }}>
         <FileText className="h-6 w-6" style={{ color: lcosTokens.color.muted.light }} aria-hidden />
         <span className="text-sm" style={{ color: lcosTokens.color.muted.light }}>
-          {fileName ?? '材料'} · {String(kind)} 预览请打开节点/使用系统工具（正文通道 Wave 9 深化）
+          {fileName ?? '材料'} · {String(kind)} 预览请打开节点/使用系统工具（正文预览尚未接入）
         </span>
         <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: lcosTokens.color.info.light }}>
           <ExternalLink className="h-3.5 w-3.5" aria-hidden /> 用系统/外部工具打开

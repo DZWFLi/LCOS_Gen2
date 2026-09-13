@@ -135,6 +135,8 @@ export function AssemblyBody({ projectId }: { readonly projectId: string }): Rea
           {filtered.map((item) => (
             <div
               key={`${item.kind}:${item.entityRef.id}`}
+              data-lcos-assembly-item={item.entityRef.id}
+              data-lcos-assembly-item-kind={item.kind}
               className="flex flex-col gap-2 rounded-xl p-3"
               style={{ background: lcosTokens.color.surface.light, border: `1px solid ${lcosTokens.color.borderSubtle.light}`, boxShadow: lcosTokens.shadow.default }}
             >

@@ -17,9 +17,7 @@ export function TemporalRail(): React.JSX.Element {
       <div className="flex flex-col items-center gap-1">
         <span className="text-[10px] font-medium" style={{ color: lcosTokens.color.muted.light }}>时间轨</span>
         <span className="text-center text-[9px] leading-tight" style={{ color: lcosTokens.color.muted.light }}>
-          时间分组 producer
-          <br />
-          Wave 8 接入
+          时间分组尚未接入
         </span>
       </div>
       <span className="h-px w-8" style={{ background: lcosTokens.color.borderSubtle.light }} aria-hidden />

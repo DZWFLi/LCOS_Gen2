@@ -22,6 +22,7 @@
 | native node body (NoteNode 等) | NodeWrapper children | FALLBACK/REPLACE(已绑定) | binding-aware seam 接管；native 仅 unbound/unsupported/unavailable | 仅 fallback | n/a | Wave 3 |
 | `EdgeStyleToolbar` | Canvas selected edge | KEEP COMMAND-HIDE UI | SET_EDGE_STYLE/disconnect 命令 → selection inspector/Action Arc | no | yes | Wave 3/9 |
 | `LcosHostOverlay.tsx` | useLcosCanvasProps | KEEP(仅 canvas-local) | 只留 drop hint/reference badge；产品 UI 移 Shell | 仅 canvas-local | n/a | Wave 2 |
+| `LcosComposerShell.tsx`（Phase A04 画布级 composer） | LcosHostOverlay | RETIRED（已删除文件） | route-level `LcosComposerHost`（Wave 5 C06）接管；画布级 overlay 不再产出第二输入面；`data-lcos-composer-input` 移到生产 composer | no | n/a（草稿 store 仍为 reference store） | Wave 10：有草稿时曾同时出现两个 composer；删除后 e2e 只剩一个 |
 | `ProfessionalWindowStage` 旧 overlay 挂法 | useLcosCanvasProps overlays | REPLACE | 提升 route-level sibling；不再 `top:56` 躲旧按钮 | 新 shell 挂 | n/a | Wave 5 |
 
 旧文件物理保留（不动）作回滚/donor；整机稳定后单独清理 dead UI。任何旧 GUI 恢复必须通过 route composition 一次性切换，禁止新旧两棵树同时挂 production。

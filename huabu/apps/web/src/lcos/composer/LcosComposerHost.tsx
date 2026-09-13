@@ -1,6 +1,8 @@
 // LcosComposerHost — 统一提交入口（Figma Composer READY；T3-A04 机制）。
 // 显式引用 strip（reference store draft）+ 文本；Cmd/Ctrl+Enter 提交真实 Run（CoreRunClient.createRun）。
 // 提交后回执展示；失败保留草稿文本；不伪造成功。Draft 是 local UI intent，Run truth 在 Core。
+// workspaceId 必须用当前现场的真实 workspace（由 Shell 从 Core workspaces 反查传入）——
+// 写死 'main' 会被 Core 外键拒绝（FOREIGN KEY constraint failed → 409）。
 
 import { CoreRunClient, HttpError } from '@local-creative-os/web-gen2';
 import { ArrowUp, Paperclip } from 'lucide-react';
@@ -14,11 +16,13 @@ import type { CoreEntityRefLike } from '../referenceBridge';
 
 export interface LcosComposerHostProps {
   readonly projectId: string;
+  /** 当前现场的真实 workspaceId（缺省 = 现场未就绪，不可提交）。 */
+  readonly workspaceId?: string;
 }
 
 type ComposerState = 'idle' | 'submitting' | 'done' | 'error';
 
-export function LcosComposerHost({ projectId }: LcosComposerHostProps): React.JSX.Element {
+export function LcosComposerHost({ projectId, workspaceId }: LcosComposerHostProps): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const runs = useMemo(() => new CoreRunClient(session.http), [session]);
   const draftRefs = useLcosReferenceStore((s) => s.draft.orderedEntityRefs);
@@ -28,10 +32,10 @@ export function LcosComposerHost({ projectId }: LcosComposerHostProps): React.JS
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const canSubmit = text.trim().length > 0 && state !== 'submitting';
+  const canSubmit = text.trim().length > 0 && state !== 'submitting' && workspaceId !== undefined;
 
   const submit = async (): Promise<void> => {
-    if (!canSubmit) return;
+    if (!canSubmit || workspaceId === undefined) return;
     setState('submitting');
     setErrorDetail(undefined);
     setReceipt(null);
@@ -40,11 +44,15 @@ export function LcosComposerHost({ projectId }: LcosComposerHostProps): React.JS
       .createRun(projectId, {
         instruction: text.trim(),
         outputIntent: 'analyze',
+        // contextArtifactIds 只接受真 Artifact id（Core 会校验并报
+        // "Context Artifact not found"）。会话引用不是 Artifact —— 它的 entityId 是
+        // connected-conversation id，只能走 orderedReferences 表达"用户显式引用"，
+        // 不能冒充上下文 Artifact（Wave 10 真实 409 实测修正）。
         contextArtifactIds: refs
-          .filter((r) => r.entityType === 'artifact' || r.entityType === 'conversation')
+          .filter((r) => r.entityType === 'artifact')
           .map((r) => r.entityId),
         orderedReferences: refs.map((r) => ({ entityType: r.entityType, entityId: r.entityId })),
-        workspaceId: 'main',
+        workspaceId,
       })
       .then((result) => {
         const id = (result as { id?: string } | null)?.id;
@@ -81,6 +89,7 @@ export function LcosComposerHost({ projectId }: LcosComposerHostProps): React.JS
         <div className="flex items-end gap-2 px-3 py-2.5">
           <textarea
             ref={textareaRef}
+            data-lcos-composer-input
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -97,6 +106,7 @@ export function LcosComposerHost({ projectId }: LcosComposerHostProps): React.JS
             type="button"
             disabled={!canSubmit}
             aria-label="提交"
+            title={workspaceId === undefined ? '现场未就绪（未解析到 workspace），暂不可提交' : '提交（Cmd/Ctrl+Enter）'}
             onClick={() => void submit()}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40"
             style={{ background: lcosTokens.color.inverse.light, color: lcosTokens.color.textOnInverse.light }}
@@ -104,6 +114,11 @@ export function LcosComposerHost({ projectId }: LcosComposerHostProps): React.JS
             <ArrowUp className="h-4 w-4" />
           </button>
         </div>
+        {workspaceId === undefined && (
+          <div data-lcos-composer-blocked className="px-4 pb-2 text-xs" style={{ color: lcosTokens.color.danger }}>
+            现场未就绪（未解析到 workspace），暂不可提交
+          </div>
+        )}
         {state === 'submitting' && (
           <div className="px-4 pb-2 text-xs" style={{ color: lcosTokens.color.muted.light }}>
             提交中…

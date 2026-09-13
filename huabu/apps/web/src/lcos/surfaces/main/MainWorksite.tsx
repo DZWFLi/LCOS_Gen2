@@ -32,7 +32,7 @@ export function MainWorksite(props: MainWorksiteProps): React.JSX.Element {
               空的主现场
             </span>
             <span className="max-w-[260px] text-center text-xs leading-relaxed" style={{ color: lcosTokens.color.muted.light }}>
-              用顶部搜索把项目里的材料带到 Main，或从 Assembly 取用（Wave 5 接入）。
+              用顶部搜索把项目里的材料带到 Main，或从 Assembly 取用材料。
             </span>
           </div>
         </div>

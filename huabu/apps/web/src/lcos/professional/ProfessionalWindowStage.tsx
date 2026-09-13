@@ -109,11 +109,11 @@ function ProfessionalBody({
     case 'runtime-doctor':
     case 'capture-inbox':
     case 'connector-source':
-      // Wave 5 收尾/Wave 8 接入；当前诚实展示
+      // 未接入 body：诚实展示，不假装可用
       return (
         <div className="flex h-full min-h-[220px] items-center justify-center">
           <span className="text-sm" style={{ color: lcosTokens.color.muted.light }}>
-            {bodyKey} body（后续 Wave 接入）
+            {bodyKey}（尚未接入）
           </span>
         </div>
       );

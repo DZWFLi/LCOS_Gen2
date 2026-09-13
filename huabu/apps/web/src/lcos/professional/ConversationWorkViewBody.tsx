@@ -8,6 +8,7 @@ import { ConversationWorkViewController } from '@local-creative-os/web-gen2';
 import { CircleDot, Radio, User } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
+import { ArtifactReturnSection } from './ArtifactReturnSection';
 import { RecoverySection } from './RecoverySection';
 import { WaitingInputSection } from './WaitingInputSection';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
@@ -115,6 +116,18 @@ export function ConversationWorkViewBody({
             </div>
           ))
         )}
+      </section>
+
+      {/* 复核段（Review / Artifact Return）：Run 产出的 Draft → 采纳/拒绝/重试 */}
+      <section className="flex flex-col gap-2">
+        <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: lcosTokens.color.muted.light }}>
+          <Radio className="h-3.5 w-3.5" aria-hidden /> 复核
+        </h4>
+        <ArtifactReturnSection
+          runs={runs}
+          projectId={projectId}
+          runIds={(state?.runs ?? []).map((run) => run.runId)}
+        />
       </section>
 
       {/* 续工段（continuation / recovery） */}

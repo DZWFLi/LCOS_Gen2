@@ -3,7 +3,7 @@
 // Professional Stage / Composer 在 Wave 5 挂入；未接线入口一律不渲染（避免死按钮）。
 
 import { ChevronLeft } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
 import useCanvasStore from '@/store/canvasStore';
@@ -52,6 +52,15 @@ export function LcosProjectShell({
   }, [projectId, surface, setProject, setActiveSurface]);
 
   const active = activeSurface;
+
+  // 当前现场的真实 workspaceId：由 Core workspaces 反查（surfaceByWorkspace 的逆映射）。
+  // Composer 用它创建 Run；缺省时明确禁用提交，不拿假 workspace 去撞 Core 外键。
+  const activeWorkspaceId = useMemo<string | undefined>(() => {
+    for (const [workspaceId, workspaceSurface] of surfaceByWorkspace) {
+      if (workspaceSurface === active) return workspaceId;
+    }
+    return undefined;
+  }, [surfaceByWorkspace, active]);
 
   return (
     <div
@@ -136,7 +145,7 @@ export function LcosProjectShell({
 
           {/* Wave 5：route-level 专业窗口舞台 + 统一 Composer */}
           <ProfessionalWindowStage projectId={projectId} />
-          <LcosComposerHost projectId={projectId} />
+          <LcosComposerHost projectId={projectId} workspaceId={activeWorkspaceId} />
         </>
       )}
     </div>

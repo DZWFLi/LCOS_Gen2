@@ -66,9 +66,10 @@ describe('LcosHostOverlay (A07)', () => {
     expect(el?.textContent).toContain('放置 artifact·a1');
   });
 
-  it('drop in transit suppresses the composer (single canopy, no Christmas tree)', () => {
-    // A draft exists -> composer would like to be visible, but the drop session
-    // is active (arbitration input.dragging=true) -> composer must yield.
+  it('drop in transit suppresses the drop preview (single canopy, no Christmas tree)', () => {
+    // A draft exists -> 历史 A04 画布级 composer 会在此时出现；Wave 10 已退役该壳
+    // （唯一 Composer = route-level LcosComposerHost），本断言固定"画布级不产出
+    // 第二个输入面"这一不变量。
     useLcosReferenceStore.getState().registerNodeEntity('node-9', {
       entityType: 'artifact',
       entityId: 'e-9',
@@ -79,5 +80,15 @@ describe('LcosHostOverlay (A07)', () => {
     expect(container.querySelector('[data-lcos-composer]')).toBeNull();
     // Not in preview yet either.
     expect(container.querySelector('[data-lcos-drop-preview]')).toBeNull();
+  });
+
+  it('有草稿时画布级 overlay 仍不产出 composer（composer 归 route-level Host）', () => {
+    useLcosReferenceStore.getState().registerNodeEntity('node-9', {
+      entityType: 'artifact',
+      entityId: 'e-9',
+    });
+    useLcosReferenceStore.getState().toggleNodeReference('node-9');
+    const container = render(<LcosHostOverlay />);
+    expect(container.querySelector('[data-lcos-composer]')).toBeNull();
   });
 });
