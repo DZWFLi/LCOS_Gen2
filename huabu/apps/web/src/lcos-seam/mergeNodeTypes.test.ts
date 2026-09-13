@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import { mergeNodeTypes } from './mergeNodeTypes';
+
 import type { ExternalNodeRenderer } from './types';
 
 const FakeRenderer = (() => null) as unknown as ExternalNodeRenderer;

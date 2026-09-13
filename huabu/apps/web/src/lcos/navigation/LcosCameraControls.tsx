@@ -16,10 +16,11 @@ export function LcosCameraControls(): React.JSX.Element {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 36,
-    height: 36,
+    // 44px 热区（Figma Global HUD camera 岛高 52 = 44 + 上下 4 内边距）。
+    width: 44,
+    height: 44,
     color: lcosTokens.color.text.light,
-    borderRadius: 10,
+    borderRadius: 12,
   } as const;
 
   return (

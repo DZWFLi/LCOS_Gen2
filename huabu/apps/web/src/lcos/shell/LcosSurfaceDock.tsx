@@ -39,11 +39,12 @@ export function LcosSurfaceDock({
   return (
     <div
       data-lcos-surface-dock
-      className="pointer-events-auto fixed z-40 flex items-center gap-1 rounded-full px-2 py-1.5"
+      className="pointer-events-auto fixed z-40 flex items-center gap-1 overflow-x-auto rounded-full px-2 py-1.5"
       style={{
         left: '50%',
         bottom: 24,
         transform: 'translateX(-50%)',
+        maxWidth: 'calc(100vw - 24px)',
         background: 'rgba(252,252,252,0.86)',
         backdropFilter: 'blur(18px) saturate(1.4)',
         WebkitBackdropFilter: 'blur(18px) saturate(1.4)',
@@ -51,10 +52,10 @@ export function LcosSurfaceDock({
         boxShadow: '0 4px 20px rgba(0,0,0,0.10)',
       }}
     >
-      {/* Navigator placeholder — Wave 4 接入搜索岛 */}
+      {/* Navigator placeholder — Wave 4 接入搜索岛；窄屏隐藏（搜索岛本身已在顶左常驻） */}
       <div
         title="Navigator（Wave 4 接入）"
-        className="mr-1 flex items-center justify-center rounded-full"
+        className="mr-1 hidden items-center justify-center rounded-full sm:flex"
         style={{ width: 44, height: 44, color: lcosTokens.color.muted.light, opacity: 0.55, cursor: 'not-allowed' }}
         aria-hidden
       >
@@ -73,11 +74,10 @@ export function LcosSurfaceDock({
             data-lcos-surface-active={active ? 'true' : 'false'}
             onClick={() => handleSwitch(key)}
             title={`${label} · ${canvasBySurface[key] !== undefined ? '现场画布' : '首次进入会建立现场画布'}`}
-            className="rounded-full text-sm transition-colors disabled:opacity-60"
+            className="rounded-full px-3 text-sm transition-colors disabled:opacity-60 sm:px-4"
             style={{
               ...lcosHitArea,
               minHeight: 44,
-              padding: '0 16px',
               fontWeight: active ? 600 : 400,
               color: active ? lcosTokens.color.textOnInverse.light : lcosTokens.color.text.light,
               background: active ? lcosTokens.color.inverse.light : 'transparent',
@@ -95,8 +95,8 @@ export function LcosSurfaceDock({
         data-lcos-surface="assembly"
         onClick={() => openWindow('assembly', 'Assembly')}
         title="Assembly · 项目共享仓库"
-        className="rounded-full text-sm transition-colors"
-        style={{ ...lcosHitArea, minHeight: 44, padding: '0 16px', color: lcosTokens.color.text.light }}
+        className="rounded-full px-3 text-sm transition-colors sm:px-4"
+        style={{ ...lcosHitArea, minHeight: 44, color: lcosTokens.color.text.light }}
       >
         Assembly
       </button>

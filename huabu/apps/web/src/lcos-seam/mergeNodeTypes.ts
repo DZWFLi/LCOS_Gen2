@@ -4,9 +4,9 @@
 // Huabu built-in key (`text`, `note`, `image`, ...). Collisions throw in
 // dev builds and are refused (warn + skip) in production builds.
 
+import type { CanvasHostExtension, ExternalNodeRenderer } from './types';
 import type { NodeTypes } from '@xyflow/react';
 
-import type { CanvasHostExtension, ExternalNodeRenderer } from './types';
 
 export interface MergeNodeTypesOptions {
   /**

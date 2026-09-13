@@ -1,0 +1,84 @@
+/* LCOS 前端样式（Wave 9 收口）：静态脉冲占位、焦点可见轮廓、玻璃降级、reduced-motion 覆盖。
+ * 只服务 lcos UI，不改 Huabu 设计系统；由 index.css 顶部 @import 引入。 */
+
+/* 加载/运行态符号：不用无限旋转（reduced-motion 安全），用低幅透明度呼吸。
+ * Figma SurfaceFeedback 规范：loading 用静态符号代替旋转。 */
+.lcos-static-pulse {
+  animation: lcos-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes lcos-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* 键盘焦点：LCOS 岛/卡/按钮统一可见轮廓（鼠标点击不显示，避免噪声）。 */
+.lcos-focus-ring:focus-visible,
+[data-lcos-project-shell] button:focus-visible,
+[data-lcos-project-shell] a:focus-visible,
+[data-lcos-project-shell] [role='button']:focus-visible,
+[data-lcos-project-shell] textarea:focus-visible,
+[data-lcos-project-shell] input:focus-visible {
+  outline: 2px solid var(--lcos-focus, var(--info, #2e90ff));
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* 相机移动期间（LcosCameraMotionPolicy 写入属性）：整屏 transform 时投影与
+ * 呼吸动画是主要开销，暂停它们；相机落定后自动恢复。 */
+[data-lcos-camera-moving] .lcos-static-pulse {
+  animation: none;
+  opacity: 0.9;
+}
+
+[data-lcos-camera-moving] [data-lcos-species-body] {
+  box-shadow: none !important;
+}
+
+/* 节点密度降级（useLcosDensity 的封顶档）：不再渲染长正文后，投影也没必要——
+ * 缩到 mark/summary 的节点只用一条边框表达身份。 */
+[data-lcos-density='mark'] [data-lcos-species-body],
+[data-lcos-species-body][data-lcos-density='mark'],
+[data-lcos-species-body][data-lcos-density='summary'] {
+  box-shadow: none;
+  padding: 6px;
+}
+
+/* 玻璃降级：不支持 backdrop-filter 的环境用接近不透明的底色（内容可读优先）。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-lcos-navigator-island] > div,
+  [data-lcos-railway],
+  [data-lcos-surface-dock],
+  [data-lcos-camera-controls],
+  [data-lcos-focus-where] {
+    background: var(--bg-surface, #fff) !important;
+  }
+}
+
+/* reduced-motion：取消位移/呼吸/缩放，保留状态与轮廓（Figma 各面 motion 约束）。 */
+@media (prefers-reduced-motion: reduce) {
+  .lcos-static-pulse {
+    animation: none;
+    opacity: 0.85;
+  }
+
+  [data-lcos-project-shell] *,
+  [data-lcos-context-atlas],
+  [data-lcos-professional-stage] {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* 选中/hover 不再位移，只改轮廓与颜色 */
+  [data-lcos-project-shell] .hover\:-translate-y-0\.5:hover,
+  [data-lcos-context-atlas] .hover\:-translate-y-0\.5:hover {
+    transform: none !important;
+  }
+}

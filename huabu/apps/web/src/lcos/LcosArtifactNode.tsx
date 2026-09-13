@@ -11,14 +11,15 @@
 //
 // Full species morphology is Phase B.
 
-import React from 'react';
-import type { NodeProps } from '@xyflow/react';
-import type { CanvasNodeType } from '@huabu/shared';
 
 import { resolvePresentationDensity } from '@local-creative-os/web-gen2';
+import React from 'react';
 
 import { NodeWrapper } from '@/components/Nodes/NodeWrapper';
 import { useLcosNodePresentation } from '@/lcos-seam/nodePresentation';
+
+import type { CanvasNodeType } from '@huabu/shared';
+import type { NodeProps } from '@xyflow/react';
 
 const ACCENT = '#2e90ff';
 

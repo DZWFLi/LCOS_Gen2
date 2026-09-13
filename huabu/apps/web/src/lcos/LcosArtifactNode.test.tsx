@@ -12,11 +12,13 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { NodeProps } from '@xyflow/react';
-
-import type { LcosNodePresentationInput } from '@/lcos-seam/nodePresentation';
 
 import { LcosArtifactNode } from './LcosArtifactNode';
+
+import type { LcosNodePresentationInput } from '@/lcos-seam/nodePresentation';
+import type { NodeProps } from '@xyflow/react';
+
+
 
 // React 19 act() environment flag — createRoot + act without this flag
 // emits a warning on every act call.

@@ -17,7 +17,7 @@ export interface WorksiteNavHandle {
 export function useLcosWorksiteNav(opts: {
   projectId: string;
   canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
+  ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
 }): WorksiteNavHandle {
   const navigate = useNavigate();
   const setActiveSurface = useLcosShellStore((s) => s.setActiveSurface);

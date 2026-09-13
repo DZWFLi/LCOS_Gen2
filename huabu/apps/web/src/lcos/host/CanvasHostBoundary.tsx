@@ -3,8 +3,8 @@
 // hostExtension → `<Canvas chromeMode="lcos">`。不创建第二 ReactFlow/store/camera/history。
 // 旧 chrome（NodeToolbar/Controls/MiniMap）由 chromeMode 显式隐藏，命令路径保留。
 
-import { useLcosCanvasProps } from '@/lcos/useLcosCanvasProps';
 import { Canvas } from '@/components/Panels/Canvas/Canvas';
+import { useLcosCanvasProps } from '@/lcos/useLcosCanvasProps';
 
 export interface CanvasHostBoundaryProps {
   readonly projectId: string;

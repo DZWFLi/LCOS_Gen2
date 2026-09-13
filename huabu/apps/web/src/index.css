@@ -4,6 +4,8 @@
  */
 
 @import 'tailwindcss';
+/* LCOS 前端样式（Wave 9）：静态脉冲、焦点轮廓、玻璃降级、reduced-motion 覆盖 */
+@import './lcos/ui/lcos.css';
 
 @custom-variant dark (&:is(.dark *));
 /* ===================================================================

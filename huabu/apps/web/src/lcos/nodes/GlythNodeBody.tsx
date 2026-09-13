@@ -3,11 +3,9 @@
 // 单击仍是选择（selection 归 Huabu，body 不抢）。打开是 local UI intent（shellStore.openWindow），
 // 不创建第二 conversation/session truth。
 
-import { useViewport } from '@xyflow/react';
-
-
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { LcosSpeciesBodyContent, SPECIES_ACCENT } from './LcosSpeciesBodies';
+import { useLcosDensity } from './useLcosDensity';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { lcosTokens } from '../ui/lcosTokens';
 
@@ -15,12 +13,10 @@ import type { CanvasNodeBodySlotInput } from '@/lcos-seam/types';
 import type { JSX } from 'react';
 
 export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
-  const { zoom } = useViewport();
+  const density = useLcosDensity();
   const data = input.data as Readonly<Record<string, unknown>> | undefined;
   const raw = data?.label ?? data?.title;
   const title = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : '未命名';
-  const density: 'mark' | 'summary' | 'working' | 'reading' =
-    zoom < 0.25 ? 'mark' : zoom < 0.55 ? 'summary' : zoom < 0.9 ? 'working' : 'reading';
 
   const openWorkView = (): void => {
     const ref = useLcosReferenceStore.getState().nodeEntityRefs.get(input.nodeId);
@@ -32,6 +28,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
     <div
       data-lcos-species-body
       data-lcos-glyth-body
+      data-lcos-density={density}
       onDoubleClick={(event) => {
         event.stopPropagation();
         openWorkView();

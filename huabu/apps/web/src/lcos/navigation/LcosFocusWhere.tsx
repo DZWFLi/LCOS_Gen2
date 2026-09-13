@@ -23,7 +23,7 @@ export interface LcosFocusWhereProps {
   readonly projectId: string;
   readonly surfaceByWorkspace: Readonly<Map<string, LcosSurfaceKey>>;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
+  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
 }
 
 interface OccurrenceRow {

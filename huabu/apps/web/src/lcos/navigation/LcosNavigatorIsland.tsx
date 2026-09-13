@@ -19,7 +19,7 @@ import type { SearchHitVNext } from '@local-creative-os/contracts';
 interface NavigatorIslandProps {
   readonly projectId: string;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey) => Promise<string | undefined>;
+  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
 }
 
 type IslandState = 'resting' | 'searching' | 'loading' | 'error' | 'empty';

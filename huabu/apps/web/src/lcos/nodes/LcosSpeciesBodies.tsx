@@ -4,7 +4,6 @@
 // unknown 不静默降级——显示诊断原因。
 
 import { NODE_SPECIES_LABEL, type LcosNodeSpecies } from '@local-creative-os/web-gen2';
-import { useViewport } from '@xyflow/react';
 import {
   Bookmark,
   CircleDot,
@@ -18,6 +17,7 @@ import {
 } from 'lucide-react';
 
 
+import { useLcosDensity } from './useLcosDensity';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { CanvasNodeBodySlotInput } from '@/lcos-seam/types';
@@ -247,7 +247,7 @@ export function LcosSpeciesBodyContent({
   }
 }
 
-/** 物种 body：density 由当前 zoom 近似（Wave 9 按物种校准矩阵替换）。 */
+/** 物种 body：密度走 `useLcosDensity`（唯一来源，屏幕像素 + 节点数封顶）。 */
 function LcosSpeciesBody({
   species,
   input,
@@ -255,13 +255,12 @@ function LcosSpeciesBody({
   species: LcosNodeSpecies;
   input: CanvasNodeBodySlotInput;
 }): JSX.Element {
-  const { zoom } = useViewport();
-  const density: 'mark' | 'summary' | 'working' | 'reading' =
-    zoom < 0.25 ? 'mark' : zoom < 0.55 ? 'summary' : zoom < 0.9 ? 'working' : 'reading';
+  const density = useLcosDensity();
   const title = titleOf(input.data as Readonly<Record<string, unknown>> | undefined);
   return (
     <div
       data-lcos-species-body
+      data-lcos-density={density}
       className="flex h-full w-full flex-col overflow-hidden"
       style={{
         background: lcosTokens.color.surface.light,

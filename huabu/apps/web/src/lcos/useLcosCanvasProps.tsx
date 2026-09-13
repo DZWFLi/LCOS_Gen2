@@ -28,6 +28,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import useCanvasStore from '@/store/canvasStore';
 
+import { LcosCameraMotionPolicy } from './host/LcosCameraMotionPolicy';
 import { useLcosHostStore } from './host/lcosHostState';
 import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
 import { LcosHostOverlay } from './LcosHostOverlay';
@@ -76,6 +77,8 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
         // Wave 4：canvas-local 相机/命令（唯一 Huabu camera，非第二视图）
         { key: 'lcos/canvas-commands', node: <LcosCanvasCommands /> },
         { key: 'lcos/camera-controls', node: <LcosCameraControls /> },
+        // Wave 9：相机移动期间暂停呼吸动画/投影（只写 DOM 属性，不重渲染）
+        { key: 'lcos/camera-motion', node: <LcosCameraMotionPolicy /> },
       ],
       recognizers: createLcosRecognizers().map((recognizer) => ({ recognizer })),
       // Wave 3：binding-aware 全节点 presentation seam（原生 body 仅 fallback）。

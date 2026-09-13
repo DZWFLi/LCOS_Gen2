@@ -4,6 +4,8 @@
 
 import { X } from 'lucide-react';
 
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
+
 import { ArtifactReaderBody } from './ArtifactReaderBody';
 import { AssemblyBody } from './AssemblyBody';
 import { ConversationWorkViewBody } from './ConversationWorkViewBody';
@@ -19,6 +21,12 @@ export function ProfessionalWindowStage({ projectId }: ProfessionalWindowStagePr
   const activateWindow = useLcosShellStore((s) => s.activateWindow);
   const closeWindow = useLcosShellStore((s) => s.closeWindow);
   const active = windows.find((w) => w.active) ?? windows[windows.length - 1];
+
+  // Esc 栈：专业窗口是 route 内最上层可关闭面板，Esc 关掉当前窗口并阻止继续
+  // 下传（否则会同时清掉画布选中）。复用 Huabu 既有 useCloseOnEscape。
+  useCloseOnEscape(windows.length > 0, () => {
+    if (active) closeWindow(active.id);
+  });
 
   if (windows.length === 0) return <div data-lcos-professional-stage data-empty="true" className="hidden" aria-hidden />;
 

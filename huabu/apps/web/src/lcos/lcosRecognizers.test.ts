@@ -10,9 +10,9 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
+import { useLcosDropStore } from './lcosDropState';
 import { createReferencePickRecognizer, createDropRecognizer, acquireDrop } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
-import { useLcosDropStore } from './lcosDropState';
 
 interface FakeEvent {
   pointerId: number;

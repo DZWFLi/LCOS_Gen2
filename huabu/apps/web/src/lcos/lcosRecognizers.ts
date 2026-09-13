@@ -16,15 +16,18 @@
 // machine from pointer position and cancels on release.
 
 import { isReferencePick, pointerModifiersOf } from '@local-creative-os/web-gen2';
-import type { DropPayload } from '@local-creative-os/web-gen2';
+
 
 import { nodeIdAtScreenPoint } from '@/handler/canvasNodeAtPoint';
-import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
-import type { PointerRecognizer } from '@/handler/pointerRouter';
+
 
 import { useLcosDropStore } from './lcosDropState';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { markReferencePickCompleted } from './referenceClickSuppressor';
+
+import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
+import type { PointerRecognizer } from '@/handler/pointerRouter';
+import type { DropPayload } from '@local-creative-os/web-gen2';
 
 /**
  * Ctrl/Cmd+click on an LCOS-projected node toggles it in the ordered draft

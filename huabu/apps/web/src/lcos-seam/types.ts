@@ -9,9 +9,9 @@
 // (e.g. `lcos/entity`, `lcos/conversation`). Built-in Huabu keys can never
 // be overridden — see mergeNodeTypes.
 
-import type { ComponentType, ReactNode } from 'react';
-import type { PointerRecognizer } from '@/handler/pointerRouter';
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
+import type { PointerRecognizer } from '@/handler/pointerRouter';
+import type { ComponentType, ReactNode } from 'react';
 
 /**
  * Neutral body-slot input for the T1 Glyth seam. Deliberately domain-free:

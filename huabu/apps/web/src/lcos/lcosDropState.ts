@@ -14,8 +14,6 @@
 // preview. Phase A has no container/slot model yet, so the concrete surface
 // placement commit lands with Phase C.
 
-import { create } from 'zustand';
-
 import {
   advanceDropIntent,
   beginDrop,
@@ -29,6 +27,8 @@ import {
   type SemanticDropState,
   type SurfacePoint,
 } from '@local-creative-os/web-gen2';
+import { create } from 'zustand';
+
 
 /** Left edge band => the navigation dock surface. */
 const DOCK_LEFT = 'surface:left-dock';

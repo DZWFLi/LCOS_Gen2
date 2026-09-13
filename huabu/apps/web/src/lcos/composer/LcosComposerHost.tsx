@@ -66,7 +66,7 @@ export function LcosComposerHost({ projectId }: LcosComposerHostProps): React.JS
   };
 
   return (
-    <div data-lcos-composer className="pointer-events-auto fixed bottom-[100px] left-1/2 z-40 w-[min(720px,calc(100vw-240px))] -translate-x-1/2">
+    <div data-lcos-composer className="pointer-events-auto fixed bottom-[100px] left-1/2 z-40 w-[min(720px,calc(100vw-24px))] -translate-x-1/2">
       <div className="flex flex-col overflow-hidden rounded-2xl" style={{ ...lcosGlassStyle, borderRadius: 18 }}>
         {draftRefs.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5">
