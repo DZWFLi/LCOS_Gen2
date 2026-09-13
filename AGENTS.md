@@ -62,3 +62,18 @@
 - Gen2 侧：`apps/web-gen2/src/{host,interaction,presentation,integration}/`；`packages/shared/canvas-engine` 不得出现 LCOS 领域语义。
 - 旧 LCOS 只迁纯逻辑（dropIntentMachine / pointerInteractionLanguage / commandDraft / presentationHierarchy / mindMapLayout / layoutQuality / spatialOverlayPlacement 等），旧 Canvas/相机/selection/overlay host 全部退休。
 - QA 阶梯（禁"static gate PASS = 完成"）：source conformance → type/lint/unit → browser interaction smoke → screenshot/visual smoke → canonical persistence/reload → cross-surface parity。
+
+## GEN2 前端重新总装硬规则
+
+1. 前端施工前必须读取 `docs/construction/PROJECT_READBACK.md`、设计负责人导出的 `LCOS_Figma_前端施工完整采用清单_20260913.md`、`SOURCE_ADOPTION_LEDGER.md`、`FIGMA_SOURCE_LEDGER.md`、`HUABU_RETIREMENT_LEDGER.md`。
+2. 新增用户可见组件前先从设计负责人母表导入对应 page/node/component/variant/status，再登记 donor 的 exact repo/commit/file/symbol、采用等级、target file/symbol、production caller、Figma token/asset、real producer/action owner、fallback 和浏览器证据。`NEEDS_FIGMA`、`CONCEPT_ONLY`、`RETIRED`、`GAP` 不得被施工者自行改写为完成态。
+3. 现成 donor 分 A 纯逻辑直接复用、B 机制换壳、C 编排重写、X 禁止迁移。没有核对 donor 不得重造近似组件；无法采用时记录具体依赖冲突。
+4. production route 只有一棵 LCOS App Shell；Huabu Canvas 只有一份。禁止用 overlay、z-index、透明遮罩保留两套产品壳。
+5. Global HUD、Railway、Professional Stage、Atlas、Workflow Hand、Reader/Work View 与 Composer 不得作为任意 Canvas overlay 总装。
+6. 旧 Huabu UI 退出 production tree 时保留其命令/机械 adapter；不得为同一动作重写第二套 store、fetch、session、camera 或 history。
+7. stock/native fallback 只用于明确失败。已绑定主流实体长期 fallback 视为未完成。
+8. 每个前端 Wave 必须给真实 production caller、整页浏览器 before/after、真实鼠标/键盘/拖放/reload 证据。isolated component test、typecheck、token/hex 清理不能单独证明前端完成。
+9. T7、Recovery、WaitingInput 等局部能力必须挂到正确 Work View/section；不得在 Shell/节点/三现场未完成时提前把局部 body 当完整前端。
+10. HTML Demo 只解释关系；Figma 决定视觉呈现但不创造 Core 状态；GEN1/Huabu/Rhine/video 是 donor，必须通过 adoption ledger 进入生产 caller。
+
+当前授权下，可逆且在获批 Wave 内的实现连续推进，不需要每步请求确认。仅在产品真相冲突、未知用户改动、不可逆数据/跨系统 outcome、安全或正式发布边界暂停。不得自动 push。

@@ -30,6 +30,7 @@ import { useInputModeListener } from './hooks/useInputMode';
 import CanvasListPage from './pages/CanvasListPage';
 import { WorkspaceLoadingScreen } from './pages/WorkspaceLoadingScreen';
 import WorkspaceSetupPage from './pages/WorkspaceSetupPage';
+import { lcosProjectRoutes } from './lcos/app/LcosAppRoutes';
 import { drainPendingSaves } from './store/canvasStore.ts';
 import { useWorkspaceStore } from './store/workspaceStore';
 
@@ -222,13 +223,8 @@ function SetupRoute() {
 }
 
 function WorkspaceLanding() {
-  const worldEnabled = useWorkspaceStore((state) => state.worldEnabled);
-  const worldCanvasId = useWorkspaceStore((state) => state.worldCanvasId);
-  return worldEnabled && worldCanvasId ? (
-    <Navigate to={`/canvas/${worldCanvasId}`} replace />
-  ) : (
-    <Navigate to="/spaces" replace />
-  );
+  // LCOS 生产入口 = /projects（项目启动页）。/spaces / /canvas 保留为 Huabu dev mode。
+  return <Navigate to="/projects" replace />;
 }
 
 export default function App() {
@@ -264,6 +260,7 @@ export default function App() {
               element: <WorkspaceGuardLayout />,
               children: [
                 { path: '/', element: <WorkspaceLanding /> },
+                ...lcosProjectRoutes(),
                 { path: '/spaces', element: <CanvasListPage /> },
                 {
                   path: '/canvas/:canvasId',

@@ -23,6 +23,36 @@ export class CoreProjectClient {
   }
 
   /**
+   * POST /projects — 创建（intent=create，需 parentPath+directoryName）或打开
+   * （intent=open，需已有 rootPath）。返回 route 回执（id/name/rootPath/graphVersion）。
+   * UI 只翻译该回执；创建/打开失败按 route failure code 展示，不猜不重试成成功。
+   */
+  createProject(input: {
+    name: string;
+    intent: 'create' | 'open';
+    parentPath?: string;
+    directoryName?: string;
+    rootPath?: string;
+    importExisting?: boolean;
+  }): Promise<{ id: string; name: string; rootPath: string; graphVersion: number }> {
+    return coreRequest<{ id: string; name: string; rootPath: string; graphVersion: number }>(
+      this.http,
+      'POST',
+      '/projects',
+      { body: input },
+    );
+  }
+
+  /** DELETE /projects/:id — 仅从 LCOS 移除，源文件保留（Core route 语义）。 */
+  deleteProject(projectId: string): Promise<{ ok: true }> {
+    return coreRequest<{ ok: true }>(
+      this.http,
+      'DELETE',
+      `/projects/${encodeURIComponent(projectId)}`,
+    );
+  }
+
+  /**
    * GET /projects/:projectId/graph -> ProjectGraphSnapshot | undefined.
    *
    * IMPORTANT: this snapshot still carries legacy spatial fields
