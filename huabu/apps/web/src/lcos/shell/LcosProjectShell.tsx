@@ -82,7 +82,9 @@ export function LcosProjectShell({
                 surface={active}
                 canvasId={canvasBySurface[active]}
                 canvasNodeCount={mainNodeCount}
-                ensureCanvas={() => ensureCanvas(active)}
+                // 必须透传 recreate：Main 的「重新建立现场画布」按钮靠它强制重建，
+                // 丢掉这个参数会退回到返回旧（失效）canvasId，按钮看起来点了没反应。
+                ensureCanvas={(recreate?: boolean) => ensureCanvas(active, recreate)}
                 ensureError={ensureError}
               />
             ) : active === 'context' ? (
@@ -105,7 +107,7 @@ export function LcosProjectShell({
                 projectId={projectId}
                 surface={active}
                 canvasId={canvasBySurface[active]}
-                ensureCanvas={() => ensureCanvas(active)}
+                ensureCanvas={(recreate?: boolean) => ensureCanvas(active, recreate)}
                 ensureError={ensureError}
               />
             )}
