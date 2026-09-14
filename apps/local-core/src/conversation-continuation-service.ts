@@ -322,6 +322,45 @@ export class ConversationContinuationService {
     row: ContinuationOperationJournalRowV1,
     adapter: ContinuationProviderAdapterV1,
   ): Promise<ContinuationRecoveryProjectionV1> {
+    // native_full_fork：先试 provider native fork；unsupported → degrade 到 create + ContinuityAttachBundle，
+    // 诚实返回 degradation receipt（T7 V2：provider 不支持 native fork 时只能 create + bundle，不冒充 fork）。
+    if (row.mode === 'native_full_fork') {
+      const sourceExternalSessionId = this.#sourceExternalSessionIdForFork(projectId, row)
+      if (sourceExternalSessionId !== undefined) {
+        const forkReceipt = await adapter.nativeFork({
+          operationId,
+          correlationId: operationId,
+          provider: row.provider,
+          sourceExternalSessionId,
+          bundle: continuationBundleForRowV1(row),
+        })
+        if (forkReceipt.outcome === 'external_created' && forkReceipt.nativeFork) {
+          return this.#applyCreateReceipt(projectId, operationId, forkReceipt)
+        }
+        if (forkReceipt.outcome === 'unsupported' && forkReceipt.degradedFromNativeFork) {
+          const createReceipt = await adapter.createSession({
+            operationId,
+            correlationId: operationId,
+            provider: row.provider,
+            createVariant: 'long_lived',
+            bundle: continuationBundleForRowV1(row),
+          })
+          if (createReceipt.outcome === 'external_created') {
+            const evidence = continuationExternalEvidenceFromReceiptV1(createReceipt)
+            if (evidence === undefined) throw new Error('External created receipt missing provider-native session identity.')
+            return this.advanceStep(projectId, operationId, {
+              step: 'external_create',
+              outcome: 'confirmed',
+              externalEvidence: evidence,
+              errorEvidence: `native fork unsupported by provider; degraded to create + continuity attach bundle (${forkReceipt.error?.code ?? 'native_fork_unsupported'})`,
+            })
+          }
+          return this.#applyCreateReceipt(projectId, operationId, createReceipt)
+        }
+        return this.#applyCreateReceipt(projectId, operationId, forkReceipt)
+      }
+      // 无 fork 源（connectedConversation 无 external ref）：直接 create（degrade 语义同上，不冒充 fork）。
+    }
     const receipt = await adapter.createSession({
       operationId,
       correlationId: operationId,
@@ -330,6 +369,14 @@ export class ConversationContinuationService {
       bundle: continuationBundleForRowV1(row),
     })
     return this.#applyCreateReceipt(projectId, operationId, receipt)
+  }
+
+  /** native_full_fork 的 fork 源 = connectedConversation 的 conversationRef（外部 session 稳定引用）。 */
+  #sourceExternalSessionIdForFork(projectId: string, row: ContinuationOperationJournalRowV1): string | undefined {
+    if (row.connectedConversationId === null) return undefined
+    const connected = this.metadata.getConnectedConversation(projectId, row.connectedConversationId)
+    if (connected === undefined) return undefined
+    return connected.conversationRef
   }
 
   #applyCreateReceipt(

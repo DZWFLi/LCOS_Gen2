@@ -71,6 +71,36 @@ describe('executeRecoveryAction（intent → T6 service → T7 adapter → recei
     expect(fresh.allowedActions.map((a) => a.action)).toEqual(['reconcile', 'cancel_request'])
   })
 
+  it('native_full_fork：provider 不支持 native fork → degrade 到 create + bundle，errorEvidence 记录降级（不冒充 fork）', async () => {
+    const { service, projectId, conversationId, adapter } = await setup()
+    service.submit({ ...submitInput(projectId, conversationId, 'op-fork'), mode: 'native_full_fork' })
+    // DevFake adapter.nativeFork 固定返回 unsupported + degradedFromNativeFork
+    const fresh = await service.executeRecoveryAction(projectId, 'op-fork', 'recover_external', adapter)
+    expect(fresh.steps.external_create).toBe('confirmed')
+    expect(fresh.externalEvidence?.externalSessionId).toBeTruthy()
+    expect(fresh.errorEvidence).toMatch(/native fork unsupported.*degraded to create/)
+  })
+
+  it('native_full_fork：无 fork 源（未指定 connectedConversationId）→ 直接 create（不冒充 fork）', async () => {
+    const { service, projectId, adapter } = await setup()
+    service.submit({
+      schemaVersion: 1, operationId: 'op-fork-nosrc', projectId,
+      mode: 'native_full_fork', contextInheritance: 'inherit', checkout: 'shared', provider: 'codex',
+    })
+    const fresh = await service.executeRecoveryAction(projectId, 'op-fork-nosrc', 'recover_external', adapter)
+    expect(fresh.steps.external_create).toBe('confirmed')
+    expect(fresh.externalEvidence?.externalSessionId).toBeTruthy()
+  })
+
+  it('duplicate submit（同一 operationId）→ 幂等返回，绝不产生第二次 create intent', async () => {
+    const { service, projectId, conversationId } = await setup()
+    const first = service.submit(submitInput(projectId, conversationId, 'op-dup'))
+    expect(first.created).toBe(true)
+    const second = service.submit(submitInput(projectId, conversationId, 'op-dup'))
+    expect(second.created).toBe(false)
+    expect(second.projection.operationId).toBe('op-dup')
+  })
+
   it('recover_bind：外部已确认 + bind 失败 → adapter continueExisting resumed → core_bind confirmed', async () => {
     const { service, projectId, conversationId, adapter } = await setup()
     service.submit(submitInput(projectId, conversationId, 'op-3'))
