@@ -1,56 +1,65 @@
-# GEN2 R2 交接 — Main 垂直切片（2026-09-14）
+# GEN2 R2 交接 — Main 垂直切片（2026-09-14，第二次送审）
 
 分支 `frontend-reconstruction-v2`（不 push、不合并 main）。
-状态：**ready_for_review** —— 按 14 号文档 R2 退出条件，**在此停下等用户第一轮可见验收**。
-R3/R4/R5 的源码写入在验收通过前不启动。
+状态：**ready_for_review** —— 按用户 2026-09-14「R2 首次视觉验收不通过与返工指令」完成返工，**在此停下等第二次视觉复核**。
+R3/R4/R5 的源码写入在本轮全程未启动（不创建 worktree、不改其生产源码；三路 Scout 仍为只读准备成果）。
 
 ---
 
-## 0. 已读清单（SOP 前置阅读）
+## 0. 已读清单（SOP 前置阅读，本轮返工重过）
 
 | # | 材料 | 读到的关键结论 |
 |---|---|---|
-| 1 | `14_..._保留重写矩阵与Recovery_Waves.md` R2 段 | 9 条施工顺序 + 5 条退出条件 + "在此暂停一次" |
-| 2 | `16_R0_Readback复核与下一步指令` | R0 校准两点；R2 前不得重排画布 |
-| 3 | `AGENTS.md` / `docs/construction/PROJECT_READBACK.md` | 施工落点纪律；GEN1 是 donor（A/B/C/X）；前端重装硬规则 |
-| 4 | `SOURCE_ADOPTION_LEDGER.md` | T1-A03（GEN1 落位纯函数）/ T1-A06（GEN1 nodeCardRegistry）两条 donor 条目 |
-| 5 | GEN1 源码（只读 donor） | `apps/web/src/features/canvas/canvasGeometry.ts::{paddedRectsOverlap, placeNewNodesIncrementally}`、`nodeCardRegistry` 机制；本地副本 commit `f084158` |
-| 6 | Figma 本地设计包 | `structures/{navigator,railway,window-chrome,feedback}`（R1 已用）、Main 母表 |
-| 7 | 实测：隔离环境浏览器 | 见 §3 证据 |
+| 1 | 用户本轮指令《R2 首次视觉验收不通过与返工指令》 | 6 条否决理由 + 文本节点方向裁决 **B（Core 投影默认只读）** + 5 项返工 + 9 条新退出条件 |
+| 2 | `deliverables/GEN2_新前端重新总装正本_20260913/20_R2首次视觉验收不通过与返工指令_20260914.md` | 同上的正本落点 |
+| 3 | `14_685e02a保留重写矩阵与Recovery_Waves.md` | R2 九条施工顺序 + 退出条件 |
+| 4 | `references/original_route_cards/V6/03_T3_LocalInteraction_ActionArc_Composer_30KB_Planning_Guide.md` | T3-A02 Action Arc：**selection/node near-field overlay**、3 normal / 最多 4、菜单不得固定右侧 |
+| 5 | Figma 本地导出 `exports/LCOS_Figma_全设计包_20260913/unification/main-final.png` | Main 主稿的内容密度（真实图片 / 大标题文字 / 小卡片 / 波形 / 容器胶囊 / Glyth 图腾）与远中近层级 |
+| 6 | `AGENTS.md` / `docs/construction/{PROJECT_READBACK,FIGMA_SOURCE_LEDGER,SOURCE_ADOPTION_LEDGER}.md` | 施工落点纪律；donor A/B/C/X；GEN2 前端重装硬规则 |
+| 7 | 旧 Huabu 节点/边工具条源码（实读） | `NodeFloatingToolbar` 四组控件的逐类真实清单；`pdf/office` 有「下载」、`web` 有「打开外链」—— 不能先退役 |
+| 8 | 实测：隔离环境浏览器（reset 后） | 见 §3 证据 |
 
 ---
 
-## 1. 交付内容（对照 R2 九条施工顺序）
+## 1. 对照用户 5 项返工
 
-| # | R2 施工项 | 本轮结果 |
+| # | 返工项 | 本轮结果 |
 |---|---|---|
-| 1 | Launcher + ProjectShell + HUD 基础构图 | **已有**（R1 族化完成；Main 的 Shell/HUD/Railway/Dock/Composer 均在生产路由上） |
-| 2 | 单一 NodePresentation Junction | **完成**：`createLcosNodePresentationSeam` 是唯一 resolve；唯一消费方 `NoteNode`；`NODE_SPECIES_BODY` 第二张物种表已删除，改为注册进唯一注册表 |
-| 3 | renderer registry 成为 production caller | **完成**：`web-gen2 rendererRegistry.ts::createNodeCardRegistry`（GEN1 `nodeCardRegistry` B 级换壳）+ `lcos/nodes/lcosNodeCardRegistry.ts` 注册 12 个物种；junction 只问注册表 |
-| 4 | 可达物种（Source/Working/Generated/Context/Run/Decision/Glyth…） | **部分**：source/glyth/run 由 Core 绑定真实可达；**collection/workflow-collection/decision/prompt-frame/context-reference/working/draft 在今天的 Core 图里没有 producer**（投影图只有 artifact/conversation/skill/run）→ 见 §5 缺口 2。`canvasRef→portal` 的兜底被**收窄**为只认纯入口壳，避免未绑定用户节点被顶掉 |
-| 5 | 真实内容位（title/secondary line/status…） | **完成（artifact 族）**：`projectedNodeDescriptor.ts` 从 Core 快照派生 kind/可用性/受管/revision → 真实次级行，经 `listNodeBindings()` → reference store → 物种 body。**文本族投影除外**（见 §5 缺口 3） |
-| 6 | 新节点 placement 接 GEN1 donor，已有锚点不动 | **完成**：`gen1Placement.ts`（A 级原样搬运 + 类型改名 + provenance）替换 `index*40`；`projectBatch` 只对新项落位、复用既有 binding |
-| 7 | T3 Action Arc 覆盖旧节点工具条命令 | **部分**：新增 `LcosActionArc`（右键节点，5 组命令：进入/关系/编辑/视图/未接线）。真实可用：打开（会话工作台/阅读器/入口预览）、引用/取消引用、文本↔笔记转换、删除（未绑定节点）、适合画面；**未接线命令显式标注 GAP**（强调色/尺寸档/文本格式/AI 运行）→ 见 §5 缺口 4 |
-| 8 | 退役旧可见壳 | **部分**：`NodeToolbar`/`Controls`/`MiniMap` 在 `chromeMode=lcos` 下已不挂载（e2e 实测 minimap=0 / controls=0）；**`NodeFloatingToolbar` 与 `EdgeStyleToolbar` 本轮不退役**（见 §5 缺口 4 的理由与清单） |
-| 9 | Composer 接 receiver/context/reference controller | **已接线**（Wave 5 既有：`LcosComposerHost` 读 `useLcosReferenceStore` 草稿引用 + `createRun`）；本轮未改逻辑，仅随 R1 的 token 化收敛 |
+| 1 | 完成文本族与真实内容 routing | **完成**：文本族 Core 投影一律进统一 junction（`visualFamily.ts` 的 `text → note`，因为 junction 唯一消费方是 `NoteNode`）；descriptor 消费真实 `entityType / artifactKind / mimeType / managed / availability / revision / **fileRecordId** / **preview**`；native body 仅作无 binding fallback；**首屏已无空 `Type…` 占位**（e2e 断 `textNodes === 0`） |
+| 2 | 重做 Main 相机与空间构图 | **完成**：GEN1 placement 保留；整批共用 GEN1 格点（不再逐节点各算步长）；取景走 `fitBoundsWithInsets` + HUD/Composer/Dock 安全矩形，并且**跟随内容补齐**直到用户动过相机；1440 首屏 zoom 落在可读区（e2e 断 `0.5 ≤ scale ≤ 1.3`），全部已投影节点都在画面上 |
+| 3 | Action Arc 回到正确形态 | **完成**：`LcosActionArc` 锚在选中节点上（`CanvasFloatingPopover`），近场 3 常规动作 + 「更多」；**不适用动作不出现**；暂不可用动作给真实 reason（Core 投影的删除给「这是 Core 投影…请在 Core 侧移除」）；**面板里已无任何「尚未接线（GAP）」**；旧工具条在覆盖后停挂载 |
+| 4 | 补齐可见验收 fixture | **部分**：source/material（2 张真实渐变 PNG）、conversation/Glyth（承接会话）、decision（决策记录 markdown）**可达**；context/reference 用真实 relation 表达；**run/process 记为 GAP（needs provider，不伪造）**；全部素材标题/文件名带 `e2e fixture` 标识 |
+| 5 | 重新提交验收证据 | **完成**：见 §3；截图 `r2-main-1440-v2.png` / `r2-action-arc-1440-v2.png`；fixture 生成命令、e2e 输出与退出码、ledger 回填、旧壳 DOM 证据齐备 |
+
+### 关键实现落点（本 Wave 新增/改动）
+
+| 关注点 | 落点 |
+|---|---|
+| 文本族路由 | `apps/web-gen2/src/presentation/visualFamily.ts`（`case 'text': return 'note'`） |
+| descriptor 真实内容位 | `apps/web-gen2/src/presentation/projectedNodeDescriptor.ts`（`fileRecordId` / `preview` / `buildContentPreview` / 会话 `provider·运行态` 次级行） |
+| 正文预览读取 | `apps/web-gen2/src/backend/artifacts.ts`（`getFileRecordContent` / `getFileRecordText`）+ `host/projectionFacade.ts`（`readEntityFacts`，按 fileRecordId 缓存、体积有界） |
+| 图片真实内容 | `huabu/apps/web/src/lcos/nodes/stageProjectedSources.ts`（Core 字节 → `uploadImage` → 裸 artifact key → 节点 `data.src`） |
+| 会话/Glyth 投影 | `apps/web-gen2/src/spatial/reconciliationRunner.ts`（承接会话走同一 `projectBatch`/binding/落位；孤儿清理只在真读到列表时执行） |
+| 落位 | `apps/web-gen2/src/spatial/projectToSpaceProjection.ts`（GEN1 批格点 + 真实尺寸障碍 + 实体级建节点互斥 + stale 双检） |
+| 相机 | `apps/web-gen2/src/spatial/fitWithInsets.ts` + `lcos/navigation/LcosCanvasCommands.tsx` |
+| 命令模型 | `apps/web-gen2/src/interaction/nodeCommandModel.ts`（按节点类型收敛；无 GAP 组） |
+| 命令面 | `lcos/navigation/LcosActionArc.tsx`、`lcos/navigation/LcosEdgeArc.tsx` |
+| 旧壳退役名单 | `lcos-seam/chromeModeSlot.tsx`（`LCOS_STANDDOWN_TOOLBAR_TYPES`） |
 
 ---
 
 ## 2. 五项完成凭证
 
-1. **Exact binding**：GEN1 采用有 provenance（owner/repo/path@commit + license 实况：该库无 LICENSE 文件、package.json 无 license 字段）；Figma 侧引用 R1 族表与 `structures/`。落位算法逐行可对照 GEN1 原文（见 `gen1Placement.ts` 头注释）。
-2. **Real state**：物种/次级行/命令可用性全部由真实事实推导（Core 绑定 + Core 快照 + Huabu 回执尺寸）。没有任何"为了好看"的假状态；不可达物种不做静默降级。
+1. **Exact binding**：GEN1 落位/注册表两条 donor 有 provenance（owner/repo/path@commit + license 实况）；T3 形态对照 V6 原卡「near-field overlay / 3 normal / 4 max」；Figma 对照 `main-final.png` 与本地设计包。
+2. **Real state**：物种/次级行/正文预览/图片字节/命令可用性全部来自真实事实（Core 图快照 + Core FileRecord 内容 + Huabu 回执尺寸 + Core 绑定）；不可达项（run/process、pdf·office·web 的下载/外链）**显式登记为 GAP，不静默降级、不伪造**。
 3. **Fail-fast test**：
-   - `apps/web-gen2/test/gen1-placement.test.ts`（6）：新项互不重叠 / 避开既有障碍 / **既有节点绝不被移动** / 确定性 / 原点规则 / 空输入。
-   - `apps/web-gen2/test/binding-projection.test.ts`（+4，共 13）：空画布批次用**真实尺寸**判定不重叠；已绑定实体不被重排；**并发投影同一实体只创建一个节点**（StrictMode 双挂载实测缺陷的回归钉）；CREATE 回执解析。
-   - `apps/web-gen2/test/projected-node-descriptor.test.ts`（5）：次级行只写真实事实；物种解析；**未绑定用户节点绝不兜底成 LCOS 物种**；注册表单 owner（重复注册抛错）。
-   - `huabu/apps/web/src/lcos/navigation/lcosNodeCommands.test.ts`（6）：命令表按真实事实生成；GAP 命令必须显式标注且禁用。
-   - 结果：`apps/web-gen2 npm test` → **247/247 通过**；`huabu/apps/web vitest run src/lcos` → **17 files / 96 tests 通过**；两侧 `tsc --noEmit` 与 `eslint --max-warnings 0`（改动面）均 exit 0。
-4. **Full viewport evidence**：`scripts/e2e/r2-main-vertical-slice.mjs`（fail-fast harness，1440×900，隔离环境 reset 后的全新数据）三场景 `ok:true`：
-   - placement：3 个投影节点真实坐标 (93,192)(740,192)(740,708)、真实尺寸 607×82，**两两不重叠**（旧实现是同点/40px 级联）；
-   - junction/chrome/commands：`MiniMap=0`、`Controls=0`、Railway=1；右键节点 → Action Arc 5 组 9 命令，绑定节点的「打开」「引用」**可用**、`delete` 带真实原因禁用、4 条 GAP 命令禁用并标注；Esc 关闭。
-   - 截图：`.e2e-data/shots/r2-main-1440.png`、`r2-action-arc-1440.png`（1440×900）。
-   - **两种真实缺陷由这轮 e2e 抓出并修掉**：(a) 落位用请求尺寸（280）而 Huabu 按内容定尺寸（607）→ 两节点落同一格；(b) StrictMode 双挂载导致同一 artifact 被投影两次 → 同坐标重复节点。两者都有回归测试。
+   - `apps/web-gen2 npm test` → **267/267 通过**，含本轮新增/改写：命令模型（去掉 GAP 组后按类型收敛）、`fitBoundsWithInsets`、`buildContentPreview`/会话次级行、落位与绑定幂等（含"边已不存在时不发 DISCONNECT"）。
+   - `huabu/apps/web`：`tsc --noEmit` exit 0；`eslint src/lcos src/lcos-seam` exit 0；`vitest run src/lcos src/lcos-seam` → **17 files / 93 tests 通过**（含 `chromeModeSlot.test.ts` 锁住"未覆盖类型继续挂旧壳"）。
+4. **Full viewport evidence**：`scripts/e2e/r2-main-vertical-slice.mjs`（fail-fast harness，1440×900，隔离环境 **reset 后**的全新数据）四场景 `ok:true`，退出码 0：
+   - bootstrap（stale canvas 恢复）；
+   - framing/projection/content：`textNodes=0`、物种含 `source` + `glyth`、`scale` 在 0.5–1.3、**图片节点有真实 src 且 `naturalWidth > 0`**、无「无图片来源」、有真实正文预览、节点两两不重叠、全部已登录节点都在首屏；
+   - Action Arc：近场几何（Arc 与节点水平相交、垂直 gap ≤ 80）、`primary=3`、`more=1`、`legacyToolbars=0`、面板分组含外观/空间、尺寸与强调色控件在、**无「尚未接线（GAP）」**、禁用动作数 == 真实 reason 数；
+   - 旧壳探测：`minimap=0 / controls=0 / legacyToolbars=0 / railway=1`。
 5. **Honest remainder**：见 §5。
 
 ---
@@ -58,47 +67,60 @@ R3/R4/R5 的源码写入在验收通过前不启动。
 ## 3. 复跑命令与退出码
 
 ```
-# 隔离环境（reset 后 run，保证走"新投影落位"路径）
+# 隔离环境（必须 reset 后再 run：fixture 只在空库种入，画布也需要干净基线）
 powershell -ExecutionPolicy Bypass -File scripts/e2e/r0-e2e-env.ps1 down
 powershell -ExecutionPolicy Bypass -File scripts/e2e/r0-e2e-env.ps1 reset
 powershell -ExecutionPolicy Bypass -File scripts/e2e/r0-e2e-env.ps1 up
-node scripts/e2e/r2-main-vertical-slice.mjs          # 三场景 ok:true
+node scripts/e2e/r2-main-vertical-slice.mjs          # 四场景 ok:true，exit 0
 
-cd apps/web-gen2 && npm run typecheck && npm test     # 247/247
-cd huabu/apps/web && npx tsc -p tsconfig.json --noEmit
-cd huabu/apps/web && npx eslint src/lcos --max-warnings 0
-cd huabu/apps/web && npx vitest run src/lcos          # 96/96
+cd apps/web-gen2 && npm run typecheck && npm test     # exit 0 / 267 pass
+cd huabu/apps/web && npx tsc --noEmit -p tsconfig.json
+cd huabu/apps/web && npx eslint src/lcos src/lcos-seam
+cd huabu/apps/web && npx vitest run src/lcos src/lcos-seam
 ```
+
+证据文件：
+- `.e2e-data/shots/r2-main-1440-v2.png`（Main 首屏，1440×900）
+- `.e2e-data/shots/r2-action-arc-1440-v2.png`（节点选中后的 Action Arc）
+- 对照稿：`E:\Codex 项目\OS开发\exports\LCOS_Figma_全设计包_20260913\unification\main-final.png`
 
 ---
 
-## 4. R2 退出条件对照（诚实版）
+## 4. R2 新退出条件对照（诚实版）
 
 | 退出条件 | 结果 | 依据 |
 |---|---|---|
-| Main 1440 与 `main-final.png` 构图/密度/物种层级/材质一致 | **待用户验收** | 截图已给（`r2-main-1440.png`）；机器只能证明"不重叠/壳正确/命令可用"，构图一致性必须人眼看 |
-| 不再出现 3 个 280×220 节点以 40px 级联重叠 | **达成** | `index*40` 已从两处删除；单测（真实尺寸不重叠）+ 浏览器实测（3 节点分散） |
-| 真实节点在远/中/近 LOD 都有可辨身份 | **部分** | `useLcosDensity`（mark/summary/working/reading）与物种 body 已在；但**投影的文本族节点走 Huabu TextNode**，本轮不显示真实标题（空编辑器占位）→ §5 缺口 3 |
-| 所有节点命令由 LCOS Action Arc/菜单/快捷键到达 | **部分** | Action Arc 覆盖 5 组命令；旧工具条"显示/动作"两组（强调色/尺寸/文本格式/AI 运行）仍未接线 → §5 缺口 4 |
-| 旧 Huabu 产品 UI 在 LCOS DOM 中不挂载 | **部分** | NodeToolbar/Controls/MiniMap 已不挂载（e2e 实测）；NodeFloatingToolbar/EdgeStyleToolbar 仍在 → §5 缺口 4 |
-| 在此暂停一次，请用户做第一轮可见验收 | **已按此执行** | 本文件即验收包 |
+| 首屏没有空 `Type…` Core 投影 | **达成** | e2e `textNodes === 0`；文本族按裁决 B 走 `note` 家族进 junction |
+| 真实物种节点在 1440 下可辨、不依赖 200% 以上放大 | **达成** | e2e `scale` 在 0.5–1.3；首屏物种含 `source`（材料）与 `glyth`（会话），标题/次级行/正文预览可见 |
+| Main 构图与 Figma 主稿属于同一产品 | **待用户视觉复核** | 机器只能证明"不重叠 / 全部节点在画面内 / 真实图片与真实正文在位 / 密度来自真实内容"；"是否同一产品"必须人眼看并排图 |
+| Action Arc 是正确节点近场交互并覆盖待退役命令 | **达成（覆盖范围内）** | e2e 近场几何 + 3+1 + 面板分组；停挂名单只含每个旧控件都有替代入口的类型 |
+| LCOS mode 下旧 Huabu 产品 toolbar 不挂载 | **达成（名单范围内）** | e2e `legacyToolbars=0`（note/image 选中态）；`pdf/office/web/sketch/question/frame/text` **故意仍在挂旧壳**（见 §5 缺口 4，不删能力） |
+| console/page error 为零 | **达成** | harness 对 pageerror 与 console error 零容忍，四场景均无 |
+| fail-fast e2e 真失败时非零 | **达成** | `_harness.mjs` 在断言失败/console error/非白名单 HTTP 时 `process.exitCode = 1`（本轮开发过程中已实际以非零退出暴露多个真实缺陷） |
+| 工作区 clean | **达成** | 本轮改动已 commit；`git status` clean（不含未跟踪临时文件） |
+| handoff 只写 `ready_for_review` | **达成** | 本文件标题即此状态 |
+
+> 明确：`56d97b0` **不是** `R2_ACCEPTED_COMMIT`，本轮返工后的新 commit 同样**不是** —— 等第二次视觉复核通过后由用户指定。
 
 ---
 
 ## 5. 诚实缺口（PARTIAL，不得改写为完成）
 
-1. **落位不避让 HUD 占用矩形**：Composer/Dock 是屏幕空间浮层，落位在世界空间算，因此新节点可能落在 Composer 后面（e2e 首轮就出现"点到的其实是 Composer"）。避让需要 R3 的 `safeRect`/`occupiedRect` 话题；当前 e2e 用 `elementFromPoint` 显式跳过被遮挡节点。
-2. **物种可达性受 Core 图限制**：投影图今天只有 artifact/conversation/skill/run，所以 working/draft/collection/workflow-collection/decision/prompt-frame/context-reference 仍无 producer（Warehouse 侧才有 collection/workflow 事实）→ R4/R5。
-3. **文本族投影无真实内容位**：markdown/text artifact 投影为 Huabu `text` 节点（TextNode），不经过 junction，界面显示空编辑器占位而非 artifact 标题/次级行。修法需要"把 artifact 内容/标题喂进节点"的产品决定（是否允许在画布上就地编辑 Core 投影），**不是本轮能单方面拍板的**——请在验收时裁定方向。
-4. **旧可见壳未退役**：`NodeFloatingToolbar`（类型切换/强调色/尺寸/文本格式/sketch 笔刷/frame 布局/AI 运行/删除）与 `EdgeStyleToolbar`（边线型/线色）在 LCOS 下仍挂载。LCOS Action Arc 只覆盖了其中 5 类命令；**先退役会让用户丢失能力**（换呈现不删逻辑是红线），故本轮不退役，待 R3（窗口/阅读器）与命令接线补齐后一次性切换。
-5. **Portal 族生产不可达（R1 记录更正）**：见 `FIGMA_SOURCE_LEDGER.md` §四.6 —— junction 唯一消费方是 NoteNode，`canvasRef` 不会经过它。
-6. **R0 既有 gap 未动**：wave1..wave10 旧 e2e 脚本仍未迁移 harness；Huabu 画布持久化具体文件仍未定位；`reset` 偶发句柄占用。
-7. **全量 web vitest 有 1 个与本波无关的既有失败**（Milkdown `blockFingerprintParity`），只登记不改。
+1. **run / process 无生产来源**：真实创建 Run 需要 provider 能力查询 + Bridge dispatch，仅凭 repository 直写会伪造 provider 进程 —— 隔离 fixture 里**不种入**，首屏没有 run 物种。这是 `GAP: needs provider`，不是"忘了做"。
+2. **portal / collection / workflow-collection / prompt-frame / working / draft 仍无 producer**：投影图今天只有 artifact / conversation，物种可达性受 Core 图限制（Warehouse 侧才有 collection/workflow 事实）→ R4/R5。`canvasRef → portal` 的 junction 分支仍无消费方（junction 唯一消费方是 `NoteNode`）。
+3. **`pdf` / `office` / `web` 的旧工具条未退役**：旧 actions 有「下载」「打开外链」，LCOS 尚未接替代入口。按用户"不能先删能力"，这三个类型**继续挂旧 Huabu 工具条**，LCOS Arc 也不在它们上面出现（避免两套入口并存）。
+4. **图像以外的字节型节点未落成**：`stageProjectedSources` 目前只处理 `image`；pdf / video / audio 的同类落成依赖各自节点形态，**未接线即不可用**。
+5. **Core 没有 audio/视频的 ArtifactKind**（`ArtifactKind = markdown|image|presentation|pdf|other`），所以 Figma 主稿里的音频波形节点在当前 Core 契约下不可达 —— 需要 Core 侧新增 kind 才能进入呈现。
+6. **落位不避让 HUD 占用矩形**：Composer/Dock 是屏幕空间浮层，落位在世界空间算；避让需要 R3 的 `safeRect`/`occupiedRect` 话题。当前由**取景**（HUD 安全边距）保证内容不被压住。
+7. **画布 store 同步滞后**：RFS 服务端写不会立刻进入浏览器画布 store（实测 reconcile 结束时 store 可能只有 1 / 8 个节点）。本轮用"取景跟随内容补齐 + 落成前事件驱动等待"绕开；根治需要 Huabu 侧的增量同步或一次受控基线重载，属 Huabu 内核问题（未改）。
+8. **reconcile 幂等性本轮修了三处但仍非零风险**：修掉了 (a) 断开不存在的边导致整批失败、(b) 同批重复输入、(c) 刚建的节点被误判 stale 而解绑重建；观察到的孤儿节点（`项目定位 1`，绑定点被覆盖）在本轮 reset 后需继续观察，若复现按同一路径继续收敛，**不在本轮当作已解决**。
+9. **全量 web vitest 有 1 个与本波无关的既有失败**（Milkdown `blockFingerprintParity`），只登记不改；R0 既有 gap（wave1..wave10 旧 e2e 脚本未迁移 harness 等）未动。
 
 ---
 
-## 6. 请用户验收（只需看一件事）
+## 6. 请用户复核
 
-打开隔离环境 `http://localhost:5273/projects/lcos-gen2-dev/main`（或你自己的 dev 环境），对照 `main-final.png` 看 **Main 的构图/密度/物种层级/材质**，并对 §5 缺口 3 的方向做一次裁定：
+打开隔离环境 `http://localhost:5273/projects/lcos-gen2-dev/main`，对照 `main-final.png` 看 **Main 的构图/密度/物种层级** 与 **选中节点后的 Action Arc 形态**，并给出：
 
-- 文本族投影节点：**（A）** 允许画布上就地编辑 → 需要把 Core 内容接进节点；**（B）** 只读投影 → 走 LCOS 物种 body（标题 + 真实次级行，不可编辑）。
+- 是否接受 R2 作为"同一产品"的第一屏；
+- 若仍不接受，请指出是**内容位**（还缺哪一类真实内容）、**构图**（分组/留白/远中近）还是**命令面**（哪个动作缺入口）—— 这三类会走向不同的返工路径。

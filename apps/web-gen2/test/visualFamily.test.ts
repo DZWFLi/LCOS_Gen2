@@ -68,12 +68,15 @@ test('unknown metadata is honestly unknown', () => {
 test('family -> native Huabu node type (no lcos/* synonyms)', () => {
   assert.equal(huabuNodeTypeForFamily('image'), 'image');
   assert.equal(huabuNodeTypeForFamily('document'), 'note');
-  assert.equal(huabuNodeTypeForFamily('text'), 'text');
+  // R2（用户裁决 B，Core 投影默认只读）：文本族 Core 投影改走 note，才能进入
+  // NodePresentation Junction 并由 LCOS 物种 body 呈现标题/次级行；
+  // 未绑定的 Huabu 原生自由文本仍是 text（不在本函数管辖）。
+  assert.equal(huabuNodeTypeForFamily('text'), 'note');
   assert.equal(huabuNodeTypeForFamily('web'), 'web');
   assert.equal(huabuNodeTypeForFamily('audio'), 'audio');
   assert.equal(huabuNodeTypeForFamily('video'), 'video');
   assert.equal(huabuNodeTypeForFamily('unknown'), 'note');
-  const known = new Set(['image', 'note', 'text', 'web', 'audio', 'video']);
+  const known = new Set(['image', 'note', 'web', 'audio', 'video']);
   const all = new Set<LcosVisualFamilyLike>();
   // no lcos/ prefixed names
 });

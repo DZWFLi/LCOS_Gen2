@@ -122,17 +122,26 @@ export type { LcosVisualFamily, VisualFamilySource } from './presentation/visual
 export { resolveNodeSpecies, resolveNodeSpeciesFromEntityType, NODE_SPECIES_LABEL } from './presentation/nodeSpecies.js';
 export type { LcosNodeSpecies, NodeSpeciesSource } from './presentation/nodeSpecies.js';
 
-export {
-  buildNodeSecondaryLine,
-  describeProjectedEntity,
-  resolveNodeSpeciesFromFacts,
-} from './presentation/projectedNodeDescriptor.js';
+export { buildNodeSecondaryLine, describeProjectedEntity, resolveNodeSpeciesFromFacts, buildContentPreview } from './presentation/projectedNodeDescriptor.js';
 export type { ProjectedEntityFacts, ProjectedNodeDescriptor } from './presentation/projectedNodeDescriptor.js';
+
+export {
+  buildLcosNodeCommands,
+  primaryNodeCommands,
+} from './interaction/nodeCommandModel.js';
+export type {
+  LcosNodeCommand,
+  LcosNodeCommandGroup,
+  LcosNodeCommandId,
+  LcosNodeCommandInput,
+} from './interaction/nodeCommandModel.js';
 
 export { FIGMA_ENTRY_GROUP_STATES, mapFigmaStateToT5StatusV1, assertAllFigmaStatesMappedV1 } from './presentation/figmaStateMap.js';
 export type { FigmaEntryGroupV1, T5PresentationStatusV1 } from './presentation/figmaStateMap.js';
 
 export { huabuNodeTypeForPresentation } from './spatial/projectToSpaceProjection.js';
+export { fitBoundsWithInsets, NO_INSETS, DEFAULT_FIT_MIN_ZOOM, DEFAULT_FIT_MAX_ZOOM, DEFAULT_FIT_PADDING } from './spatial/fitWithInsets.js';
+export type { FitOptions, FitResult, ContentBounds, SafeInsets, ViewportSize } from './spatial/fitWithInsets.js';
 
 // T2 C2-3A Locator（纯几何 + 瞬态状态，React-free）— Wave 0 从 bb047e2 选择性救回。
 export { computeLocatorGeometry, toScreenRect } from './spatial/locatorGeometry.js';

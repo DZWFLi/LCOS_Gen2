@@ -127,8 +127,9 @@ export class RelationProjection {
       res.type === 'INSPECT_EDGES' &&
       res.result.edges.some((edge) => edge.id === edgeBinding.spatialId);
     if (present) return;
-    // Stale edge: remove the dead edgeId, re-project, rebind to the fresh edgeId.
-    await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edges: [edgeBinding.spatialId] }]);
+    // Stale edge: 边在 Huabu 侧已经不存在（上面刚查过），**不要去 DISCONNECT 它** ——
+    // 断开一条不存在的边会让整批命令以 `not-found` 失败（实测重载画布时 reconcile 整体失败）。
+    // 直接解绑 + 重投影 + 重绑即可。
     await this.bindings.unbindByEntity(this.projectId, this.rfs.config.canvasId, 'edge', 'relation', relation.id);
     await this.projectRelation(relation, fromNodeId, toNodeId);
   }
@@ -136,11 +137,13 @@ export class RelationProjection {
   /**
    * Reconciliation: remove a leftover Huabu Edge whose Core Relation no longer
    * exists (orphan projection). Disconnects + unbinds. Destructive RFS only.
+   *
+   * 边若已经不在，视为**已收敛**：先查存在性再断，不让 `not-found` 打断整批。
    */
   async removeOrphanRelationEdge(relationId: string): Promise<void> {
     const edgeBinding = await this.bindings.findEdge(this.projectId, this.rfs.config.canvasId, relationId);
     if (!edgeBinding) return;
-    await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edges: [edgeBinding.spatialId] }]);
+    await this.disconnectIfPresent(edgeBinding.spatialId);
     await this.bindings.unbindByEntity(this.projectId, this.rfs.config.canvasId, 'edge', 'relation', relationId);
   }
 
@@ -149,9 +152,17 @@ export class RelationProjection {
     const edgeBinding = await this.bindings.findEdge(this.projectId, this.rfs.config.canvasId, relationId);
     await this.core.deleteRelation(relationId);
     if (edgeBinding) {
-      await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edges: [edgeBinding.spatialId] }]);
+      await this.disconnectIfPresent(edgeBinding.spatialId);
       await this.bindings.unbindByEntity(this.projectId, this.rfs.config.canvasId, 'edge', 'relation', relationId);
     }
+  }
+
+  /** 断开一条**确实存在**的边；已不存在则视为已收敛，不发命令（避免 `not-found` 打断整批）。 */
+  private async disconnectIfPresent(edgeId: string): Promise<void> {
+    const res = await this.rfs.query({ type: 'INSPECT_EDGES', ids: [edgeId] });
+    const present = res.type === 'INSPECT_EDGES' && res.result.edges.some((edge) => edge.id === edgeId);
+    if (!present) return;
+    await this.rfs.execute([{ type: 'DISCONNECT_EDGES', edges: [edgeId] }]);
   }
 
   private edgeStyleFor(kind: RelationKind): AgentRfsEdgeStyle {

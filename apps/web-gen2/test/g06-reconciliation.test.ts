@@ -132,20 +132,21 @@ test('reconcileRelationEdge: binding + edge present -> no-op (no CONNECT)', asyn
   assert.equal((await reg.findEdge('p1', CANVAS, 'rel-1'))?.spatialId, 'edge-1');
 });
 
-test('reconcileRelationEdge: binding + edge gone -> disconnect stale, re-CONNECT, rebind', async () => {
+test('reconcileRelationEdge: binding + edge gone -> unbind stale, re-CONNECT, rebind', async () => {
   const reg = new ProjectionBindingRegistry(new MemoryBindingStore());
   await reg.bind(edgeBinding('edge-DEAD'));
   const calls: unknown[] = [];
   const { client } = makeRfs((req) => {
     if (req.body?.type === 'INSPECT_EDGES') return inspectEdgesFound([]);
     const type = cmdType(req.body);
-    if (type === 'DISCONNECT_EDGES') { calls.push(['disconnect', (req.body as { commands: { edges: unknown[] }[] }).commands[0].edges]); return jsonResponse(createdResponse()); }
+    if (type === 'DISCONNECT_EDGES') { calls.push(['disconnect']); return jsonResponse(createdResponse()); }
     if (type === 'CONNECT_NODES') { calls.push(['connect']); return jsonResponse(createdResponse(undefined, [{ edgeId: 'edge-NEW' }])); }
     return jsonResponse({});
   });
   const proj = new RelationProjection(client, noopWriter, reg, 'p1');
   await proj.reconcileRelationEdge({ id: 'rel-1', kind: 'references', from: { entityType: 'artifact', entityId: 'a1' }, to: { entityType: 'artifact', entityId: 'a2' } }, 'nA', 'nB');
-  assert.ok(calls.some((c) => (c as unknown[])[0] === 'disconnect' && (c as unknown[])[1][0] === 'edge-DEAD'));
+  // 边已经不在了 → 不去 DISCONNECT（那会让整批 `not-found` 失败），直接解绑 + 重连。
+  assert.equal(calls.some((c) => (c as unknown[])[0] === 'disconnect'), false);
   assert.ok(calls.some((c) => (c as unknown[])[0] === 'connect'));
   assert.equal((await reg.findEdge('p1', CANVAS, 'rel-1'))?.spatialId, 'edge-NEW');
 });
@@ -155,6 +156,7 @@ test('removeOrphanRelationEdge: disconnects + unbinds a leftover edge with no Co
   await reg.bind(edgeBinding('edge-ORPHAN'));
   const disconnect: unknown[] = [];
   const { client } = makeRfs((req) => {
+    if (req.body?.type === 'INSPECT_EDGES') return inspectEdgesFound((req.body as { ids: string[] }).ids);
     assert.equal(cmdType(req.body), 'DISCONNECT_EDGES');
     disconnect.push((req.body as { commands: { edges: unknown[] }[] }).commands[0].edges);
     return jsonResponse(createdResponse());
@@ -162,6 +164,21 @@ test('removeOrphanRelationEdge: disconnects + unbinds a leftover edge with no Co
   const proj = new RelationProjection(client, noopWriter, reg, 'p1');
   await proj.removeOrphanRelationEdge('rel-1');
   assert.equal(disconnect[0]?.[0], 'edge-ORPHAN');
+  assert.equal(await reg.findEdge('p1', CANVAS, 'rel-1'), undefined);
+});
+
+test('removeOrphanRelationEdge: 边已不在时视为已收敛，不发 DISCONNECT', async () => {
+  const reg = new ProjectionBindingRegistry(new MemoryBindingStore());
+  await reg.bind(edgeBinding('edge-ALREADY-GONE'));
+  let executed = 0;
+  const { client } = makeRfs((req) => {
+    if (req.body?.type === 'INSPECT_EDGES') return inspectEdgesFound([]);
+    executed += 1;
+    return jsonResponse(createdResponse());
+  });
+  const proj = new RelationProjection(client, noopWriter, reg, 'p1');
+  await proj.removeOrphanRelationEdge('rel-1');
+  assert.equal(executed, 0, '已不存在的边不应再发 DISCONNECT_EDGES');
   assert.equal(await reg.findEdge('p1', CANVAS, 'rel-1'), undefined);
 });
 

@@ -152,7 +152,8 @@ test('project: new artifact issues CREATE_NODES and binds the real nodeId', asyn
     }
     const cmd = (req.body as { commands: { type: string; nodes: { nodeType: string; data: { label: string }; position: { x: number; y: number } }[] }[] }).commands[0];
     assert.equal(cmd.type, 'CREATE_NODES');
-    assert.equal(cmd.nodes[0]?.nodeType, 'text');
+    // R2：文本族 Core 投影落为 note（进入 LCOS junction）；见 visualFamily 注释与裁决 B。
+    assert.equal(cmd.nodes[0]?.nodeType, 'note');
     assert.equal(cmd.nodes[0]?.data?.label, 'Doc');
     return jsonResponse(createdResponse([{ nodeId: 'nX' }]));
   });
@@ -391,6 +392,13 @@ test('relation: deleteRelation deletes Core first, then disconnects real edgeId,
   await reg.bind({ projectId: 'p1', canvasId: CANVAS, spatialKind: 'edge', spatialId: 'edge-1', entityType: 'relation', entityId: 'rel-1' });
 
   const { client } = makeRfs((req) => {
+    // 先查存在性再断：断一条不存在的边会让整批 `not-found` 失败（R2 实测的 reconcile 整体失败）。
+    if ((req.body as { type?: string }).type === 'INSPECT_EDGES') {
+      return jsonResponse({
+        type: 'INSPECT_EDGES',
+        result: { count: 1, total: 1, truncated: false, edges: [{ id: 'edge-1', source: 'a', target: 'b' }] },
+      });
+    }
     const cmd = (req.body as { commands: { type: string; edges: unknown }[] }).commands[0];
     assert.equal(cmd.type, 'DISCONNECT_EDGES');
     assert.equal(cmd.edges[0], 'edge-1');

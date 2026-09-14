@@ -69,11 +69,32 @@ PNG 只做整页视觉走查；exact node/component/variant、variables/styles�
 5. `lcos/ui/presets.ts` 为空文件（0 字节），Wave 0 遗留；本 Wave 未使用。
 6. **R1 记录更正（2026-09-14 R2 期间发现）**：R1 曾把 Portal 记为"生产入口已打通"。复核后确认 **不成立** —— `resolveNodeBody` 的唯一消费方是 `NoteNode`（`nodeType=note`），原生 Portal 节点是 `canvasRef`，不会经过这个 junction；seam 里 `canvasRef → portal` 的分支只有在"某天有 canvasRef 的 junction 消费方"时才生效。Portal 族的真实生产触发属于 R4。此项按诚实剩余处理，不计入 R1 完成。
 
-## 五、R2 新增：落位 / junction / 命令面（详见 `docs/handoffs/GEN2_R2_MainVerticalSlice_20260914.md`）
+## 五、R2 新增：落位 / junction / 真实内容位 / 命令面（详见 `docs/handoffs/GEN2_R2_MainVerticalSlice_20260914.md`）
 
-- 落位：`apps/web-gen2/src/spatial/gen1Placement.ts`（GEN1 `placeNewNodesIncrementally` A 级采用；provenance 在文件头）。`ProjectToSpaceProjection.projectBatch` 取代 `index*40` 级联，并串行化同 canvas 批次。
-- junction：`apps/web-gen2/src/presentation/rendererRegistry.ts::createNodeCardRegistry`（GEN1 `nodeCardRegistry` B 级换壳）+ `lcos/nodes/lcosNodeCardRegistry.ts`（宿主注册点，唯一注册表）；`createLcosNodePresentationSeam` 是唯一 resolve。
-- 真实内容位：`apps/web-gen2/src/presentation/projectedNodeDescriptor.ts`（Core kind/availability/managed/revision → 次级行 + 物种），经 `listNodeBindings()` → `useLcosReferenceStore` 的 `descriptor` 抵达物种 body。
-- 命令面：`lcos/navigation/LcosActionArc.tsx` + `lcosNodeCommands.ts`（T3，右键节点；未接线命令显式标 GAP）。
+> 2026-09-14 第二次填报（首轮视觉验收被否决后的返工）。Figma 侧仍以 `references/figma-master/unification/main-final.png`（Main 主稿）与
+> `token-style-component-manifest.json` 为对照；T3 侧以 `references/original_route_cards/V6/03_T3_LocalInteraction_ActionArc_Composer_30KB_Planning_Guide.md` 的
+> 「selection/node near-field overlay、3 normal / 4 max」为规格。
+
+- 落位：`apps/web-gen2/src/spatial/gen1Placement.ts`（GEN1 `placeNewNodesIncrementally` A 级采用；provenance 在文件头）。
+  `ProjectToSpaceProjection.projectBatch` 取代 `index*40` 级联；整批共用 GEN1 格点（`stepX/stepY` = 本批最大请求尺寸 + gap），
+  每个节点再用 **Huabu 回执的真实尺寸**进障碍表。同 canvas 批次串行；同 (canvas, 实体) 另加建节点互斥 + 锁内双检
+  （修 2026-09-14 实测的孤儿节点竞态）。既有 binding 一律复用 → 用户锚点永不被重排。
+- 相机取景：`apps/web-gen2/src/spatial/fitWithInsets.ts`（`fitBoundsWithInsets`，默认 maxZoom 1.25，**刻意不采用 GEN1 的 2.0**）
+  + `lcos/navigation/LcosCanvasCommands.tsx`（HUD/Composer/Dock 安全边距 + 首屏一次性取景）。取景尺寸判定必须认 `style` 尺寸：
+  Canvas 开了 `onlyRenderVisibleElements`，视口外节点永远没有 `measured`。
+- junction：`apps/web-gen2/src/presentation/rendererRegistry.ts::createNodeCardRegistry`（GEN1 `nodeCardRegistry` B 级换壳）
+  + `lcos/nodes/lcosNodeCardRegistry.ts`（宿主注册点，唯一注册表）；`createLcosNodePresentationSeam` 是唯一 resolve，
+  唯一消费方 `NoteNode`。文本族 Core 投影按用户裁决 B 走 `note` 家族进入 junction（`visualFamily.ts`），不再落成空 `Type…` 编辑器。
+- 真实内容位：`apps/web-gen2/src/presentation/projectedNodeDescriptor.ts`（Core kind/availability/managed/revision + **fileRecordId/mimeType/preview**
+  → 次级行 + 物种 + 正文预览），经 `listNodeBindings()` → `useLcosReferenceStore.descriptor` 抵达物种 body。
+  字节出口用 Core 既有的 `GET /projects/:id/file-records/:fid/content`（`CoreArtifactClient.getFileRecordContent/getFileRecordText`）。
+- 图片内容落成：`lcos/nodes/stageProjectedSources.ts` —— Core 字节 → `uploadImage` → Huabu 裸 artifact key → 节点 `data.src`
+  （因为 Core 字节出口需要 `Authorization` 头，`<img>` 无法携带；Huabu 资产区才是 `ImageNode` 能渲染的来源）。
+- 会话/Glyth：`ReconciliationRunner` 增加承接会话投影（与 artifact 同一条 `projectBatch`/binding/落位路径），
+  并在**确实读到会话列表**时才清理会话孤儿。
+- 命令面：`lcos/navigation/LcosActionArc.tsx` + `apps/web-gen2/src/interaction/nodeCommandModel.ts`（T3-A02 节点近场；
+  3 常规动作 + 更多；**不适用动作不出现**，暂不可用给真实 reason）。旧节点壳的停挂名单 = `lcos-seam/chromeModeSlot.tsx`
+  `LCOS_STANDDOWN_TOOLBAR_TYPES`（只含每个旧控件都有 LCOS 替代入口的类型）。
+- 边命令面：`lcos/navigation/LcosEdgeArc.tsx`（覆盖旧 `EdgeStyleToolbar` 的线型/线色/方向/粗细/断开）。
 
 > 规则：编码任一可见组件前，先从此表（或母表 grep 该 node）找到一行，绑定真实 target/caller/producer/fallback；缺 token/asset 时先核 `token-style-component-manifest.json` 与 exports 资产目录，禁止截图裁片冒充资产。

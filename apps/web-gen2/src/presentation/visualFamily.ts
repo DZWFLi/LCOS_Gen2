@@ -73,7 +73,16 @@ export function huabuNodeTypeForFamily(family: LcosVisualFamily): string {
     case 'image': return 'image';
     case 'document':
       return 'note'; // pdf/preview shape comes from Huabu preview, body stays native
-    case 'text': return 'text';
+    /*
+     * R2（2026-09-14 用户裁决 B）：「Core 投影默认只读」。
+     * 文本族 Core 投影必须进入统一 NodePresentation Junction —— 只有 `note` 家族会被
+     * NodeWrapper/NoteNode 交给 junction，`text` 家族（TextNode）不消费 junction，
+     * 于是 Core 投影会显示成一块**空的、可就地编辑的占位编辑器**（首屏空 `Type…`）。
+     * 因此文本族 Core 投影改用 `note`：由 LCOS 物种 body 呈现标题 + 真实次级行，
+     * 打开/编辑走 Reader 或 Professional Work View。
+     * 未绑定 Core 的 Huabu 原生自由文本仍是 `text`（不在本函数管辖内），保持就地编辑。
+     */
+    case 'text': return 'note';
     case 'web': return 'web';
     case 'audio': return 'audio';
     case 'video': return 'video';

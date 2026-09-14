@@ -152,3 +152,39 @@ huabu typecheck / local-core tsc                  → 0 / 0
 5. **R1 记录更正**：Portal 族"生产入口已打通"不成立（junction 唯一消费方是 NoteNode，canvasRef 不经过它）→ 已在 FIGMA_SOURCE_LEDGER §四.6 更正，归属 R4。
 
 **下一步（硬停）**：按 14 号文档"在此暂停一次，请用户做第一轮可见验收"。R3/R4/R5 的**源码写入**在验收通过前不启动；三个只读 Scout 的 Work Packet 与 R2 期间新发现（Portal 不可达、落位与 HUD 冲突、物种 producer 缺口）已回填状态文件。
+
+---
+
+## 条目 5（2026-09-14）— R2 返工：首轮视觉验收被否决后的 6 条返工
+
+**触发**：用户《R2 首次视觉验收不通过与返工指令》（审计 HEAD `56d97b0`，R2 保持 PARTIAL）。
+6 条否决：① 217% 只见 `Type…`/`AI`/边标签；② 真实标题/次级信息/缩略图/身份未进主视觉；③ 构图极空、与 HUD/Composer/Dock 无内容密度与空间层级；④ Action Arc 实为右侧长方形菜单；⑤ 菜单仍堆「尚未接线（GAP）」；⑥ 旧 Huabu 可见壳仍挂载。
+裁决：文本节点方向取 **B —— Core 投影默认只读**（`Core 投影 → LCOS species body → 标题 + 真实次级行 + preview/status → 打开/编辑进 Reader 或 Professional Work View`）。
+
+**本轮做掉的**
+1. **文本族与真实内容 routing**：`visualFamily.ts` 的 `text → note`（junction 唯一消费方是 `NoteNode`），首屏不再出现空 `Type…` 编辑器占位。
+2. **descriptor 真实内容位**：新增 `fileRecordId` / `preview`；`buildContentPreview` 从 Core FileRecord 正文派生真实预览（按 revision 缓存、体积有界）；会话次级行 = `provider · 运行态`。
+3. **图片真实内容**：新增 `stageProjectedSources` —— Core 字节出口需要 `Authorization`，`<img>` 无法携带，因此走「取字节 → `uploadImage` 落进 Huabu 资产区 → 写节点 `data.src`」，图片节点不再显示「无图片来源」。
+4. **Main 相机与构图**：整批共用 GEN1 格点（不再逐节点各算步长）；取景用 `fitBoundsWithInsets` + HUD 安全矩形，并**在内容补齐期内跟随取景、补齐后永久交还相机**（因为 RFS 服务端写不会在本会话内增量进浏览器 store，且视口外节点永不渲染）。
+5. **Action Arc 回到正确形态**：锚在选中节点近场（`CanvasFloatingPopover`），3 常规动作 + 更多；**不适用动作不出现**；暂不可用给真实 reason；**面板内零 GAP 文案**。
+6. **旧壳退役边界修正**：停挂名单收窄为「每个旧控件都有 LCOS 替代入口」的类型（note/image/video/audio/canvasRef/nodeRef）；`pdf`/`office`/`web` 因「下载」「打开外链」无替代入口而**故意继续挂旧壳**（不删能力）。
+7. **会话/Glyth 可达**：reconciler 增加承接会话投影（同一条 `projectBatch`/binding/落位），孤儿清理只在真读到会话列表时执行。
+8. **fixture 增强**：真实渐变 PNG ×2（512×320）、按 displayMode 分档尺寸（card 360×260 / thumbnail 240×160 / compact 220×96）、relation 5 条，全部带 `e2e fixture` 标识。
+
+**本轮 e2e 又抓出并修掉的真实缺陷（4 个）**
+1. `DISCONNECT_EDGES` 断一条**不存在**的边 → 整批 `not-found` 失败 → 重载画布时 reconcile 整体失败。改为先查存在性再断，且 stale 分支不再去断已消失的边。
+2. 同批输入含重复实体 → 会建两个节点。批次内按 `entityType:entityId` 去重。
+3. **刚建好的节点被误判 stale**：RFS 写回执早于查询可见性 → `findLiveNode` 解绑活节点并重建，产生永不被绑定的孤儿（实测画布 8 节点 / 7 绑定）。改为解绑前隔一拍复核一次。
+4. 首屏取景死锁：`onlyRenderVisibleElements` 下视口外节点没有 `measured`，而取景闸门只认 `measured` → 永远等不到；改为认 `style` 尺寸（引擎建节点时已写入真实尺寸）。
+
+**验证**
+- `apps/web-gen2`: typecheck exit 0；`npm test` **267/267**
+- `huabu/apps/web`: tsc exit 0；eslint `src/lcos src/lcos-seam` exit 0；`vitest run src/lcos src/lcos-seam` **17 files / 93 tests**
+- `node scripts/e2e/r2-main-vertical-slice.mjs`（隔离环境 reset 后）：四场景 `ok:true`、exit 0
+  - 首屏 `scale≈0.81`、`count=7`、`textNodes=0`、物种含 `source` + `glyth`、真实图片 `naturalWidth=512` ×2、真实正文预览 ×4、节点两两不重叠
+  - Action Arc：近场几何（水平相交、垂直 gap ≤ 80）、`primary=3`、`more=1`、`legacyToolbars=0`、面板分组 编辑/外观/空间、**零 GAP**
+- 证据：`.e2e-data/shots/r2-main-1440-v2.png`、`r2-action-arc-1440-v2.png`
+
+**仍未解决（PARTIAL）**：run/process 无 provider 来源；portal/collection/workflow-collection/prompt-frame/working/draft 无 producer；pdf/office/web 旧壳未退役；pdf/video/audio 内容落成未接线（Core 也没有 audio/video ArtifactKind）；落位不避让 HUD 占用矩形（R3）；画布 store 同步滞后属 Huabu 内核；孤儿节点竞态已修三处但需继续观察。
+
+**状态**：handoff 只写 `ready_for_review`；`56d97b0` **不是** `R2_ACCEPTED_COMMIT`，本轮新 commit 同样不是 —— 等用户第二次视觉复核。R3/R4/R5 源码写入仍未启动。

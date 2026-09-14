@@ -37,7 +37,9 @@ import { useLcosReferenceStore } from './lcosReferenceState';
 import { LcosActionArc } from './navigation/LcosActionArc';
 import { LcosCameraControls } from './navigation/LcosCameraControls';
 import { LcosCanvasCommands } from './navigation/LcosCanvasCommands';
+import { LcosEdgeArc } from './navigation/LcosEdgeArc';
 import { createLcosNodePresentationSeam } from './nodes/createLcosNodePresentationSeam';
+import { stageProjectedSources } from './nodes/stageProjectedSources';
 import { installReferenceClickSuppressor } from './referenceClickSuppressor';
 
 import type { CanvasHostExtension } from '@/lcos-seam/types';
@@ -78,8 +80,10 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
         // Wave 4：canvas-local 相机/命令（唯一 Huabu camera，非第二视图）
         { key: 'lcos/canvas-commands', node: <LcosCanvasCommands /> },
         { key: 'lcos/camera-controls', node: <LcosCameraControls /> },
-        // R2：节点命令菜单（T3 Action Arc）—— 画布内唯一节点命令入口
+        // R2：节点命令菜单（T3 Action Arc）—— 画布内唯一节点命令入口（节点近场）
         { key: 'lcos/action-arc', node: <LcosActionArc /> },
+        // R2：边命令入口（替换旧 EdgeStyleToolbar 的可见壳）
+        { key: 'lcos/edge-arc', node: <LcosEdgeArc /> },
         // Wave 9：相机移动期间暂停呼吸动画/投影（只写 DOM 属性，不重渲染）
         { key: 'lcos/camera-motion', node: <LcosCameraMotionPolicy /> },
       ],
@@ -114,6 +118,11 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     useLcosHostStore.getState().setHost(rt.host);
     void (async () => {
       try {
+        // dev-only：把"这一轮是给哪个 canvas 做投影、做完后 store 里有多少节点"打出来。
+        // 用来诊断"同一轮 e2e 里出现孤儿节点"这类竞态，不在生产路径上做任何判断。
+        if (import.meta.env.DEV) {
+          console.info(`[lcos] reconcile start canvas=${canvasId}`);
+        }
         await rt.host.reconcile('project-open');
         // P0-5: identity cache derives from ProjectionBinding — reconcile just
         // established/refreshed the bindings, so re-sync the reference index.
@@ -134,7 +143,15 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
         // dev-only：绑定登记的完成信号（R2 e2e 用它作为"节点身份已就绪"的确定性等待点，
         // 避免在 store 尚未填充时对命令可用性做假失败判定）。
         if (import.meta.env.DEV) {
-          console.info(`[lcos] bindings registered: ${bindings.length}`);
+          console.info(
+            `[lcos] bindings registered: ${bindings.length} storeNodes=${useCanvasStore.getState().nodes.length}`,
+          );
+        }
+        // R2 真实内容位：把 Core 的字节搬进画布资产区，作为图片节点的 data.src。
+        // 不做这一步，Huabu 原生 ImageNode 只会渲染"无图片来源"的空白块（用户已否决的形态）。
+        const staged = await stageProjectedSources(projectId, bindings);
+        if (import.meta.env.DEV) {
+          console.info(`[lcos] node sources staged: ${staged}`);
         }
       } catch (error) {
         console.warn('[lcos] project-open reconcile failed', error);

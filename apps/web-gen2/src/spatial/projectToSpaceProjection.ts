@@ -29,6 +29,11 @@ export interface ArtifactProjectionSource {
   artifactId: string;
   kind: ArtifactKind;
   title: string;
+  /**
+   * R2：Core 侧的呈现尺寸（来自 `ArtifactView.size` / `displayMode`）。
+   * 有就给 Huabu 作为创建尺寸，让 Main 首屏形成真实主次分组；没有则用机械默认值。
+   */
+  size?: NodeGeometrySize;
 }
 
 export interface SpaceEntityProjectionSource {
@@ -47,6 +52,8 @@ export interface SpaceEntityProjectionSource {
    * 避免同一批投影全部叠在 DEFAULT_POSITION）。binding 复用时忽略。
    */
   position?: Point;
+  /** R2：创建尺寸（来自 ArtifactView / displayMode）；缺省用机械默认值。 */
+  size?: NodeGeometrySize;
 }
 
 const DEFAULT_POSITION: Point = { x: 0, y: 0 };
@@ -54,8 +61,30 @@ const DEFAULT_SIZE: NodeGeometrySize = { width: 280, height: 220 };
 /** 落位用的确定性尺寸（与 DEFAULT_SIZE 同值；NodeGeometrySize 允许 'auto'，落位需要纯数字）。 */
 const DEFAULT_PLACEMENT_SIZE: PlacementItem = { width: 280, height: 220 };
 
+/** 该投影源请求的落位尺寸（缺省用机械默认值；'auto' 不参与落位）。 */
+function requestedPlacementSize(input: SpaceEntityProjectionSource): PlacementItem {
+  const width = input.size?.width;
+  const height = input.size?.height;
+  return {
+    width: typeof width === 'number' && width > 0 ? width : DEFAULT_PLACEMENT_SIZE.width,
+    height: typeof height === 'number' && height > 0 ? height : DEFAULT_PLACEMENT_SIZE.height,
+  };
+}
+
 /** 同一 canvas 上的投影批次队列（见 ProjectToSpaceProjection.projectBatch 注释）。 */
 const PROJECTION_QUEUES = new Map<string, Promise<void>>();
+
+/** 同一 (canvas, 实体) 的**建节点互斥**：并发批次不得为同一实体建出两个节点。 */
+const ENTITY_CREATE_LOCKS = new Map<string, Promise<void>>();
+
+/** 解绑前复核 stale 的间隔：RFS 写回执早于查询可见性，隔一拍再确认一次。 */
+const REINSPECT_DELAY_MS = 300;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 
 /**
@@ -109,6 +138,7 @@ export class ProjectToSpaceProjection {
         entityId: artifact.artifactId,
         kind: artifact.kind,
         title: artifact.title,
+        ...(artifact.size === undefined ? {} : { size: artifact.size }),
       })),
     );
   }
@@ -145,11 +175,19 @@ export class ProjectToSpaceProjection {
   private async projectBatchSerial(
     inputs: SpaceEntityProjectionSource[],
   ): Promise<ProjectionBinding[]> {
-    const results: (ProjectionBinding | undefined)[] = new Array(inputs.length).fill(undefined);
+    // 同一批输入里同一实体只投影一次（防御重复输入；与实体级建节点锁一起保证幂等）。
+    const seen = new Set<string>();
+    const uniqueInputs = inputs.filter((input) => {
+      const key = `${input.entityType}:${input.entityId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const results: (ProjectionBinding | undefined)[] = new Array(uniqueInputs.length).fill(undefined);
     const newcomers: { index: number; input: SpaceEntityProjectionSource }[] = [];
 
     let index = 0;
-    for (const input of inputs) {
+    for (const input of uniqueInputs) {
       const existing = await this.findLiveNode(input);
       if (existing) results[index] = existing;
       else newcomers.push({ index, input });
@@ -158,17 +196,27 @@ export class ProjectToSpaceProjection {
 
     if (newcomers.length > 0) {
       const { bbox, obstacles } = await this.readPlacementSpace();
-      // 逐个落位：Huabu 会按内容重新给节点定尺寸（不采用我们请求的 size），
-      // 所以必须"建一个 → 读回真实尺寸 → 作为下一个的障碍"，否则格点步长会小于真实宽度而重叠
-      // （2026-09-14 R2 e2e 实测：请求 280 宽、真实 607 宽，两个节点落在同一格）。
+      // GEN1 的落位是**整批共用一个格点**（`stepX/stepY` 取自该次调用的 newcomers 最大值），
+      // 所以这里也按"本批最大请求尺寸"定格 —— 逐节点各算一套步长会把画面拉成斜向散点。
+      // 同时每个节点用 **Huabu 回执的真实尺寸**进障碍表，重叠仍由环形搜索兜住。
+      const lattice: PlacementItem = {
+        width: Math.max(
+          DEFAULT_PLACEMENT_SIZE.width,
+          ...newcomers.map((target) =>
+            typeof target.input.size?.width === 'number' ? target.input.size.width : 0,
+          ),
+        ),
+        height: Math.max(
+          DEFAULT_PLACEMENT_SIZE.height,
+          ...newcomers.map((target) =>
+            typeof target.input.size?.height === 'number' ? target.input.size.height : 0,
+          ),
+        ),
+      };
       const placementObstacles: PlacementBounds[] = [...obstacles];
       const origin = placementOriginFor(bbox);
       for (const target of newcomers) {
-        const step: PlacementItem = {
-          width: Math.max(DEFAULT_PLACEMENT_SIZE.width, ...placementObstacles.map((o) => o.width)),
-          height: Math.max(DEFAULT_PLACEMENT_SIZE.height, ...placementObstacles.map((o) => o.height)),
-        };
-        const [point] = placeNewNodesIncrementally(placementObstacles, [step], origin, PLACEMENT_GAP);
+        const [point] = placeNewNodesIncrementally(placementObstacles, [lattice], origin, PLACEMENT_GAP);
         const created = await this.createEntityNodeWithSize({
           ...target.input,
           position: point ?? origin,
@@ -203,7 +251,7 @@ export class ProjectToSpaceProjection {
     return { bbox: outline.result.bbox ?? null, obstacles };
   }
 
-  /** binding 存在且节点仍在 Huabu → 复用；节点已被删 → 解绑并当作新项。 */
+  /** binding 存在且节点仍在 Huabu → 复用；节点确认已被删 → 解绑并当作新项。 */
   private async findLiveNode(input: SpaceEntityProjectionSource): Promise<ProjectionBinding | undefined> {
     const existing = await this.bindings.findNode(
       input.projectId,
@@ -212,9 +260,13 @@ export class ProjectToSpaceProjection {
       input.entityId,
     );
     if (!existing) return undefined;
-    const res = await this.rfs.query({ type: 'INSPECT_NODES', ids: [existing.spatialId] });
-    const present = res.type === 'INSPECT_NODES' && res.result.nodes.some((n) => n.id === existing.spatialId);
-    if (present) return existing;
+    if (await this.nodeIsPresent(existing.spatialId)) return existing;
+    // RFS 写回执早于"查询可见性"：刚建好的节点立刻查可能查不到。
+    // 只凭一次缺席就解绑会**误删活节点并重建一个重复节点**
+    // （2026-09-14 R2 e2e 实测：画布上出现一个永不被绑定的 `项目定位 1` 孤儿）。
+    // 因此解绑前先隔一拍复核一次，两次都缺席才认定为真 stale。
+    await delay(REINSPECT_DELAY_MS);
+    if (await this.nodeIsPresent(existing.spatialId)) return existing;
     // Stale binding: node was removed in Huabu. Drop it and recreate.
     await this.bindings.unbindByEntity(
       input.projectId,
@@ -224,6 +276,12 @@ export class ProjectToSpaceProjection {
       input.entityId,
     );
     return undefined;
+  }
+
+  /** 该 Huabu 节点此刻是否可见。 */
+  private async nodeIsPresent(spatialId: string): Promise<boolean> {
+    const res = await this.rfs.query({ type: 'INSPECT_NODES', ids: [spatialId] });
+    return res.type === 'INSPECT_NODES' && res.result.nodes.some((n) => n.id === spatialId);
   }
 
   /**
@@ -258,8 +316,34 @@ export class ProjectToSpaceProjection {
   /**
    * 创建节点并把 Huabu **实际**给出的尺寸读回来（CREATE 回执里带 width/height）。
    * Huabu 会按节点类型/内容重新定尺寸，因此真实尺寸才是落位依据。
+   *
+   * 幂等护栏：同一 (canvas, 实体) 串行执行，且**锁内双检** binding ——
+   * 并发 reconcile 绝不会为同一实体建出两个节点（见 ENTITY_CREATE_LOCKS 注释）。
    */
   private async createEntityNodeWithSize(
+    input: SpaceEntityProjectionSource,
+  ): Promise<{ binding: ProjectionBinding; size: PlacementItem }> {
+    const key = `${this.rfs.config.canvasId}:${input.entityType}:${input.entityId}`;
+    const previous = ENTITY_CREATE_LOCKS.get(key) ?? Promise.resolve();
+    const task = async (): Promise<{ binding: ProjectionBinding; size: PlacementItem }> => {
+      const live = await this.findLiveNode(input);
+      // 已在锁外/锁内被别人建好 → 复用，不再建第二个。
+      if (live) return { binding: live, size: requestedPlacementSize(input) };
+      return this.createEntityNodeUnlocked(input);
+    };
+    const next = previous.then(task, task);
+    ENTITY_CREATE_LOCKS.set(
+      key,
+      next.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return next;
+  }
+
+  /** 真正的建节点调用（只允许由 createEntityNodeWithSize 在实体锁内调用）。 */
+  private async createEntityNodeUnlocked(
     input: SpaceEntityProjectionSource,
   ): Promise<{ binding: ProjectionBinding; size: PlacementItem }> {
     const nodeType = huabuNodeTypeForPresentation(input);
@@ -271,7 +355,7 @@ export class ProjectToSpaceProjection {
             nodeType,
             data: { label: input.title },
             position: input.position === undefined ? { ...DEFAULT_POSITION } : { ...input.position },
-            size: { ...DEFAULT_SIZE },
+            size: input.size === undefined ? { ...DEFAULT_SIZE } : { ...input.size },
           },
         ],
       },

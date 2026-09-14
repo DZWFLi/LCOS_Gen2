@@ -51,6 +51,26 @@ export class CoreArtifactClient {
   }
 
   /**
+   * 读取某个 FileRecord 的**真实字节内容**（Core 已实现的字节出口）。
+   * `GET /projects/:projectId/file-records/:fileRecordId/content` → 原始字节 + FileRecord.mimeType。
+   * 呈现层据此拿真实正文/图片；只读，不落库、不复制真值。
+   */
+  getFileRecordContent(projectId: string, fileRecordId: string, signal?: AbortSignal): Promise<Blob> {
+    return this.http.getBlob(
+      `/projects/${encodeURIComponent(projectId)}/file-records/${encodeURIComponent(fileRecordId)}/content`,
+      signal,
+    );
+  }
+
+  /** 同上，但按文本读出（仅供文本族预览；调用方自行限长）。 */
+  getFileRecordText(projectId: string, fileRecordId: string, signal?: AbortSignal): Promise<string> {
+    return this.http.getText(
+      `/projects/${encodeURIComponent(projectId)}/file-records/${encodeURIComponent(fileRecordId)}/content`,
+      signal,
+    );
+  }
+
+  /**
    * GET /projects/:projectId/artifacts/search?q=... -> up to 50 artifact
    * title substring matches. Empty q returns the first 50 and MUST NOT be
    * treated as the full project artifact list (use ProjectGraphSnapshot).

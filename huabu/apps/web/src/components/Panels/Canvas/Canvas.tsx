@@ -115,6 +115,9 @@ import { StrokeSelectionRegion } from './StrokeSelectionRegion.tsx';
 import { StructuredDropOverlay } from './StructuredDropOverlay.tsx';
 import { useInitialCanvasViewport } from './useInitialCanvasViewport.ts';
 import { GRID_SIZE, MAX_ZOOM, MIN_ZOOM } from '../../../config/canvas.ts';
+import { CanvasChromeModeProvider } from '../../../lcos-seam/chromeModeSlot';
+import { mergeNodeTypes } from '../../../lcos-seam/mergeNodeTypes';
+import { NodeBodyResolverContext } from '../../../lcos-seam/nodeBodySlot';
 import useCanvasStore from '../../../store/canvasStore.ts';
 import { useConnectPortStore } from '../../../store/connectPortStore.ts';
 import { useGesturePreviewStore } from '../../../store/gesturePreviewStore.ts';
@@ -152,14 +155,13 @@ import {
   revealBoundsInViewport,
 } from '../CanvasLayerPanel/focusNodesOnCanvas.ts';
 
+import type { CanvasHostExtension } from '../../../lcos-seam/types';
 import type { CanvasNode } from '@/components/Nodes/types';
 import type { AddNodeInput } from '@/handler/canvasCommand/uiIntent';
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
 import type { PointerRecognizer } from '@/handler/pointerRouter';
 import type { FrameFitResult, NestableNode } from '@huabu/shared/canvas-engine';
-import { mergeNodeTypes } from '../../../lcos-seam/mergeNodeTypes';
-import { NodeBodyResolverContext } from '../../../lcos-seam/nodeBodySlot';
-import type { CanvasHostExtension } from '../../../lcos-seam/types';
+
 
 const nodeTypes = {
   image: ImageNode,
@@ -1530,6 +1532,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       }}
     >
       <NodeBodyResolverContext.Provider value={hostExtension?.resolveNodeBody}>
+        <CanvasChromeModeProvider value={chromeMode}>
         <ReactFlow
           className={cn(
             isInitialViewportPending && 'invisible',
@@ -1696,7 +1699,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         {!isBoxSelecting && <StrokeSelectionRegion />}
         {!isBoxSelecting && <StrokeSelectionToolbar />}
         <MoveSelectionModal />
-        {!isBoxSelecting && <EdgeStyleToolbar />}
+        {!isBoxSelecting && chromeMode !== 'lcos' && <EdgeStyleToolbar />}
         <ConnectedNodePicker
           anchor={connectPicker?.anchor ?? null}
           tether={
@@ -1740,6 +1743,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           <SketchOverlay rfInstance={rfInstanceRef.current} />
         )}
       </ReactFlow>
+        </CanvasChromeModeProvider>
       </NodeBodyResolverContext.Provider>
 
       {isInitialViewportPending && (

@@ -23,6 +23,21 @@ export interface ProjectedEntityFacts {
   readonly currentRevisionId?: string;
   readonly mimeType?: string;
   readonly sourceKind?: string;
+  /**
+   * 当前 revision 对应的 Core FileRecord id —— 真实字节出口（`GET /projects/:id/file-records/:fid/content`）的键。
+   * 呈现层据此把真实内容搬进画布资产区（图片缩略图等）；它只是键，不复制真值。
+   */
+  readonly fileRecordId?: string;
+  /**
+   * 真实正文预览（R2 返工，用户裁决 B：Core 投影节点 = 标题 + 真实次级行 + preview/status）。
+   * 来自 Core `GET /projects/:id/file-records/:fid/content` 的前若干字符；读不到就不带此字段
+   * （body 退回形态说明，绝不编造正文）。
+   */
+  readonly preview?: string;
+  /** 承接会话（conversation/Glyth）的真实运行事实。 */
+  readonly provider?: string;
+  readonly active?: boolean;
+  readonly waiting?: boolean;
 }
 
 /** 前端树上挂载的呈现描述。 */
@@ -61,6 +76,16 @@ const AVAILABILITY_LABEL: Readonly<Record<string, string>> = {
  */
 export function buildNodeSecondaryLine(facts: ProjectedEntityFacts): string {
   const parts: string[] = [];
+
+  // 会话/Glyth：次级行是"身份 + 运行态"，与 artifact 的 kind/revision 不是一套事实。
+  if (facts.entityType === 'conversation') {
+    if (facts.provider !== undefined && facts.provider !== '') parts.push(facts.provider);
+    if (facts.waiting === true) parts.push('等待输入');
+    else if (facts.active === true) parts.push('运行中');
+    else if (facts.active === false) parts.push('空闲');
+    return parts.length === 0 ? '会话 · 身份未确认' : parts.join(' · ');
+  }
+
   const kind = facts.artifactKind;
   if (kind !== undefined && kind !== '') parts.push(KIND_LABEL[kind] ?? kind);
   if (facts.managed === true) parts.push('受管');
@@ -113,5 +138,33 @@ export function resolveNodeSpeciesFromFacts(facts: {
 
 /** 组装描述（species 与 secondaryLine 用同一份事实，避免两处口径漂移）。 */
 export function describeProjectedEntity(facts: ProjectedEntityFacts): ProjectedNodeDescriptor {
-  return { ...facts, secondaryLine: buildNodeSecondaryLine(facts), species: resolveNodeSpeciesFromFacts(facts) };
+  return {
+    ...facts,
+    secondaryLine: buildNodeSecondaryLine(facts),
+    species: resolveNodeSpeciesFromFacts(facts),
+  };
+}
+
+/**
+ * 从 Core 文件正文派生**真实预览**（用户裁决 B 的 `preview` 位）。
+ *
+ * 只做忠实截断与轻量去噪，不改写内容语义：
+ *   - 去掉 front-matter / 代码块 / 列表符号 / 行内强调标记；
+ *   - 去掉首个 H1（通常与 artifact 标题重复，标题已经单独渲染）；
+ *   - 折叠空白后截断到 maxChars，截断处加省略号。
+ * 空正文返回空串 —— 调用方据此**不写** preview 字段（绝不编造正文）。
+ */
+export function buildContentPreview(raw: string, maxChars = 160): string {
+  const withoutFrontMatter = raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  const cleaned = withoutFrontMatter
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/^\s*#\s+.*$/m, '')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/[*_`>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (cleaned === '') return '';
+  return cleaned.length <= maxChars ? cleaned : `${cleaned.slice(0, maxChars).trimEnd()}…`;
 }

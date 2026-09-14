@@ -48,6 +48,7 @@ import {
 import { useIsNotMouse } from '@/hooks/useInputMode.ts';
 import { useMultiSelectModifierHeld } from '@/hooks/useMultiSelectModifier.ts';
 import { useNodeLOD } from '@/hooks/useNodeLOD.ts';
+import { shouldStandDownLegacyNodeToolbar, useCanvasChromeMode } from '@/lcos-seam/chromeModeSlot';
 import {
   LcosNodePresentationProvider,
   resolveInteractionPhase,
@@ -633,6 +634,11 @@ export const NodeWrapper = memo(
     // committed or cancelled (including the source node's own).
     const hasPendingConnect = useConnectPortStore((s) => s.pending !== null);
 
+    // LCOS 模式下的旧壳退役（R2）：被 LCOS Arc 覆盖的节点类型不再挂旧
+    // NodeFloatingToolbar；命令路径与内核全部保留，名单与理由见 chromeModeSlot。
+    const chromeMode = useCanvasChromeMode();
+    const standDownLegacyToolbar = shouldStandDownLegacyNodeToolbar(chromeMode, type);
+
     // Derive accent-tinted tokens once so border/shadow stay in sync with
     // the rest of the canvas (PreviewCard, SemanticPlaceholder, ...).
     // Stored value is a palette token (or legacy hex); resolve to CSS color.
@@ -670,7 +676,8 @@ export const NodeWrapper = memo(
           selectedCount === 1 &&
           !isDragging &&
           !hasStrokeSelection &&
-          !hasPendingConnect && (
+          !hasPendingConnect &&
+          !standDownLegacyToolbar && (
             <NodeFloatingToolbar
               id={id}
               type={type}

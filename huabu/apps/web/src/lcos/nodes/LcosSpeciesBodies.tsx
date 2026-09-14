@@ -61,17 +61,24 @@ function SpeciesChip({ label, accent }: { label: string; accent: string }): JSX.
   );
 }
 
-function TitleLine({ text }: { text: string }): JSX.Element {
+function TitleLine({ text, density }: { text: string; density?: 'mark' | 'summary' | 'working' | 'reading' }): JSX.Element {
+  // 近景（reading）用更大的标题：Main 首屏的"可辨身份"主要靠标题，而不是靠放大到 200%。
+  const large = density === 'reading';
   return (
-    <span className="line-clamp-2 text-sm font-semibold leading-snug" style={{ color: lcosTokens.color.text }}>
+    <span
+      className={`line-clamp-2 font-semibold leading-snug ${large ? 'text-lg' : 'text-sm'}`}
+      style={{ color: lcosTokens.color.text }}
+    >
       {text}
     </span>
   );
 }
 
 function MetaLine({ text }: { text: string }): JSX.Element {
+  // 次级行永远贴在卡片底部：卡片随之有真实的信息层级（标题在上、事实在下），
+  // 而不是一坨居中文字漂在空白里（首轮视觉否决的"构图极空"）。
   return (
-    <span className="text-[11px]" style={{ color: lcosTokens.color.muted }}>
+    <span className="mt-auto block text-[11px]" style={{ color: lcosTokens.color.muted }}>
       {text}
     </span>
   );
@@ -83,6 +90,7 @@ export function LcosSpeciesBodyContent({
   title,
   density,
   secondary,
+  preview,
 }: {
   species: LcosNodeSpecies;
   title: string;
@@ -92,9 +100,25 @@ export function LcosSpeciesBodyContent({
    * 有真实事实就显示真实事实；没有就退回该物种的**形态说明**（说清这是什么，不假装有数据）。
    */
   secondary?: string;
+  /**
+   * 真实正文预览（来自 Core FileRecord 内容，用户裁决 B 的 `preview` 位）。
+   * 读不到就不显示（不编造正文）——首屏内容密度靠真实正文，不靠放大节点。
+   */
+  preview?: string;
 }): JSX.Element {
   const root = { display: 'flex', flexDirection: 'column' as const, gap: 6, width: '100%', minWidth: 0 };
   const meta = (fallback: string): JSX.Element => <MetaLine text={secondary ?? fallback} />;
+  // 正文预览只接在**有正文语义**的物种上；当前只有 source（Core 文本/文档族落到这里）。
+  const bodyPreview = (): JSX.Element | null =>
+    density !== 'mark' && preview !== undefined && preview !== '' ? (
+      <span
+        data-lcos-node-preview
+        className="line-clamp-4 text-[11px] leading-relaxed"
+        style={{ color: lcosTokens.color.muted }}
+      >
+        {preview}
+      </span>
+    ) : null;
 
   switch (species) {
     case 'source':
@@ -103,9 +127,10 @@ export function LcosSpeciesBodyContent({
           {density !== 'mark' && <SpeciesChip label="材料" accent={SPECIES_ACCENT.source} />}
           <div className="flex items-start gap-2">
             <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: SPECIES_ACCENT.source }} aria-hidden />
-            <div className="min-w-0 flex-1">
-              <TitleLine text={title} />
-              {density === 'reading' && meta('来源文件 · 只读原始')}
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <TitleLine text={title} density={density} />
+              {bodyPreview()}
+              {density !== 'mark' && meta('来源文件 · 只读原始')}
             </div>
           </div>
         </div>
@@ -118,8 +143,8 @@ export function LcosSpeciesBodyContent({
           <div className="flex items-start gap-2">
             <span aria-hidden className="mt-1 h-3 w-1 shrink-0 rounded-full" style={{ background: SPECIES_ACCENT.working }} />
             <div className="min-w-0 flex-1">
-              <TitleLine text={title} />
-              {density === 'reading' && meta('当前加工 · 活跃')}
+              <TitleLine text={title} density={density} />
+              {density !== 'mark' && meta('当前加工 · 活跃')}
             </div>
           </div>
         </div>
@@ -132,8 +157,8 @@ export function LcosSpeciesBodyContent({
             <SpeciesChip label="Draft" accent={SPECIES_ACCENT.draft} />
             <Sparkles className="h-3 w-3" style={{ color: SPECIES_ACCENT.draft }} aria-hidden />
           </div>
-          <TitleLine text={title} />
-          {density === 'reading' && meta('AI 产出 · 待 Review，尚未成为 Current')}
+          <TitleLine text={title} density={density} />
+          {density !== 'mark' && meta('AI 产出 · 待 Review，尚未成为 Current')}
         </div>
       );
 
@@ -144,8 +169,8 @@ export function LcosSpeciesBodyContent({
             <Bookmark className="h-3.5 w-3.5" style={{ color: SPECIES_ACCENT['context-reference'] }} aria-hidden />
             <SpeciesChip label="引用" accent={SPECIES_ACCENT['context-reference']} />
           </div>
-          <TitleLine text={title} />
-          {density === 'reading' && meta('来源锚点 · 可定位')}
+          <TitleLine text={title} density={density} />
+          {density !== 'mark' && meta('来源锚点 · 可定位')}
         </div>
       );
 
@@ -158,8 +183,8 @@ export function LcosSpeciesBodyContent({
               <SpeciesChip label="运行" accent={SPECIES_ACCENT.run} />
             </div>
           )}
-          <TitleLine text={title} />
-          {density === 'reading' && meta('执行状态 · 以真实回执为准')}
+          <TitleLine text={title} density={density} />
+          {density !== 'mark' && meta('执行状态 · 以真实回执为准')}
         </div>
       );
 
@@ -170,8 +195,8 @@ export function LcosSpeciesBodyContent({
             <ShieldCheck className="h-3.5 w-3.5" style={{ color: SPECIES_ACCENT.decision }} aria-hidden />
             <SpeciesChip label="决策" accent={SPECIES_ACCENT.decision} />
           </div>
-          <TitleLine text={title} />
-          {density === 'reading' && meta('版本标记 · 可恢复')}
+          <TitleLine text={title} density={density} />
+          {density !== 'mark' && meta('版本标记 · 可恢复')}
         </div>
       );
 
@@ -187,8 +212,8 @@ export function LcosSpeciesBodyContent({
               {(title.charAt(0) || '?').toUpperCase()}
             </span>
             <div className="min-w-0 flex-1">
-              <TitleLine text={title} />
-              {density === 'reading' && meta('会话 · 双击打开工作台')}
+              <TitleLine text={title} density={density} />
+              {density !== 'mark' && meta('会话 · 双击打开工作台')}
             </div>
           </div>
         </div>
@@ -201,8 +226,8 @@ export function LcosSpeciesBodyContent({
             <Folder className="h-4 w-4" style={{ color: SPECIES_ACCENT.collection }} aria-hidden />
             <SpeciesChip label="集合" accent={SPECIES_ACCENT.collection} />
           </div>
-          <TitleLine text={title} />
-          {density === 'reading' && meta('按事情/时间组织 · 可展开')}
+          <TitleLine text={title} density={density} />
+          {density !== 'mark' && meta('按事情/时间组织 · 可展开')}
         </div>
       );
 
@@ -213,7 +238,7 @@ export function LcosSpeciesBodyContent({
             <Grip className="h-4 w-4" style={{ color: SPECIES_ACCENT['workflow-collection'] }} aria-hidden />
             <SpeciesChip label="工作流" accent={SPECIES_ACCENT['workflow-collection']} />
           </div>
-          <TitleLine text={title} />
+          <TitleLine text={title} density={density} />
         </div>
       );
 
@@ -224,8 +249,8 @@ export function LcosSpeciesBodyContent({
             <Router className="h-4 w-4" style={{ color: SPECIES_ACCENT.portal }} aria-hidden />
             <SpeciesChip label="入口" accent={SPECIES_ACCENT.portal} />
           </div>
-          <TitleLine text={title} />
-          {density === 'reading' && meta('投影锚点 · 进入现场')}
+          <TitleLine text={title} density={density} />
+          {density !== 'mark' && meta('投影锚点 · 进入现场')}
         </div>
       );
 
@@ -236,7 +261,7 @@ export function LcosSpeciesBodyContent({
             <Puzzle className="h-4 w-4" style={{ color: SPECIES_ACCENT['prompt-frame'] }} aria-hidden />
             <SpeciesChip label="提示" accent={SPECIES_ACCENT['prompt-frame']} />
           </div>
-          <TitleLine text={title} />
+          <TitleLine text={title} density={density} />
         </div>
       );
 
@@ -248,7 +273,7 @@ export function LcosSpeciesBodyContent({
             <CircleDot className="h-4 w-4" style={{ color: SPECIES_ACCENT.unknown }} aria-hidden />
             <SpeciesChip label="未分类" accent={SPECIES_ACCENT.unknown} />
           </div>
-          <TitleLine text={title} />
+          <TitleLine text={title} density={density} />
           <MetaLine text="缺少可辨识的 Core 元数据 · 需要诊断" />
         </div>
       );
@@ -265,8 +290,10 @@ function LcosSpeciesBody({
 }): JSX.Element {
   const density = useLcosDensity();
   const title = titleOf(input.data as Readonly<Record<string, unknown>> | undefined);
-  // R2 真实内容位：次级行来自 host 在 reconcile 后派生的 Core 元数据（kind/受管/可用性/revision）。
+  // R2 真实内容位：次级行与正文预览都来自 host 在 reconcile 后派生的 Core 事实
+  // （kind/受管/可用性/revision + FileRecord 正文），读不到就不显示，不编造。
   const secondary = useLcosReferenceStore((s) => s.nodeEntityRefs.get(input.nodeId)?.descriptor?.secondaryLine);
+  const preview = useLcosReferenceStore((s) => s.nodeEntityRefs.get(input.nodeId)?.descriptor?.preview);
   return (
     <div
       data-lcos-species-body
@@ -280,7 +307,13 @@ function LcosSpeciesBody({
         padding: 10,
       }}
     >
-      <LcosSpeciesBodyContent species={species} title={title} density={density} secondary={secondary} />
+      <LcosSpeciesBodyContent
+        species={species}
+        title={title}
+        density={density}
+        secondary={secondary}
+        preview={preview}
+      />
     </div>
   );
 }

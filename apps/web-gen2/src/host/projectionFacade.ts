@@ -27,11 +27,16 @@ import { ProjectionBindingRegistry, type EntityType, type ProjectionBinding } fr
 import { ProjectToSpaceProjection, type ArtifactProjectionSource } from '../spatial/projectToSpaceProjection.js';
 import { RelationProjection, type CoreEntityRef, type CoreRelationWriter, type RelationKind } from '../spatial/relationProjection.js';
 import { ReconciliationRunner } from '../spatial/reconciliationRunner.js';
-import { describeProjectedEntity } from '../presentation/projectedNodeDescriptor.js';
+import { describeProjectedEntity, buildContentPreview } from '../presentation/projectedNodeDescriptor.js';
 import { HostLifecycleReconciler, type ReconcileTrigger } from './lifecycleReconciler.js';
 import { connectSemantic, type SemanticConnectResult } from './hostConnectIntent.js';
 
 import type { ProjectedEntityFacts, ProjectedNodeDescriptor } from '../presentation/projectedNodeDescriptor.js';
+
+/** 会取正文预览的 Core ArtifactKind（二进制/版式族不取，避免把乱码当正文）。 */
+const TEXT_PREVIEW_KINDS: ReadonlySet<string> = new Set(['markdown', 'text']);
+/** 预览只读有界文件：超过该体积不取正文（避免把大文件拉进前端）。 */
+const MAX_PREVIEW_BYTES = 256 * 1024;
 
 export interface Gen2HostDeps {
   /** HttpClient pointed at Local Core (Domain Truth). */
@@ -62,6 +67,8 @@ export class Gen2Host {
   readonly reconciler: HostLifecycleReconciler;
 
   private readonly canvasId: string;
+  /** fileRecordId → 已派生的正文预览（同一 revision 内容不变，避免每次同步都重复拉取）。 */
+  private readonly previewCache = new Map<string, string>();
 
   constructor(private readonly deps: Gen2HostDeps) {
     this.projectId = deps.projectId;
@@ -105,6 +112,7 @@ export class Gen2Host {
       canvasId: this.canvasId,
       projects: this.projects,
       relations: this.relations,
+      conversations: this.conversations,
       nodeProjector: this.nodeProjector,
       relationProjector: this.relationProjector,
       bindings: this.bindings,
@@ -195,7 +203,7 @@ export class Gen2Host {
     }[]
   > {
     const all = await this.bindings.list();
-    const facts = await this.readArtifactFacts();
+    const facts = await this.readEntityFacts();
     const out: {
       spatialId: string;
       entityType: CoreEntityRef['entityType'];
@@ -222,28 +230,106 @@ export class Gen2Host {
   }
 
   /** Core 图快照 → 呈现事实表（只读；失败不阻断打开，但会明确告警而非静默）。 */
-  private async readArtifactFacts(): Promise<ReadonlyMap<string, ProjectedEntityFacts>> {
+  private async readEntityFacts(): Promise<ReadonlyMap<string, ProjectedEntityFacts>> {
     const map = new Map<string, ProjectedEntityFacts>();
+    let graph: Awaited<ReturnType<CoreProjectClient['getProjectGraph']>>;
     try {
-      const graph = await this.projects.getProjectGraph(this.projectId);
-      for (const artifact of graph?.artifacts ?? []) {
-        const facts: ProjectedEntityFacts = {
-          entityType: 'artifact',
-          entityId: String(artifact.id),
-          title: String(artifact.title ?? artifact.id),
-          artifactKind: String(artifact.kind),
-          ...(artifact.managed === undefined ? {} : { managed: artifact.managed }),
-          ...(artifact.availability === undefined ? {} : { availability: String(artifact.availability) }),
-          ...(artifact.currentRevisionId === undefined
-            ? {}
-            : { currentRevisionId: String(artifact.currentRevisionId) }),
-        };
-        map.set(`artifact:${facts.entityId}`, facts);
-      }
+      graph = await this.projects.getProjectGraph(this.projectId);
     } catch (error) {
       console.warn('[lcos] 读取 Core 图快照失败，节点将退回无描述的诚实降级', error);
+      return map;
     }
+
+    // artifact → 当前 revision 的 FileRecord（正文/字节出口的键）+ FileRecord 本身（mime/size）。
+    const fileRecordIdByArtifact = new Map<string, string>();
+    for (const revision of graph?.artifactRevisions ?? []) {
+      const artifactId = String(revision.artifactId ?? '');
+      const fileRecordId = String(revision.fileRecordId ?? '');
+      if (artifactId !== '' && fileRecordId !== '' && !fileRecordIdByArtifact.has(artifactId)) {
+        fileRecordIdByArtifact.set(artifactId, fileRecordId);
+      }
+    }
+    const fileRecordById = new Map<string, { mimeType: string; size: number }>();
+    for (const record of graph?.fileRecords ?? []) {
+      fileRecordById.set(String(record.id), {
+        mimeType: String(record.mimeType ?? ''),
+        size: Number(record.size ?? 0),
+      });
+    }
+
+    for (const artifact of graph?.artifacts ?? []) {
+      const entityId = String(artifact.id);
+      const fileRecordId = fileRecordIdByArtifact.get(entityId);
+      const preview = await this.readPreview(
+        String(artifact.kind),
+        fileRecordId,
+        fileRecordById,
+      );
+      const facts: ProjectedEntityFacts = {
+        entityType: 'artifact',
+        entityId,
+        title: String(artifact.title ?? artifact.id),
+        artifactKind: String(artifact.kind),
+        ...(artifact.managed === undefined ? {} : { managed: artifact.managed }),
+        ...(artifact.availability === undefined ? {} : { availability: String(artifact.availability) }),
+        ...(artifact.currentRevisionId === undefined
+          ? {}
+          : { currentRevisionId: String(artifact.currentRevisionId) }),
+        ...(fileRecordId === undefined ? {} : { fileRecordId }),
+        ...(fileRecordById.get(fileRecordId ?? '') === undefined
+          ? {}
+          : { mimeType: fileRecordById.get(fileRecordId ?? '')?.mimeType }),
+        ...(preview === undefined ? {} : { preview }),
+      };
+      map.set(`artifact:${facts.entityId}`, facts);
+    }
+
+    // 承接会话 → Glyth 的真实身份/运行态（读不到就退回 entityType 降级，不编造）。
+    try {
+      for (const conversation of await this.conversations.listConnectedConversations(this.projectId)) {
+        const entityId = String(conversation.id);
+        map.set(`conversation:${entityId}`, {
+          entityType: 'conversation',
+          entityId,
+          title: String(conversation.label ?? entityId),
+          provider: String(conversation.provider ?? ''),
+          active: conversation.isRunning === true,
+          waiting: conversation.waitingReason !== null && conversation.waitingReason !== undefined,
+        });
+      }
+    } catch (error) {
+      console.warn('[lcos] 读取承接会话失败，Glyth 将退回无描述的诚实降级', error);
+    }
+
     return map;
+  }
+
+  /**
+   * 文本族 artifact 的**真实正文预览**（用户裁决 B 的 preview 位）。
+   * 只对文本类 kind 且体积有界的文件取；按 fileRecordId 缓存（同一 revision 内容不变）。
+   * 取不到就返回 undefined —— 调用方不写 preview 字段，body 退回形态说明。
+   */
+  private async readPreview(
+    kind: string,
+    fileRecordId: string | undefined,
+    fileRecordById: ReadonlyMap<string, { mimeType: string; size: number }>,
+  ): Promise<string | undefined> {
+    if (fileRecordId === undefined) return undefined;
+    if (!TEXT_PREVIEW_KINDS.has(kind)) return undefined;
+    const cached = this.previewCache.get(fileRecordId);
+    if (cached !== undefined) return cached === '' ? undefined : cached;
+    const record = fileRecordById.get(fileRecordId);
+    if (record !== undefined && record.size > MAX_PREVIEW_BYTES) return undefined;
+    try {
+      const preview = buildContentPreview(
+        await this.artifacts.getFileRecordText(this.projectId, fileRecordId),
+      );
+      this.previewCache.set(fileRecordId, preview);
+      return preview === '' ? undefined : preview;
+    } catch (error) {
+      console.warn(`[lcos] 读取文件正文预览失败（${fileRecordId}），节点退回形态说明`, error);
+      return undefined;
+    }
   }
 
   /** Run reconciliation on demand (startup / after a mutation / on reconnect). */

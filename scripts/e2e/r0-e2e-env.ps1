@@ -64,7 +64,10 @@ switch ($Action) {
     } else {
       New-Item -ItemType Directory -Force -Path (Join-Path $DataRoot 'core'), $CoreWs, $HuabuData, $LogDir | Out-Null
       Write-Host "== start isolated Local Core (:$CORE_PORT) ==" -ForegroundColor Cyan
-      $coreCmd = "`$env:LOCAL_CORE_DB_PATH='$CoreDb'; `$env:LOCAL_CORE_DEV_WORKSPACE_ROOT='$CoreWs'; `$env:LOCAL_CORE_TEST_PORT='$CORE_PORT'; `$env:LOCAL_CORE_API_TOKEN='$TOKEN'; `$env:LOCAL_CORE_ALLOWED_ORIGINS='http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT'; npm run dev:local-core"
+      # LOCAL_CORE_E2E_FIXTURE=1 enables the richer visible-acceptance fixture in ensureRealDevProject
+      # (real PNG reference, e2e-labelled decision markdown, extra relations, displayMode-grouped views,
+      # one connected conversation). Unset => same 3-markdown fixture as normal dev.
+      $coreCmd = "`$env:LOCAL_CORE_E2E_FIXTURE='1'; `$env:LOCAL_CORE_DB_PATH='$CoreDb'; `$env:LOCAL_CORE_DEV_WORKSPACE_ROOT='$CoreWs'; `$env:LOCAL_CORE_TEST_PORT='$CORE_PORT'; `$env:LOCAL_CORE_API_TOKEN='$TOKEN'; `$env:LOCAL_CORE_ALLOWED_ORIGINS='http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT'; npm run dev:local-core"
       Start-Process powershell -WorkingDirectory $RepoRoot -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $LogDir 'core.out.log') `
         -RedirectStandardError (Join-Path $LogDir 'core.err.log') `
