@@ -106,14 +106,23 @@ export function LcosSpeciesBodyContent({
    */
   preview?: string;
 }): JSX.Element {
-  const root = { display: 'flex', flexDirection: 'column' as const, gap: 6, width: '100%', minWidth: 0 };
+  // `flex: 1` 让内容列撑满 body 高度，次级行才能真正贴底（见上面 source 分支的注释）。
+  const root = {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+    width: '100%',
+    minWidth: 0,
+    flex: 1,
+    minHeight: 0,
+  };
   const meta = (fallback: string): JSX.Element => <MetaLine text={secondary ?? fallback} />;
   // 正文预览只接在**有正文语义**的物种上；当前只有 source（Core 文本/文档族落到这里）。
   const bodyPreview = (): JSX.Element | null =>
     density !== 'mark' && preview !== undefined && preview !== '' ? (
       <span
         data-lcos-node-preview
-        className="line-clamp-4 text-[11px] leading-relaxed"
+        className="line-clamp-5 text-[11px] leading-relaxed"
         style={{ color: lcosTokens.color.muted }}
       >
         {preview}
@@ -125,7 +134,9 @@ export function LcosSpeciesBodyContent({
       return (
         <div style={root} data-lcos-species="source">
           {density !== 'mark' && <SpeciesChip label="材料" accent={SPECIES_ACCENT.source} />}
-          <div className="flex items-start gap-2">
+          {/* 行必须撑满卡片高度（h-full + items-stretch），次级行的 `mt-auto` 才真的贴到卡片底部 ——
+              否则标题与事实挤在卡片上沿、下半张留白（首轮"构图极空"在单卡上的表现）。 */}
+          <div className="flex h-full items-stretch gap-2">
             <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: SPECIES_ACCENT.source }} aria-hidden />
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <TitleLine text={title} density={density} />
@@ -203,7 +214,7 @@ export function LcosSpeciesBodyContent({
     case 'glyth':
       return (
         <div style={root} data-lcos-species="glyth">
-          <div className="flex items-center gap-2">
+          <div className="flex h-full items-stretch gap-2">
             <span
               aria-hidden
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
@@ -211,7 +222,7 @@ export function LcosSpeciesBodyContent({
             >
               {(title.charAt(0) || '?').toUpperCase()}
             </span>
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <TitleLine text={title} density={density} />
               {density !== 'mark' && meta('会话 · 双击打开工作台')}
             </div>
