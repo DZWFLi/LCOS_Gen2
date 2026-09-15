@@ -191,8 +191,25 @@ export type { ComposerViewStateV1, ComposerSubmitOutcomeV1, ComposerViewInputV1 
 export { ComposerController } from './composer/composerController.js';
 export type { ComposerControllerStateV1, ComposerReferenceLikeV1 } from './composer/composerController.js';
 
-export { professionalRegionRefV1, rectsOverlapV1, placeProfessionalRegionV1 } from './windows/professionalWindowLayout.js';
-export type { ProfessionalBodyKeyV1, ProfessionalRectV1, ProfessionalRegionRefV1, ProfessionalWindowEnvironmentV1 } from './windows/professionalWindowLayout.js';
+export {
+  professionalRegionRefV1,
+  rectsOverlapV1,
+  placeProfessionalRegionV1,
+  deriveProfessionalWindowEnvironmentV1,
+  safeInsetsFromRectV1,
+  clampProfessionalRectV1,
+  resizeProfessionalRectV1,
+} from './windows/professionalWindowLayout.js';
+export type {
+  ProfessionalBodyKeyV1,
+  ProfessionalRectV1,
+  ProfessionalRegionRefV1,
+  ProfessionalWindowEnvironmentV1,
+  ProfessionalRegionLayoutV1,
+  ProfessionalRegionPlacementV1,
+  ProfessionalEdgeInsetsV1,
+  ProfessionalResizeHandleV1,
+} from './windows/professionalWindowLayout.js';
 
 export { createEmptyConversationWorkViewV1 } from './lcos/conversation/conversationWorkViewModel.js';
 export type { ConversationWorkViewSectionKindV1, ConversationWorkViewSectionStatusV1, ConversationWorkViewSectionStateV1, ConversationWorkViewStateV1 } from './lcos/conversation/conversationWorkViewModel.js';

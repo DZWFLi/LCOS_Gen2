@@ -4,6 +4,7 @@
 import { create } from 'zustand';
 
 import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
+import type { ProfessionalWindowEnvironmentV1 } from '@local-creative-os/web-gen2';
 
 export type LcosSurfaceKey = 'main' | 'context' | 'workflow';
 
@@ -89,6 +90,20 @@ export interface LcosWindow {
   readonly active: boolean;
 }
 
+/**
+ * Window topology intent is separate from the window instances themselves.
+ * A region owns grouping/layout; an instance owns body identity and target.
+ * Geometry is published by ProfessionalWindowStage, never inferred here.
+ */
+export type LcosWindowRegionLayout = 'floating' | 'docked-right';
+
+export interface LcosWindowRegion {
+  readonly id: string;
+  readonly layout: LcosWindowRegionLayout;
+  readonly windowIds: readonly string[];
+  readonly activeWindowId: string;
+}
+
 export interface LcosShellUiState {
   projectId: string | null;
   activeSurface: LcosSurfaceKey;
@@ -104,6 +119,10 @@ export interface LcosShellUiState {
   composerPrompt: string;
   /** route-level Professional 窗口（只放窗口拓扑 intent；body 数据仍在 Core）。 */
   windows: readonly LcosWindow[];
+  /** Window instances → regions 的拓扑关系；不会把所有 instance 自动变成一个 tab 组。 */
+  windowRegions: readonly LcosWindowRegion[];
+  /** 由 ProfessionalWindowStage 唯一发布的临时占位环境。 */
+  windowEnvironment: ProfessionalWindowEnvironmentV1 | null;
   /** Child worksite 的来源现场；刷新后允许丢失，返回按钮仍有安全 fallback。 */
   childReturn: LcosChildReturn | null;
   setProject(projectId: string): void;
@@ -132,11 +151,14 @@ export interface LcosShellUiState {
   openAssembly(targetRef: AssemblyTargetRefV1, title?: string): void;
   closeWindow(id: string): void;
   activateWindow(id: string): void;
+  setWindowRegionLayout(regionId: string, layout: LcosWindowRegionLayout): void;
+  publishWindowEnvironment(environment: ProfessionalWindowEnvironmentV1): void;
+  clearWindowEnvironment(): void;
   clear(): void;
 }
 
 type ProjectUiSession = Pick<LcosShellUiState,
-  'windows' | 'composerPrompt' | 'composerTarget' | 'composerOpen' | 'activeSurface'>;
+  'windows' | 'windowRegions' | 'composerPrompt' | 'composerTarget' | 'composerOpen' | 'activeSurface'>;
 
 // Same-tab project switching only. This is UI continuity, not reload persistence.
 const projectUiSessions = new Map<string, ProjectUiSession>();
@@ -152,12 +174,15 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
   composerTarget: null,
   composerPrompt: '',
   windows: [],
+  windowRegions: [],
+  windowEnvironment: null,
   childReturn: null,
   setProject: (projectId) => set((state) => {
     if (state.projectId === projectId) return state;
     if (state.projectId !== null) {
       projectUiSessions.set(state.projectId, {
         windows: state.windows,
+        windowRegions: state.windowRegions,
         composerPrompt: state.composerPrompt,
         composerTarget: state.composerTarget,
         composerOpen: state.composerOpen,
@@ -168,6 +193,8 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
     return {
       projectId,
       windows: restored?.windows ?? [],
+      windowRegions: restored?.windowRegions ?? [],
+      windowEnvironment: null,
       composerPrompt: restored?.composerPrompt ?? '',
       composerTarget: restored?.composerTarget ?? null,
       composerOpen: restored?.composerOpen ?? false,
@@ -223,6 +250,11 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
             ...w,
             active: w.id === existing.id,
           })),
+          windowRegions: s.windowRegions.map((region) =>
+            region.windowIds.includes(existing.id)
+              ? { ...region, activeWindowId: existing.id }
+              : region,
+          ),
         };
       }
       const id = `${bodyKey}-${crypto.randomUUID()}`;
@@ -230,6 +262,10 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
         windows: [
           ...s.windows.map((w) => ({ ...w, active: false })),
           { id, bodyKey, title, target, ...(targetKind ? { targetKind } : {}), active: true },
+        ],
+        windowRegions: [
+          ...s.windowRegions.map((region) => ({ ...region, activeWindowId: region.activeWindowId })),
+          { id: `region-${id}`, layout: 'floating', windowIds: [id], activeWindowId: id },
         ],
       };
     }),
@@ -251,6 +287,11 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
             ...window,
             active: window.id === existing.id,
           })),
+          windowRegions: s.windowRegions.map((region) =>
+            region.windowIds.includes(existing.id)
+              ? { ...region, activeWindowId: existing.id }
+              : region,
+          ),
         };
       }
       const id = `assembly-${crypto.randomUUID()}`;
@@ -265,12 +306,27 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
             active: true,
           },
         ],
+        windowRegions: [
+          ...s.windowRegions.map((region) => ({ ...region, activeWindowId: region.activeWindowId })),
+          { id: `region-${id}`, layout: 'floating', windowIds: [id], activeWindowId: id },
+        ],
       };
     }),
   closeWindow: (id) =>
     set((s) => {
       const remaining = s.windows.filter((w) => w.id !== id);
-      if (remaining.length === 0) return { windows: [] };
+      const windowRegions = s.windowRegions
+        .map((region) => {
+          if (!region.windowIds.includes(id)) return region;
+          const windowIds = region.windowIds.filter((windowId) => windowId !== id);
+          if (windowIds.length === 0) return undefined;
+          const activeWindowId = region.activeWindowId === id
+            ? windowIds[windowIds.length - 1]
+            : region.activeWindowId;
+          return { ...region, windowIds, activeWindowId };
+        })
+        .filter((region): region is LcosWindowRegion => region !== undefined);
+      if (remaining.length === 0) return { windows: [], windowRegions };
       const anyActive = remaining.some((w) => w.active);
       return {
         windows: anyActive
@@ -278,12 +334,24 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
           : remaining.map((w, i) =>
               i === remaining.length - 1 ? { ...w, active: true } : w,
             ),
+        windowRegions,
       };
     }),
   activateWindow: (id) =>
     set((s) => ({
       windows: s.windows.map((w) => ({ ...w, active: w.id === id })),
+      windowRegions: s.windowRegions.map((region) =>
+        region.windowIds.includes(id) ? { ...region, activeWindowId: id } : region,
+      ),
     })),
+  setWindowRegionLayout: (regionId, layout) =>
+    set((s) => ({
+      windowRegions: s.windowRegions.map((region) =>
+        region.id === regionId ? { ...region, layout } : region,
+      ),
+    })),
+  publishWindowEnvironment: (windowEnvironment) => set({ windowEnvironment }),
+  clearWindowEnvironment: () => set({ windowEnvironment: null }),
   clear: () => {
     projectUiSessions.clear();
     set({
@@ -297,6 +365,8 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
       composerTarget: null,
       composerPrompt: '',
       windows: [],
+      windowRegions: [],
+      windowEnvironment: null,
       childReturn: null,
     });
   },
