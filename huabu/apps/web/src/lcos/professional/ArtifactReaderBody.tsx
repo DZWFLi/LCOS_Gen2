@@ -3,7 +3,7 @@
 // （text/markdown 直接读 revision 正文；其它 kind 显示元数据 + 外部打开提示）。
 
 import { CoreArtifactClient, HttpError } from '@local-creative-os/web-gen2';
-import { ExternalLink, FileText } from 'lucide-react';
+import { FileImage, FileText } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 
@@ -16,11 +16,13 @@ export interface ArtifactReaderBodyProps {
   readonly artifactId?: string;
 }
 
-export function ArtifactReaderBody({ artifactId }: ArtifactReaderBodyProps): React.JSX.Element {
+export function ArtifactReaderBody({ projectId, artifactId }: ArtifactReaderBodyProps): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const artifacts = useMemo(() => new CoreArtifactClient(session.http), [session]);
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'empty'>('loading');
   const [detail, setDetail] = useState<Awaited<ReturnType<CoreArtifactClient['getArtifactDetail']>> | null>(null);
+  const [loadedRevisionId, setLoadedRevisionId] = useState<string | undefined>(undefined);
+  const [content, setContent] = useState<{ kind: 'text'; value: string } | { kind: 'image'; url: string; mimeType: string } | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -28,18 +30,66 @@ export function ArtifactReaderBody({ artifactId }: ArtifactReaderBodyProps): Rea
       setState('empty');
       return;
     }
+    const controller = new AbortController();
+    let cancelled = false;
     setState('loading');
-    void artifacts
-      .getArtifactDetail(artifactId)
-      .then((value) => {
+    setDetail(null);
+    setLoadedRevisionId(undefined);
+    setContent(null);
+    setErrorDetail(undefined);
+    void (async (): Promise<void> => {
+      try {
+        const value = await artifacts.getArtifactDetail(artifactId);
+        if (cancelled || controller.signal.aborted) return;
+        if (String(value.artifact.projectId) !== String(projectId)) {
+          throw new Error('材料不属于当前项目。');
+        }
         setDetail(value);
+        const revisionId = value.currentRevisionId ?? value.revisions[0]?.id;
+        if (revisionId === undefined) {
+          setState('ready');
+          return;
+        }
+        // The detail route intentionally returns only revision metadata. Read the
+        // canonical revision to obtain its FileRecord identity before reading bytes.
+        const revisions = await artifacts.listArtifactRevisions(artifactId);
+        if (cancelled || controller.signal.aborted) return;
+        const revision = revisions.find((candidate) => String(candidate.id) === String(revisionId));
+        if (revision === undefined || String(revision.artifactId) !== String(artifactId)) {
+          setState('ready');
+          return;
+        }
+        if (value.artifact.kind === 'markdown') {
+          const text = await artifacts.getFileRecordText(String(value.artifact.projectId), String(revision.fileRecordId), controller.signal);
+          if (cancelled || controller.signal.aborted) return;
+          setContent({ kind: 'text', value: text });
+        } else if (value.artifact.kind === 'image') {
+          const blob = await artifacts.getFileRecordContent(String(value.artifact.projectId), String(revision.fileRecordId), controller.signal);
+          if (cancelled || controller.signal.aborted) return;
+          const url = URL.createObjectURL(blob);
+          if (cancelled || controller.signal.aborted) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          setContent({ kind: 'image', url, mimeType: blob.type || 'image/*' });
+        }
+        setLoadedRevisionId(String(revision.id));
         setState('ready');
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
+        if (controller.signal.aborted) return;
         setState('error');
         setErrorDetail(error instanceof HttpError ? `${error.message} (${error.status})` : String(error));
-      });
-  }, [artifactId, artifacts]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [artifactId, artifacts, projectId]);
+
+  useEffect(() => () => {
+    if (content?.kind === 'image') URL.revokeObjectURL(content.url);
+  }, [content]);
 
   if (state === 'empty') {
     return <ReaderMessage text="选择一项材料开始阅读（从 Assembly 或节点打开）" />;
@@ -52,7 +102,7 @@ export function ArtifactReaderBody({ artifactId }: ArtifactReaderBodyProps): Rea
   }
   if (!detail) return <ReaderMessage text="没有可读内容" />;
 
-  const revision = detail.revisions[0];
+  const revision = detail.revisions.find((candidate) => String(candidate.id) === loadedRevisionId) ?? detail.revisions[0];
   const kind = detail.artifact.kind;
   const fileName = detail.artifact.title;
 
@@ -73,15 +123,7 @@ export function ArtifactReaderBody({ artifactId }: ArtifactReaderBodyProps): Rea
       </div>
 
       {/* 正文预览：由真实 Revision 读取通道承载（当前 route 提供元数据；正文走节点/文件预览，Wave 9 深化） */}
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl p-6" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
-        <FileText className="h-6 w-6" style={{ color: lcosTokens.color.muted }} aria-hidden />
-        <span className="text-sm" style={{ color: lcosTokens.color.muted }}>
-          {fileName ?? '材料'} · {String(kind)} 预览请打开节点/使用系统工具（正文预览尚未接入）
-        </span>
-        <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: lcosTokens.color.info }}>
-          <ExternalLink className="h-3.5 w-3.5" aria-hidden /> 用系统/外部工具打开
-        </span>
-      </div>
+      <ReaderContent content={content} kind={kind} fileName={fileName} />
 
       {detail.revisions.length > 1 && (
         <div className="flex flex-wrap gap-1">
@@ -92,6 +134,38 @@ export function ArtifactReaderBody({ artifactId }: ArtifactReaderBodyProps): Rea
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ReaderContent({
+  content,
+  kind,
+  fileName,
+}: {
+  content: { kind: 'text'; value: string } | { kind: 'image'; url: string; mimeType: string } | null;
+  kind: string;
+  fileName: string;
+}): React.JSX.Element {
+  if (content?.kind === 'text') {
+    return (
+      <div data-lcos-reader-content="text" className="min-h-0 flex-1 overflow-auto rounded-xl p-5" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
+        <pre className="whitespace-pre-wrap break-words text-sm leading-6" style={{ color: lcosTokens.color.text }}>{content.value}</pre>
+      </div>
+    );
+  }
+  if (content?.kind === 'image') {
+    return (
+      <div data-lcos-reader-content="image" className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-xl p-4" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
+        <img src={content.url} alt={fileName} className="max-h-full max-w-full object-contain" />
+        <span className="sr-only">{content.mimeType}</span>
+      </div>
+    );
+  }
+  return (
+    <div data-lcos-reader-content="unavailable" className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl p-6" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
+      {kind === 'image' ? <FileImage className="h-6 w-6" style={{ color: lcosTokens.color.muted }} aria-hidden /> : <FileText className="h-6 w-6" style={{ color: lcosTokens.color.muted }} aria-hidden />}
+      <span className="text-sm" style={{ color: lcosTokens.color.muted }}>{fileName ?? '材料'} · {String(kind)} 暂无可用正文读取通道</span>
     </div>
   );
 }

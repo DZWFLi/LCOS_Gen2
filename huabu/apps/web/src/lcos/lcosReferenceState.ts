@@ -33,13 +33,18 @@ import type { ProjectedNodeDescriptor } from '@local-creative-os/web-gen2';
  */
 export interface LcosNodeEntityRef extends CoreEntityRefLike {
   readonly descriptor?: ProjectedNodeDescriptor;
+  /** Ephemeral display label for references selected outside a projected node. */
+  readonly displayLabel?: string;
 }
 
 export interface LcosReferenceState {
+  projectId: string | null;
+  /** Restore only this project's explicit draft; node bindings are re-read. */
+  setProject(projectId: string): void;
   /** nodeId → Core entity ref, populated at projection time. */
   nodeEntityRefs: ReadonlyMap<string, LcosNodeEntityRef>;
   /** Ordered explicit references of the active composer draft. */
-  draft: ReferenceControllerState<CoreEntityRefLike>;
+  draft: ReferenceControllerState<LcosNodeEntityRef>;
 
   registerNodeEntity(nodeId: string, ref: LcosNodeEntityRef): void;
   /** Clear the whole binding-derived node->ref cache (re-sync after reconcile). */
@@ -48,7 +53,7 @@ export interface LcosReferenceState {
   /** Toggle one node's entity in the ordered draft references. */
   toggleNodeReference(nodeId: string): boolean;
   /**（Wave 5）直接把实体加入草稿（Assembly/卡面条目；Selection≠Reference）。 */
-  addEntityToDraft(ref: CoreEntityRefLike): void;
+  addEntityToDraft(ref: LcosNodeEntityRef): void;
   /** Ordered read for the Reference Strip. */
   orderedNodeReferences(): readonly CoreEntityRefLike[];
   /** Is this node's entity currently referenced? (badge rendering) */
@@ -56,9 +61,21 @@ export interface LcosReferenceState {
   reset(): void;
 }
 
+const projectDrafts = new Map<string, ReferenceControllerState<LcosNodeEntityRef>>();
+
 export const useLcosReferenceStore = create<LcosReferenceState>((set, get) => ({
+  projectId: null,
+  setProject: (projectId) => set((state) => {
+    if (state.projectId === projectId) return state;
+    if (state.projectId !== null) projectDrafts.set(state.projectId, state.draft);
+    return {
+      projectId,
+      nodeEntityRefs: new Map(),
+      draft: projectDrafts.get(projectId) ?? createReferenceControllerState<LcosNodeEntityRef>('canvas-draft'),
+    };
+  }),
   nodeEntityRefs: new Map(),
-  draft: createReferenceControllerState<CoreEntityRefLike>('canvas-draft'),
+  draft: createReferenceControllerState<LcosNodeEntityRef>('canvas-draft'),
 
   resetNodeEntities: () =>
     set({ nodeEntityRefs: new Map() }),
@@ -87,7 +104,8 @@ export const useLcosReferenceStore = create<LcosReferenceState>((set, get) => ({
   },
 
   addEntityToDraft: (ref) => {
-    set((state) => ({ draft: toggleReference(state.draft, ref) }));
+    set((state) => state.draft.orderedEntityRefs.some((item) => sameEntityRef(item, ref))
+      ? state : { draft: toggleReference(state.draft, ref) });
   },
 
   orderedNodeReferences: () => orderedReferences(get().draft),
@@ -98,11 +116,14 @@ export const useLcosReferenceStore = create<LcosReferenceState>((set, get) => ({
     return get().draft.orderedEntityRefs.some((x) => sameEntityRef(x, ref));
   },
 
-  reset: () =>
+  reset: () => {
+    projectDrafts.clear();
     set({
+      projectId: null,
       nodeEntityRefs: new Map(),
-      draft: createReferenceControllerState<CoreEntityRefLike>('canvas-draft'),
-    }),
+      draft: createReferenceControllerState<LcosNodeEntityRef>('canvas-draft'),
+    });
+  },
 }));
 
 /**

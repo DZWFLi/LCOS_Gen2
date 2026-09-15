@@ -6,17 +6,18 @@
 // 一些，并按统一 overlayLayers 分级 z-index 渲染。
 //
 // 仲裁输入从各 store 采集（drop 在拖拽/让步 → 只可能保留 drop-preview），
-// 仲裁结果决定挂载哪些子浮层。composer 自身仍保留 hasChips / input focus 的
-// 局部自决（A04 冻结行为），但拖拽这类全局高优先级状态会经仲裁把它让道。
-
+// 仲裁结果决定挂载哪些子浮层。Composer 只有显式 selection-local open intent
+// 才挂载；拖拽这类全局高优先级状态会经仲裁把它让道，草稿仍留在 ephemeral store。
 
 import { visibleOverlays } from '@local-creative-os/web-gen2';
 import React from 'react';
 
 import useCanvasStore from '@/store/canvasStore';
 
+import { LcosComposerHost } from './composer/LcosComposerHost';
 import { LcosDropPreview } from './LcosDropPreview';
 import { useLcosDropStore } from './lcosDropState';
+import { useLcosShellStore } from './shell/lcosShellStore';
 
 const has = (kinds: readonly string[], kind: string): boolean =>
   kinds.includes(kind);
@@ -26,10 +27,16 @@ export const LcosHostOverlay: React.FC = () => {
   // 真实 selection（审计 §7：仲裁输入必须来自真实 store，不硬编码 false）。
   // resize/hover 相位是 NodeWrapper 局部 owner（overlayInteractionPriority 已反映），
   // 不在此重复订阅；actionArc/workView 待 B 阶段接 surface store。
-  const hasSelection = useCanvasStore(
-    (state) => state.nodes.some((node) => node.selected === true),
+  const hasSelection = useCanvasStore((state) =>
+    state.nodes.some((node) => node.selected === true),
   );
-  const isNodeDragging = useCanvasStore((state) => state.nodes.some((node) => node.dragging === true));
+  const isNodeDragging = useCanvasStore((state) =>
+    state.nodes.some((node) => node.dragging === true),
+  );
+  const projectId = useLcosShellStore((state) => state.projectId);
+  const composerOpen = useLcosShellStore((state) => state.composerOpen);
+  const composerTarget = useLcosShellStore((state) => state.composerTarget);
+  const closeComposer = useLcosShellStore((state) => state.closeComposer);
 
   const dropActive =
     dropStatus === 'tracking' ||
@@ -42,10 +49,7 @@ export const LcosHostOverlay: React.FC = () => {
     resizing: false,
     selected: hasSelection,
     hovered: false,
-    // Wave 10 退役：画布级不再产出 composer。唯一 Composer 是 route-level
-    // `LcosComposerHost`（Wave 5 C06 接管 A04 shell）。继续在这里渲染第二个
-    // 输入面 = 两套产品壳同时出现在有草稿时。
-    composerOpen: false,
+    composerOpen,
     actionArcOpen: false,
     workViewOpen: false,
     dropPreview,
@@ -55,6 +59,23 @@ export const LcosHostOverlay: React.FC = () => {
   });
 
   const showDrop = has(visible, 'drop-preview');
+  // Professional bodies render the same Composer inline. Keep this canvas host
+  // silent while any window is foregrounded, so one shell intent never double-renders.
+  const professionalWindowOpen = useLcosShellStore((state) => state.windows.length > 0);
+  const showComposer = has(visible, 'composer') && !professionalWindowOpen;
 
-  return <>{showDrop && <LcosDropPreview />}</>;
+  return (
+    <>
+      {showDrop && <LcosDropPreview />}
+      {projectId && composerTarget && (
+        <LcosComposerHost
+          projectId={projectId}
+          workspaceId={composerTarget.workspaceId}
+          anchor={composerTarget.anchor}
+          open={showComposer}
+          onClose={closeComposer}
+        />
+      )}
+    </>
+  );
 };

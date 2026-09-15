@@ -79,6 +79,7 @@ export default function CanvasPage() {
   const loadCanvas = useStore((s) => s.loadCanvas);
   const isLoading = useStore((s) => s.isLoading);
   const canvasNotFound = useStore((s) => s.canvasNotFound);
+  const canvasLoadFailure = useStore((s) => s.canvasLoadFailure);
   const worldCanvasId = useWorkspaceStore((s) => s.worldCanvasId);
   const refreshSpaceTitles = useWorkspaceStore((s) => s.refreshSpaceTitles);
   const nodeCount = useStore((s) => s.nodes.length);
@@ -160,7 +161,7 @@ export default function CanvasPage() {
     // makes any local mirror redundant.
     if (!initialised.current) {
       initialised.current = true;
-      void loadCanvas(canvasId);
+      void switchCanvas(canvasId);
     } else if (canvasId !== storeCanvasId) {
       void switchCanvas(canvasId);
     }
@@ -219,24 +220,35 @@ export default function CanvasPage() {
     };
   }, []);
 
-  // Treat any mismatch between the URL canvas and the store canvas as a
-  // loading state — covers the gap between this page mounting and the
-  // effect above calling `loadCanvas`/`switchCanvas` (which is what
-  // actually sets `isLoading: true`). Showing the spinner immediately
-  // also avoids a half-rendered `MainLayout` of the previous canvas
-  // flashing on click-through from the canvas list.
-  if (isLoading || (canvasId && storeCanvasId !== canvasId)) {
+  // Keep failures ahead of the mismatch spinner: the store retains the
+  // previous canvas while a requested route fails, so a failed route must not
+  // render an endless loading state.
+  const routeLoadFailure =
+    canvasLoadFailure?.canvasId === canvasId ? canvasLoadFailure : null;
+
+  if (routeLoadFailure?.kind === 'error') {
     return (
-      <Loading
-        variant="brand"
-        layout="block"
-        size="md"
-        message={t('canvasPage.loading')}
-      />
+      <div className="flex h-full flex-col items-center justify-center gap-4">
+        <div className="text-center">
+          <h2 className="text-fg-default text-lg font-semibold">
+            画布加载失败
+          </h2>
+          <p className="text-fg-subtle mt-1 max-w-md text-sm">
+            {routeLoadFailure.message}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadCanvas(canvasId)}
+          className="bg-inverse text-fg-inverse hover:bg-inverse/90 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors"
+        >
+          重试加载
+        </button>
+      </div>
     );
   }
 
-  if (canvasNotFound) {
+  if (routeLoadFailure?.kind === 'not-found') {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <div className="text-center">
@@ -255,6 +267,17 @@ export default function CanvasPage() {
           {t('canvasPage.backToList')}
         </Link>
       </div>
+    );
+  }
+
+  if (isLoading || (canvasId && storeCanvasId !== canvasId)) {
+    return (
+      <Loading
+        variant="brand"
+        layout="block"
+        size="md"
+        message={t('canvasPage.loading')}
+      />
     );
   }
 

@@ -105,6 +105,7 @@ describe('R1 共享组件族', () => {
       <LcosRailwayView items={[{ key: 'main', label: '主', icon: () => <span />, selected: true }]} />,
     ).querySelector('[data-lcos-family="railway"]');
     expect(one?.getAttribute('data-lcos-variant-count')).toBe('1');
+    expect(one?.getAttribute('style')).toContain('height: 52px');
 
     const four = render(
       <LcosRailwayView
@@ -117,6 +118,7 @@ describe('R1 共享组件族', () => {
       />,
     ).querySelector('[data-lcos-family="railway"]');
     expect(four?.getAttribute('data-lcos-variant-count')).toBe('4');
+    expect(four?.getAttribute('style')).toContain('height: 178px');
     expect(four?.querySelectorAll('[data-lcos-railway-item]')).toHaveLength(4);
     expect(four?.querySelector('[data-lcos-railway-item="a"]')?.getAttribute('data-lcos-variant')).toBe('selected');
     expect(four?.querySelector<HTMLButtonElement>('[data-lcos-railway-item="d"]')?.disabled).toBe(true);

@@ -37,7 +37,7 @@ export function useCanvasChromeMode(): CanvasChromeMode {
  *   - `pdf` / `office`：旧 actions 有「下载」，LCOS 尚未接线 → 继续挂旧壳；
  *   - `web`：旧 actions 有「打开外链」；
  *   - `sketch`：笔触控制；`question`：AI 运行/取消；`frame`：容器布局模式；
- *   - `text`：原生自由文本的字号/格式（未绑定 Core 的自由文本仍允许就地编辑）。
+ *   - 未绑定 `text`：原生自由文本的字号/格式仍由旧壳提供；Core-bound text 由 Arc 接管。
  */
 export const LCOS_STANDDOWN_TOOLBAR_TYPES: ReadonlySet<string> = new Set([
   'note',
@@ -52,6 +52,8 @@ export const LCOS_STANDDOWN_TOOLBAR_TYPES: ReadonlySet<string> = new Set([
 export function shouldStandDownLegacyNodeToolbar(
   chromeMode: CanvasChromeMode,
   nodeType: string,
+  coreBound = false,
 ): boolean {
+  if (nodeType === 'text') return chromeMode === 'lcos' && coreBound;
   return chromeMode === 'lcos' && LCOS_STANDDOWN_TOOLBAR_TYPES.has(nodeType);
 }

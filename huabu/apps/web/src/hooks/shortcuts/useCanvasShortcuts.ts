@@ -11,6 +11,7 @@ import {
 
 import { EDIT_EDGE_LABEL_EVENT } from '@/components/Panels/Canvas/edges/LabelledEdge';
 
+import { deletableCanvasNodeIds } from './deleteSelection';
 import { isEditableTarget } from './isEditableTarget';
 import {
   uploadFileToNodeInput,
@@ -19,6 +20,7 @@ import {
   textToTextNodeInput,
 } from '../../handler/canvasCommand/nodeInputBuilders';
 import { isSnapSessionActive } from '../../handler/snap/snapSession';
+import { useLcosReferenceStore } from '../../lcos/lcosReferenceState';
 import useCanvasStore from '../../store/canvasStore';
 import { useGesturePreviewStore } from '../../store/gesturePreviewStore';
 import {
@@ -42,6 +44,7 @@ export interface CanvasShortcutRefs {
 
 export interface UseCanvasShortcutsOptions {
   disabled?: boolean;
+  chromeMode?: 'huabu' | 'lcos';
 }
 
 export type CanvasTool = 'select' | 'lasso' | 'pan';
@@ -81,7 +84,7 @@ export function useCanvasShortcuts(
   setTool: React.Dispatch<React.SetStateAction<CanvasTool>>;
 } {
   const { rfInstanceRef, mousePositionRef } = refs;
-  const { disabled = false } = options;
+  const { disabled = false, chromeMode = 'huabu' } = options;
 
   const frameSelectedNodes = useCanvasStore((s) => s.frameSelectedNodes);
   const copySelectedNodes = useCanvasStore((s) => s.copySelectedNodes);
@@ -326,7 +329,14 @@ export function useCanvasShortcuts(
           .filter((edge) => edge.selected)
           .map((edge) => edge.id);
         if (selectedNodeIds.length > 0) {
-          deleteNodes(selectedNodeIds);
+          const deletableNodeIds = deletableCanvasNodeIds(
+            cur,
+            chromeMode === 'lcos'
+              ? useLcosReferenceStore.getState().nodeEntityRefs
+              : new Map(),
+            selectedNodeIds,
+          );
+          if (deletableNodeIds.length > 0) deleteNodes(deletableNodeIds);
         }
         if (selectedEdgeIds.length > 0) {
           disconnectEdges(selectedEdgeIds);
@@ -463,6 +473,7 @@ export function useCanvasShortcuts(
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [
     disabled,
+    chromeMode,
     frameSelectedNodes,
     copySelectedNodes,
     pasteNodes,

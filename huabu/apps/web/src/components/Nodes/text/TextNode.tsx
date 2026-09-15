@@ -9,6 +9,7 @@ import { resolveAccent } from '@huabu/shared';
 
 import { FloatingToolbar } from '@/components/Common/FloatingToolbar.tsx';
 import { useTextNodeSurface } from '@/hooks/useTextNodeSurface';
+import { useResolvedNodeBody } from '@/lcos-seam/nodeBodySlot';
 import useCanvasStore, { settleNodePreprocess } from '@/store/canvasStore.ts';
 import {
   FONT_FAMILY_CSS,
@@ -36,7 +37,7 @@ const FONT_FAMILY_OPTIONS: { name: string; value: NodeFontFamily }[] = [
 
 export type TextNodeType = Node<CanvasTextNodeData, 'text'>;
 
-export const TextNode = memo(
+const NativeTextNode = memo(
   ({ id, data, selected, width }: NodeProps<TextNodeType>) => {
     const { t } = useTranslation();
     const updateNodeData = useCanvasStore((state) => state.updateNodeData);
@@ -258,3 +259,32 @@ export const TextNode = memo(
     );
   },
 );
+
+/**
+ * Binding-aware text junction. A Core-bound text node is owned by the LCOS
+ * body seam; the native editor (and its auto-size hooks) only mounts when the
+ * seam has no replacement, preserving ordinary Huabu text behavior.
+ */
+export const TextNode = memo((props: NodeProps<TextNodeType>) => {
+  const { id, data, selected } = props;
+  const BodyOverride = useResolvedNodeBody({
+    nodeId: id,
+    nodeType: 'text',
+    data: data as Readonly<Record<string, unknown>>,
+  });
+
+  if (!BodyOverride) return <NativeTextNode {...props} />;
+
+  return (
+    <NodeWrapper
+      id={id}
+      data={data}
+      type="text"
+      selected={selected}
+      keepAspectRatio={false}
+      className="transition-all duration-200"
+    >
+      <BodyOverride nodeId={id} nodeType="text" data={data as Readonly<Record<string, unknown>>} />
+    </NodeWrapper>
+  );
+});

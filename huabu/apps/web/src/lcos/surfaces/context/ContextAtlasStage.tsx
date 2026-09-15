@@ -1,107 +1,106 @@
 // ContextAtlasStage — Context 现场强表征（Figma atlas 5388:24294 / 集合 5333:96 六变体）。
-// 数据：真实 warehouse（scene/conversation 为体块；事情/时间两种组织由真实 updatedAt/kind 驱动）。
-// 进入：scene → 切换真实 worksite；conversation → 画布内定位（已投影）或打开会话（Wave 8）。
+// 数据：真实 warehouse；事情/时间是表征轴，不把实体 kind 当组织语义。
+// 进入：有明确 Workspace 映射的集合进入子现场；普通实体仅对已有投影发定位请求。
 // 关闭：回到 Context worksite（camera 不动；approach/restore 动效 Wave 9）。
 
 
 import { CoreAssemblyClient, HttpError } from '@local-creative-os/web-gen2';
 import { ArrowRight, CalendarDays, Layers, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { DropdownMenu, DropdownMenuItem } from '@/components/Common/DropdownMenu';
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 
+import { buildAtlasGroups, canAtlasLocate, isAtlasItem } from './contextAtlasSemantics';
 import { createLcosCoreSession } from '../../app/lcosCoreClient';
 import { useLcosReferenceStore } from '../../lcosReferenceState';
+import { workspaceTargetsForItem } from '../../navigation/workspaceTargets';
 import { LcosCollectionSurface } from '../../ui/families';
 import { LcosSurfaceFeedback } from '../../ui/LcosSurfaceFeedback';
 import { lcosGlassStyle, lcosTokens } from '../../ui/lcosTokens';
 
 import type { WarehouseItemV1 } from '@local-creative-os/contracts';
+import type { Workspace } from '@local-creative-os/domain';
 
 export interface ContextAtlasStageProps {
   readonly projectId: string;
+  readonly workspaces: readonly Workspace[];
   readonly onClose: () => void;
-  readonly onEnterSurface: (item: WarehouseItemV1) => void;
+  readonly onEnterSurface: (item: WarehouseItemV1, workspace?: Workspace) => boolean;
 }
 
-export function ContextAtlasStage({ projectId, onClose, onEnterSurface }: ContextAtlasStageProps): React.JSX.Element {
+export function ContextAtlasStage({ projectId, workspaces, onClose, onEnterSurface }: ContextAtlasStageProps): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const assembly = useMemo(() => new CoreAssemblyClient(session.http), [session]);
   const [items, setItems] = useState<readonly WarehouseItemV1[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
-  const [organize, setOrganize] = useState<'things' | 'time'>('things');
+  const requestSequence = useRef(0);
+  useCloseOnEscape(true, onClose);
 
   useEffect(() => {
+    const sequence = requestSequence.current + 1;
+    requestSequence.current = sequence;
+    const controller = new AbortController();
+    let active = true;
+    // A project switch must not leave the previous project's cards visible
+    // while the new warehouse is loading (or after it fails).
+    setItems([]);
+    setErrorDetail(undefined);
     setState('loading');
     void assembly
-      .getWarehouse(projectId)
+      .getWarehouse(projectId, controller.signal)
       .then((snapshot) => {
-        setItems(snapshot.items.filter((i) => i.kind === 'scene' || i.kind === 'conversation' || i.kind === 'collection' || i.kind === 'workflow'));
+        if (!active || sequence !== requestSequence.current) return;
+        setItems(snapshot.items.filter(isAtlasItem));
         setState('ready');
       })
       .catch((error: unknown) => {
+        if (!active || sequence !== requestSequence.current || controller.signal.aborted) return;
         setState('error');
         setErrorDetail(error instanceof HttpError ? error.message : String(error));
       });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [projectId, assembly]);
 
-  const groups = useMemo(() => {
-    if (organize === 'things') {
-      const byKind = new Map<string, WarehouseItemV1[]>();
-      for (const item of items) {
-        const key = item.kind;
-        byKind.set(key, [...(byKind.get(key) ?? []), item]);
-      }
-      return Array.from(byKind.entries()).map(([kind, list]) => ({ key: `kind-${kind}`, label: kind, list }));
-    }
-    const sorted = [...items].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
-    return [{
-      key: 'time-all',
-      label: '最近更新',
-      list: sorted,
-    }];
-  }, [items, organize]);
+  const groups = useMemo(() => buildAtlasGroups(items), [items]);
 
-  const focusOnCanvas = (item: WarehouseItemV1): void => {
-    // 会话已投影 → 画布定位；未投影走真实入场/会话入口
-    const store = useLcosReferenceStore.getState();
-    let found: string | undefined;
-    for (const [nodeId, ref] of store.nodeEntityRefs) {
-      if (ref.entityId === item.entityRef.id) {
-        found = nodeId;
-        break;
-      }
-    }
-    if (found) {
-      onEnterSurface(item); // 意见：scene 切换；conversation 定位由调用方处理
-    }
-    onClose();
-  };
+  const focusOnCanvas = (item: WarehouseItemV1): boolean => onEnterSurface(item);
+  const projected = (item: WarehouseItemV1): boolean => canAtlasLocate(item, useLcosReferenceStore.getState().nodeEntityRefs.values());
+
+  const kindLabel = (item: WarehouseItemV1): string => item.kind === 'scene' ? '现场' : item.kind === 'collection' ? '集合' : 'Context';
 
   return (
     <div data-lcos-context-atlas className="fixed inset-0 z-40 flex items-center justify-center p-12" style={{ background: 'rgba(250,250,250,0.86)', backdropFilter: 'blur(8px)' }}>
-      <div className="flex h-full w-full max-w-[1100px] flex-col rounded-2xl p-6" style={lcosGlassStyle}>
+      <div className="flex h-full w-full max-w-[1180px] flex-col rounded-2xl p-7" style={{ ...lcosGlassStyle, background: 'rgba(255,255,255,0.72)' }}>
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-base font-semibold" style={{ color: lcosTokens.color.text }}>Context Atlas</span>
-            <span className="text-xs" style={{ color: lcosTokens.color.muted }}>集合/现场总览 · 同身份实体</span>
+            <span className="text-xs" style={{ color: lcosTokens.color.muted }}>Context 集合光幕 · 同身份实体</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setOrganize('things')}
+              disabled
+              aria-disabled="true"
+              title="当前数据没有明确的事情组织字段"
               className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium"
-              style={organize === 'things' ? { background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse } : { color: lcosTokens.color.muted }}
+              style={{ color: lcosTokens.color.muted, opacity: 0.55, cursor: 'not-allowed' }}
             >
-              <Layers className="h-3.5 w-3.5" aria-hidden /> 事情
+              <Layers className="h-3.5 w-3.5" aria-hidden /> 事情（不可用）
             </button>
             <button
               type="button"
-              onClick={() => setOrganize('time')}
+              disabled
+              aria-disabled="true"
+              title="当前数据没有明确的时间组织字段"
               className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium"
-              style={organize === 'time' ? { background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse } : { color: lcosTokens.color.muted }}
+              style={{ color: lcosTokens.color.muted, opacity: 0.55, cursor: 'not-allowed' }}
             >
-              <CalendarDays className="h-3.5 w-3.5" aria-hidden /> 时间
+              <CalendarDays className="h-3.5 w-3.5" aria-hidden /> 时间（不可用）
             </button>
             <button type="button" aria-label="关闭 Atlas" onClick={onClose} className="rounded-full p-1.5" style={{ color: lcosTokens.color.muted }}>
               <X className="h-4 w-4" />
@@ -118,26 +117,41 @@ export function ContextAtlasStage({ projectId, onClose, onEnterSurface }: Contex
           <div className="flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto">
             {groups.map((group) => (
               <section key={group.key}>
-                <h4 className="mb-4 text-xs font-medium uppercase tracking-wide" style={{ color: lcosTokens.color.muted }}>
+                  <h4 className="mb-4 text-xs font-medium tracking-wide" style={{ color: lcosTokens.color.muted }}>
                   {group.label}
                 </h4>
                 {/* Figma atlas：体块 248×244、列间 32（gap-8）；体块语言 = 族 Collection 5333:96 */}
                 <div className="flex flex-wrap gap-8">
-                  {group.list.map((item) => (
-                    <LcosCollectionSurface
-                      key={`${item.kind}:${item.entityRef.id}`}
-                      organize={organize === 'things' ? '事情' : '时间'}
-                      rendition="总览"
-                      title={item.title ?? '未命名'}
-                      meta={`${item.kind}${item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleDateString('zh-CN')}` : ''}`}
-                      onActivate={() => focusOnCanvas(item)}
-                      legacyAtlasKind={item.kind}
-                    >
-                      <span className="mt-auto flex items-center gap-1 text-xs" style={{ color: lcosTokens.color.info }}>
-                        进入 <ArrowRight className="h-3 w-3" aria-hidden />
-                      </span>
-                    </LcosCollectionSurface>
-                  ))}
+                  {group.list.map((item) => {
+                    const childTargets = workspaceTargetsForItem(item, workspaces);
+                    return (
+                      <LcosCollectionSurface
+                        key={`${item.kind}:${item.entityRef.id}`}
+                        organize="未指定"
+                        rendition="总览"
+                        title={item.title ?? '未命名'}
+                        meta={`${kindLabel(item)}${item.updatedAt ? ` · 更新时间 ${new Date(item.updatedAt).toLocaleDateString('zh-CN')}` : ''}`}
+                        legacyAtlasKind={item.kind}
+                        renderAs="div"
+                      >
+                        <span className="mt-auto flex items-center gap-2 text-xs" style={{ color: projected(item) || childTargets.length > 0 ? lcosTokens.color.info : lcosTokens.color.muted }}>
+                          {childTargets.length === 1 ? (
+                            <button type="button" disabled={!childTargets[0]?.canvasId} className="flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => { onEnterSurface(item, childTargets[0]); }}>
+                              进入现场 <ArrowRight className="h-3 w-3" aria-hidden />
+                            </button>
+                          ) : childTargets.length > 1 ? (
+                            <DropdownMenu trigger={<button type="button" className="flex items-center gap-1">选择现场 <ArrowRight className="h-3 w-3" aria-hidden /></button>}>
+                              {childTargets.map((workspace) => (
+                                <DropdownMenuItem key={String(workspace.id)} disabled={!workspace.canvasId} onClick={() => { onEnterSurface(item, workspace); }}>
+                                  {workspace.name}{workspace.canvasId ? '' : ' · 画布尚未就绪'}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenu>
+                          ) : projected(item) ? <button type="button" className="flex items-center gap-1" onClick={() => { focusOnCanvas(item); }}>定位 <ArrowRight className="h-3 w-3" aria-hidden /></button> : item.kind === 'scene' ? '暂无可进入现场' : '当前现场不可用'}
+                        </span>
+                      </LcosCollectionSurface>
+                    );
+                  })}
                 </div>
               </section>
             ))}

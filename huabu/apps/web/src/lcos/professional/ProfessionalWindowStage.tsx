@@ -14,6 +14,8 @@ import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosWindowChrome } from '../ui/families';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
+import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
+
 export interface ProfessionalWindowStageProps {
   readonly projectId: string;
 }
@@ -22,11 +24,17 @@ export function ProfessionalWindowStage({ projectId }: ProfessionalWindowStagePr
   const windows = useLcosShellStore((s) => s.windows);
   const activateWindow = useLcosShellStore((s) => s.activateWindow);
   const closeWindow = useLcosShellStore((s) => s.closeWindow);
+  const composerOpen = useLcosShellStore((s) => s.composerOpen);
+  const composerReceiver = useLcosShellStore((s) => s.composerTarget?.receiverConversationId);
   const active = windows.find((w) => w.active) ?? windows[windows.length - 1];
+  const inlineComposerOpen = composerOpen && active?.bodyKey === 'conversation'
+    && active.target !== undefined && composerReceiver === active.target;
+  const reading = active?.bodyKey === 'reader';
+  const preferredWidth = reading ? 1120 : active?.bodyKey === 'assembly' ? 640 : 520;
 
   // Esc 栈：专业窗口是 route 内最上层可关闭面板，Esc 关掉当前窗口并阻止继续
   // 下传（否则会同时清掉画布选中）。复用 Huabu 既有 useCloseOnEscape。
-  useCloseOnEscape(windows.length > 0, () => {
+  useCloseOnEscape(windows.length > 0 && !inlineComposerOpen, () => {
     if (active) closeWindow(active.id);
   });
 
@@ -39,7 +47,7 @@ export function ProfessionalWindowStage({ projectId }: ProfessionalWindowStagePr
       style={{
         right: 24,
         top: 88,
-        width: 'min(520px, calc(100vw - 48px))',
+        width: `min(${preferredWidth}px, calc(100vw - 48px))`,
         maxWidth: 'calc(100vw - 48px)',
         maxHeight: 'calc(100vh - 140px)',
         border: '1px solid var(--lcos-window-border)',
@@ -70,7 +78,15 @@ export function ProfessionalWindowStage({ projectId }: ProfessionalWindowStagePr
       {/* body */}
       <div className="min-h-[240px] flex-1 overflow-y-auto" style={{ background: lcosTokens.color.canvas }}>
         {active && (
-          <ProfessionalBody projectId={projectId} bodyKey={active.bodyKey} target={active.target} />
+          <ProfessionalBody
+            projectId={projectId}
+            bodyKey={active.bodyKey}
+            {...(active.target === undefined ? {} : { target: active.target })}
+            {...(active.targetKind === undefined ? {} : { targetKind: active.targetKind })}
+            {...(active.assemblyTargetRef === undefined
+              ? {}
+              : { assemblyTargetRef: active.assemblyTargetRef })}
+          />
         )}
       </div>
     </div>
@@ -81,28 +97,37 @@ function ProfessionalBody({
   projectId,
   bodyKey,
   target,
+  targetKind,
+  assemblyTargetRef,
 }: {
   projectId: string;
   bodyKey: string;
   target?: string;
+  targetKind?: 'canvas';
+  assemblyTargetRef?: AssemblyTargetRefV1;
 }): React.JSX.Element {
   switch (bodyKey) {
     case 'assembly':
-      return <AssemblyBody projectId={projectId} />;
+      return (
+        <AssemblyBody
+          projectId={projectId}
+          targetRef={assemblyTargetRef ?? { kind: 'main' }}
+        />
+      );
     case 'reader':
       return <ArtifactReaderBody projectId={projectId} artifactId={target} />;
     case 'conversation':
       return <ConversationWorkViewBody projectId={projectId} connectedConversationId={target} />;
     case 'portal-preview':
-      return <PortalPreviewBody projectId={projectId} target={target} />;
+      return <PortalPreviewBody projectId={projectId} target={target} {...(targetKind ? { targetKind } : {})} />;
     case 'runtime-doctor':
     case 'capture-inbox':
     case 'connector-source':
-      // 未接入 body：诚实展示，不假装可用
+      // 尚无生产 caller；若由旧状态恢复，只给用户可理解的不可用状态。
       return (
         <div className="flex h-full min-h-[220px] items-center justify-center">
           <span className="text-sm" style={{ color: lcosTokens.color.muted }}>
-            {bodyKey}（尚未接入）
+            此工具当前不可用
           </span>
         </div>
       );

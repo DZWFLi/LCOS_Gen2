@@ -15,6 +15,7 @@ import { createContext, useContext, useSyncExternalStore } from 'react';
 import type {
   CanvasNodeBodySeam,
   CanvasNodeBodySlotInput,
+  CanvasNodeHostPresentation,
 } from './types';
 
 /**
@@ -40,5 +41,16 @@ export function useResolvedNodeBody(
     seam?.subscribe ?? (() => () => undefined),
     () => seam?.resolve(input) ?? undefined,
     () => seam?.resolve(input) ?? undefined,
+  );
+}
+
+export function useResolvedNodeHostPresentation(
+  input: CanvasNodeBodySlotInput,
+): CanvasNodeHostPresentation | undefined {
+  const seam = useContext(NodeBodyResolverContext);
+  return useSyncExternalStore(
+    seam?.subscribe ?? (() => () => undefined),
+    () => seam?.resolveHostPresentation?.(input),
+    () => seam?.resolveHostPresentation?.(input),
   );
 }

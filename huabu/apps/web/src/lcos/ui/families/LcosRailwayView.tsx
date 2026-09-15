@@ -21,6 +21,8 @@ export interface LcosRailwayViewProps {
 }
 
 export function LcosRailwayView({ items, onSelect, footer }: LcosRailwayViewProps): React.JSX.Element {
+  const railwayHeight =
+    items.length === 0 ? 0 : 16 + items.length * 36 + (items.length - 1) * 6;
   return (
     // 脚注与岛同级（不是岛的子节点）：Figma 的 52×52 / 52×178 只描述目的地数量，
     // 把脚注塞进容器会撑高外框、破坏变体尺寸。
@@ -30,6 +32,11 @@ export function LcosRailwayView({ items, onSelect, footer }: LcosRailwayViewProp
         data-lcos-variant-count={items.length}
         role="navigation"
         aria-label="现场目的地"
+        style={{
+          height: railwayHeight,
+          maxHeight: 'min(70vh, 556px)',
+          overflowY: 'auto',
+        }}
       >
         {items.map((item) => {
           const Icon = item.icon;

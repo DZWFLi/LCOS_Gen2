@@ -9,6 +9,19 @@
   /* 专业窗口浮起的投影与描边：Figma 没有对应的 EFFECT 样式（Shadow/Default 是 4/16 的近距投影）。 */
   --lcos-window-shadow: 0 12px 40px rgba(40, 48, 58, 0.14);
   --lcos-window-border: var(--lcos-color-border-subtle);
+  /* Main exact-node local colors not present in the exported variable manifest. */
+  --lcos-main-paper: #fffef9; /* Figma 5388:107 */
+  --lcos-main-wave-active: #55786c; /* Figma 5388:122–166 */
+  --lcos-main-wave-tail: #c6d2ce; /* Figma 5388:167–185 */
+  --lcos-main-marker-amber: #d3a16e; /* Figma 5388:100 */
+  --lcos-main-marker-green: #82a793; /* Figma 5388:105 / 5388:114 */
+  --lcos-main-image-shadow: 0 10px 12.5px rgba(33,48,56,0.11); /* 5388:98 */
+  --lcos-main-image-shadow-small: 0 8px 10px rgba(33,48,56,0.10); /* 5388:111 */
+  --lcos-main-paper-shadow: 0 7px 9.5px rgba(33,48,56,0.07); /* 5388:106 */
+  /* Figma 5388:312/319/322 — Action Arc visible orb material. */
+  --lcos-action-orb-bg: rgba(255,255,255,0.13);
+  --lcos-action-orb-border: rgba(255,255,255,0.78);
+  --lcos-action-orb-shadow: 0 0 0.5px rgba(40,48,58,0.10), 0 4px 6px rgba(40,48,58,0.08);
 }
 
 /* 玻璃岛底色：跟随主题的 surface（Figma 变量），避免深色模式下仍用浅色底。 */

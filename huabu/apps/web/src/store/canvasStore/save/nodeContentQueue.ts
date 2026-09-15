@@ -262,6 +262,15 @@ export function createNodeContentQueue(opts: {
   const saveErrorToasted = new Set<string>();
 
   /**
+   * Nodes whose latest local content was not acknowledged by the server.
+   * Keep these visible after the in-flight promise settles so a canvas switch
+   * cannot mistake a failed write for a clean handoff. A later flush reads
+   * the current node body and retries it; explicit reload/delete paths clear
+   * the marker through `seedBaselines` / `forgetNode`.
+   */
+  const failed = new Set<string>();
+
+  /**
    * Build the `PutNodeContentRequest` body for `nodeId` from the
    * latest store snapshot. Returns `null` when the node has gone
    * away (e.g. deleted between debounce-schedule and flush) or its
@@ -542,6 +551,7 @@ export function createNodeContentQueue(opts: {
       labelSource: res.labelSource,
     });
     frozen.delete(nodeId);
+    failed.delete(nodeId);
     contentConflictToasted.delete(nodeId);
     toast(i18n.t('node.contentConflictLoaded'), { tone: 'success' });
   }
@@ -758,7 +768,17 @@ export function createNodeContentQueue(opts: {
       // the chain — tryRename has already handled that error via its
       // own await.
       .catch(() => undefined)
-      .then(() => performSaveSafely(canvasId, nodeId, source, kOpts));
+      .then(() => performSaveSafely(canvasId, nodeId, source, kOpts))
+      .then(
+        () => {
+          if (frozen.has(nodeId)) failed.add(nodeId);
+          else failed.delete(nodeId);
+        },
+        (error: unknown) => {
+          failed.add(nodeId);
+          throw error;
+        },
+      );
     inflight.set(nodeId, next);
     // `.finally()` returns a new promise that re-rejects when `next`
     // rejects. The outer caller (`schedule` / `flushNow` / `flushAll`)
@@ -831,13 +851,14 @@ export function createNodeContentQueue(opts: {
 
     async flushAll() {
       const canvasId = opts.getState().canvasId;
-      const pendingIds = debouncer.cancelAll();
+      const pendingIds = new Set([
+        ...debouncer.cancelAll(),
+        ...failed,
+      ]);
       for (const nodeId of pendingIds) {
-        void serializedFlush(canvasId, nodeId, 'auto').catch(() => undefined);
+        serializedFlush(canvasId, nodeId, 'auto');
       }
-      await Promise.all(
-        Array.from(inflight.values()).map((p) => p.catch(() => undefined)),
-      );
+      await Promise.all(Array.from(inflight.values()));
     },
 
     flushAllKeepalive() {
@@ -854,6 +875,7 @@ export function createNodeContentQueue(opts: {
 
     clearDuplicateGuard(nodeId) {
       duplicateToasted.delete(nodeId);
+      failed.delete(nodeId);
     },
 
     forgetNode(nodeId) {
@@ -864,6 +886,7 @@ export function createNodeContentQueue(opts: {
       saveErrorToasted.delete(nodeId);
       duplicateToasted.delete(nodeId);
       lastSuccessful.delete(nodeId);
+      failed.delete(nodeId);
     },
 
     seedBaselines(nodes) {
@@ -876,6 +899,7 @@ export function createNodeContentQueue(opts: {
         // later divergence alerts again and writes resume.
         contentConflictToasted.delete(node.id);
         frozen.delete(node.id);
+        failed.delete(node.id);
       }
     },
 
@@ -883,7 +907,7 @@ export function createNodeContentQueue(opts: {
       // Debounced-but-not-yet-fired saves plus in-flight PUTs: both mean
       // the node holds a local edit the server hasn't acknowledged.
       return Array.from(
-        new Set([...debouncer.pendingKeys(), ...inflight.keys()]),
+        new Set([...debouncer.pendingKeys(), ...inflight.keys(), ...failed]),
       );
     },
   };

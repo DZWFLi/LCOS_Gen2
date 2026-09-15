@@ -9,7 +9,11 @@ import { ArrowRight, LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 
+import useCanvasStore from '@/store/canvasStore';
+
+import { waitForProjectedEntity } from './waitForProjectedEntity';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useLcosShellStore, type LcosSurfaceKey } from '../shell/lcosShellStore';
 import { LcosNavigatorIslandView } from '../ui/families';
@@ -21,6 +25,7 @@ import type { SearchHitVNext } from '@local-creative-os/contracts';
 interface NavigatorIslandProps {
   readonly projectId: string;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
+  readonly surfaceByWorkspace?: Readonly<Map<string, LcosSurfaceKey>>;
   readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
   /**
    * 彩色标 Pin（Figma 状态=彩色标）。Pin = 颜色分组偏好及成员关系（00 页 5409:2）。
@@ -43,6 +48,12 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
   const [state, setState] = useState<IslandState>('静息');
   const [detail, setDetail] = useState<string | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
+  const arrival = useRef<AbortController | null>(null);
+  const [destinationHit, setDestinationHit] = useState<SearchHitVNext | null>(null);
+  const [arriving, setArriving] = useState(false);
+  const { switchWorksite } = useLcosWorksiteNav({ projectId, canvasBySurface: _props.canvasBySurface, ensureCanvas: _props.ensureCanvas });
+
+  useEffect(() => () => { arrival.current?.abort(); }, [projectId, query, focus]);
 
   const session = useMemo(() => createLcosCoreSession(), []);
   const searchClient = useMemo(() => new CoreSearchClient(session.http), [session]);
@@ -57,10 +68,14 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
         window.setTimeout(() => inputRef.current?.focus(), 30);
       }
       if (event.key === 'Escape') {
+        arrival.current?.abort();
+        setDestinationHit(null);
+        setArriving(false);
         setFocus(false);
         setQuery('');
         setHits([]);
         setState('静息');
+        setDetail(undefined);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -77,21 +92,25 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
     }
     setState('loading');
     const controller = new AbortController();
+    let cancelled = false;
     const timer = window.setTimeout(() => {
       void searchClient
         .searchProject(projectId, { query: q, limit: 12 })
         .then((result) => {
+          if (cancelled) return;
           setHits(result.hits);
           setState(result.hits.length === 0 ? 'empty' : '搜索');
           setDetail(undefined);
         })
         .catch((error: unknown) => {
+          if (cancelled) return;
           if ((error as { code?: string }).code === 'aborted') return;
           setState('error');
           setDetail(error instanceof HttpError ? error.message : String(error));
         });
     }, 260);
     return () => {
+      cancelled = true;
       controller.abort();
       window.clearTimeout(timer);
     };
@@ -99,20 +118,54 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
   }, [focus, query, projectId]);
 
   const closeSearch = useCallback((): void => {
+    arrival.current?.abort();
+    setDestinationHit(null);
+    setArriving(false);
     setFocus(false);
     setQuery('');
     setHits([]);
     setState('静息');
+    setDetail(undefined);
   }, []);
+
+  const goToLocation = async (hit: SearchHitVNext, surface: LcosSurfaceKey): Promise<void> => {
+    if (arrival.current && !arrival.current.signal.aborted) return;
+    arrival.current?.abort();
+    const controller = new AbortController();
+    arrival.current = controller;
+    setArriving(true);
+    setDetail('正在前往对象所在的现场…');
+    try {
+      if (!await switchWorksite(surface) || controller.signal.aborted) {
+        if (!controller.signal.aborted) setDetail('现场切换未完成，请重试。');
+        return;
+      }
+      const canvasId = useCanvasStore.getState().canvasId;
+      if (!canvasId) { setDetail('目标现场的画布尚未就绪。'); return; }
+      const nodeId = await waitForProjectedEntity({ projectId, canvasId, entityType: hit.entityType, entityId: hit.entityId, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (!nodeId) {
+        setDetail('已进入目标现场，但对象投影尚未就绪。可重试定位，搜索结果已保留。');
+        return;
+      }
+      requestLocate({ reqId: crypto.randomUUID(), surface, canvasId, nodeId, status: 'projected' });
+      closeSearch();
+    } catch (error: unknown) {
+      if (!controller.signal.aborted) setDetail(error instanceof Error ? error.message : '定位失败，请重试。');
+    } finally {
+      if (arrival.current === controller) { arrival.current = null; setArriving(false); }
+    }
+  };
 
   const locateHit = useCallback(
     (hit: SearchHitVNext): void => {
       const location = hit.locationRefs?.[0];
       // 同现场已投影？（reference store nodeEntityRefs 反查 entityId）
       const store = useLcosReferenceStore.getState();
+      const currentNodeIds = new Set(useCanvasStore.getState().nodes.map((node) => node.id));
       let ownNodeId: string | undefined;
       for (const [nodeId, ref] of store.nodeEntityRefs) {
-        if (ref.entityId === hit.entityId && ref.entityType === hit.entityType) {
+        if (currentNodeIds.has(nodeId) && ref.entityId === hit.entityId && ref.entityType === hit.entityType) {
           ownNodeId = nodeId;
           break;
         }
@@ -120,36 +173,43 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
       if (ownNodeId) {
         requestLocate({ reqId: `${Date.now()}`, surface: activeSurface, nodeId: ownNodeId, status: 'projected' });
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        // Search is a transient replacement for the resting island. Once the
+        // projected target is handed to the camera consumer, restore the island
+        // so stale query/results do not remain over the arrival target.
+        closeSearch();
       } else {
-        // 未在当前现场投影：给出位置语义（不假定位；跨现场真实切换/arrival Wave 8）
+        setDestinationHit(hit);
         setDetail(
           location
-            ? `「${hit.title ?? hit.entityId}」位于 ${location.name ?? location.kind}（未在当前现场投影 · 切到目标现场后可见）`
-            : undefined,
+            ? `选择「${hit.title ?? hit.entityId}」的位置`
+            : '该对象尚无可定位的位置；可以从装配中查找并取用。',
         );
       }
     },
-    [activeSurface, requestLocate],
+    [activeSurface, closeSearch, requestLocate],
   );
 
-  // Figma 11 状态 → 生产可达子集（静息/搜索/loading/error；empty 用静息壳 + 结果区文案）
+  // 输入是否展开由用户意图决定；异步读取/空结果不能卸载正在输入的文本框。
   const viewState: LcosNavigatorIslandState =
-    state === 'loading' ? 'loading' : state === 'error' ? 'error' : state === '搜索' ? '搜索' : '静息';
+    focus ? '搜索' : pins.length > 0 ? '彩色标' : '静息';
 
   return (
     <div
       data-lcos-navigator-island
       className="pointer-events-auto fixed left-1/2 top-6 z-40 -translate-x-1/2"
       style={{ maxWidth: '90vw' }}
-      onMouseLeave={() => {
-        if (query === '') closeSearch();
-      }}
     >
       <LcosNavigatorIslandView
         state={viewState}
         pins={pins}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={(value) => {
+          arrival.current?.abort();
+          setDestinationHit(null);
+          setArriving(false);
+          setDetail(undefined);
+          setQuery(value);
+        }}
         onToggleSearch={() => {
           if (focus) {
             closeSearch();
@@ -190,6 +250,7 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
               <button
                 key={`${hit.entityType}:${hit.entityId}`}
                 type="button"
+                disabled={arriving}
                 onClick={() => locateHit(hit)}
                 className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors"
                 style={{ minHeight: 44 }}
@@ -209,8 +270,17 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
       )}
 
       {detail && (
-        <div className="mt-2 max-w-[90vw] rounded-xl px-4 py-2 text-xs" style={{ ...lcosGlassStyle, color: lcosTokens.color.muted }}>
-          {detail}
+        <div className="mt-2 max-w-[90vw] rounded-xl px-4 py-2 text-xs" style={{ ...lcosGlassStyle, color: lcosTokens.color.muted }} aria-live="polite">
+          <p>{detail}</p>
+          {destinationHit?.locationRefs?.map((location) => {
+            const surface = _props.surfaceByWorkspace?.get(location.id);
+            return <button key={location.id} type="button" disabled={!surface || arriving}
+              className="mt-1 flex min-h-11 w-full items-center justify-between gap-2 text-left disabled:opacity-50"
+              onClick={() => { if (surface) void goToLocation(destinationHit, surface); }}>
+              <span>{location.name ?? surface ?? '未知现场'}</span>
+              <span>{surface ? (arriving ? '前往中…' : '前往并定位') : '位置暂不可打开'}</span>
+            </button>;
+          })}
         </div>
       )}
     </div>

@@ -158,6 +158,7 @@ const PREPROCESS_DEBOUNCE_MS = 1000;
 const NODE_CONTENT_DEBOUNCE_MS = 500;
 const nodeRefTopologySignatures = new Map<string, string>();
 let worldReferenceRefreshGeneration = 0;
+let canvasLoadRequestGeneration = 0;
 
 function nodeRefTopologySignature(nodes: readonly Node[]): string {
   return JSON.stringify(
@@ -440,6 +441,11 @@ type RFState = {
   version: number;
   isLoading: boolean;
   canvasNotFound: boolean;
+  canvasLoadFailure: {
+    canvasId: string;
+    kind: 'not-found' | 'error';
+    message: string;
+  } | null;
   worldReferences: Record<string, ResolvedWorldReference>;
   worldReferenceError: string | null;
   /**
@@ -831,9 +837,9 @@ type RFState = {
 
   loadCanvas: (
     canvasId?: string,
-    options?: { resetHistory?: boolean },
-  ) => Promise<void>;
-  switchCanvas: (canvasId: string) => Promise<void>;
+    options?: { resetHistory?: boolean; requestGeneration?: number },
+  ) => Promise<boolean>;
+  switchCanvas: (canvasId: string) => Promise<boolean>;
   /**
    * Persist the canvas structure (geometry, parenthood, edges).
    * Pass `{ keepalive: true }` from the `beforeunload` flush so the
@@ -852,7 +858,7 @@ type RFState = {
   saveCanvas: (options?: {
     keepalive?: boolean;
     force?: boolean;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 
   /**
    * Attempt to rename a canvas or node, with collision detection.
@@ -1008,11 +1014,8 @@ const nodeContentQueue = createNodeContentQueue({
  * and its response received. Without this, trailing edits would fire
  * later under a stale captured `canvasId` — by which time the user
  * has moved on and there's nothing left in the store to revert if the
- * PUT fails. Failures inside the drain are surfaced through each
- * queue's own `handleSaveFailure` (toast + console.error) and do NOT
- * reject this promise — the navigation should always proceed even if
- * a save failed, because keeping the user trapped on the canvas
- * doesn't help.
+ * PUT fails. A failed save rejects this promise so callers preserve the
+ * source and let the user retry or resolve the existing conflict.
  *
  * Order mirrors {@link switchCanvas}: structure first (canvas-level
  * version PUT), then per-node content. The two queues touch disjoint
@@ -1035,6 +1038,9 @@ export async function drainPendingSaves(): Promise<void> {
     });
   }
   await nodeContentQueue.flushAll();
+  if (useCanvasStore.getState().versionConflict || useCanvasStore.getState().pendingContentNodeIds().length > 0) {
+    throw new Error('当前现场仍有未保存的修改，请处理保存状态后重试');
+  }
 }
 
 /**
@@ -1281,6 +1287,7 @@ const useCanvasStore = create<RFState>()(
     version: 0,
     isLoading: false,
     canvasNotFound: false,
+    canvasLoadFailure: null,
     worldReferences: {},
     worldReferenceError: null,
     pinnedSourceNodeIds: {},
@@ -1885,42 +1892,29 @@ const useCanvasStore = create<RFState>()(
     },
 
     loadCanvas: async (canvasId, options) => {
+      const requestGeneration = options?.requestGeneration ?? ++canvasLoadRequestGeneration;
+      const isCurrentRequest = (): boolean => requestGeneration === canvasLoadRequestGeneration;
+      const targetId = canvasId ?? get().canvasId;
       set({
         isLoading: true,
         canvasNotFound: false,
-        versionConflict: false,
-        versionConflictServerVersion: null,
+        canvasLoadFailure: null,
       });
-      // Clear any stale "modified elsewhere" toast before we fetch a
-      // fresh baseline — the warning is bound to the old version we're
-      // about to replace.
-      dismissVersionConflictToast();
       try {
-        const targetId = canvasId ?? get().canvasId;
-        const chatThreadId = useChatStore
-          .getState()
-          .ensureCanvasThread(targetId);
-        usePreviewWorkspaceStore
-          .getState()
-          .loadForCanvas(targetId, { chatThreadId });
-        canvasHistoryManager.activate(targetId, options?.resetHistory);
-        if (canvasId) {
-          set({ canvasId: targetId });
-        }
         const response = await getCanvas(targetId);
+        if (!isCurrentRequest()) return false;
         if (!response) {
           console.warn('Canvas not found:', targetId);
-          canvasHistoryManager.clear();
           set({
             isLoading: false,
             canvasNotFound: true,
-            ingestionByNodeId: {},
-            pendingForkThreadIds: {},
-            worldReferences: {},
-            worldReferenceError: null,
-            pinnedSourceNodeIds: {},
+            canvasLoadFailure: {
+              canvasId: targetId,
+              kind: 'not-found',
+              message: 'Canvas not found.',
+            },
           });
-          return;
+          return false;
         }
 
         const state = response.state as {
@@ -1955,13 +1949,6 @@ const useCanvasStore = create<RFState>()(
         const loadedNodeRefSignature = nodeRefTopologySignature(loadedNodes);
         const previousNodeRefSignature =
           nodeRefTopologySignatures.get(targetId);
-        if (
-          previousNodeRefSignature !== undefined &&
-          previousNodeRefSignature !== loadedNodeRefSignature
-        ) {
-          canvasHistoryManager.clearCanvas(targetId);
-        }
-        nodeRefTopologySignatures.set(targetId, loadedNodeRefSignature);
         // Prefer this client's persistent UI state; fall back to whatever the
         // server still has from before viewport was moved client-side.
         // A corrupt entry on either side falls through to `null`, which
@@ -1988,13 +1975,40 @@ const useCanvasStore = create<RFState>()(
           edges: loadedEdges,
           centre: viewportCentreOf(loadedViewport),
         });
+        if (!isCurrentRequest()) return false;
         const warmedNodes = warmedCanvas.nodes;
-        // An authoritative node replacement invalidates every transient that
-        // points at the previous in-memory geometry. This applies both to a
-        // different-canvas switch and to a same-canvas SSE gap/snapshot heal:
-        // even when the canvas id is unchanged, selected stroke ids and
-        // retained polygons may have been deleted or moved remotely.
+        const isDifferentCanvas = targetId !== get().canvasId;
+        const chatThreadId = useChatStore
+          .getState()
+          .ensureCanvasThread(targetId);
+        usePreviewWorkspaceStore
+          .getState()
+          .loadForCanvas(targetId, { chatThreadId });
+        canvasHistoryManager.activate(targetId, options?.resetHistory);
+        if (
+          previousNodeRefSignature !== undefined &&
+          previousNodeRefSignature !== loadedNodeRefSignature
+        ) {
+          canvasHistoryManager.clearCanvas(targetId);
+        }
+        nodeRefTopologySignatures.set(targetId, loadedNodeRefSignature);
+        // A different-canvas replacement invalidates transients that point at
+        // the previous in-memory geometry. Same-canvas snapshot heals keep
+        // editor-local transient state intact so an SSE refresh cannot
+        // interrupt an active edit.
+        if (isDifferentCanvas) {
+          set({
+            pendingInlineEditNodeId: null,
+            collapsedFrameIds: new Set(),
+            viewport: null,
+          });
+          useToolStore.getState().resetForCanvasSwitch();
+          preprocessQueue.cancelAll();
+        }
+        // Snapshot replacement can invalidate selected strokes/polygons even
+        // when the canvas id is unchanged (for example after an SSE heal).
         useGesturePreviewStore.getState().resetCanvasScopedTransients();
+        dismissVersionConflictToast();
         // Apply the authoritative server state via the no-autosave setter.
         // A load must NEVER schedule a structure PUT: the nodes/edges we
         // just fetched already ARE the server's state, so bumping the
@@ -2012,7 +2026,12 @@ const useCanvasStore = create<RFState>()(
           viewport: loadedViewport,
           canvasTitle: response.title || 'Untitled',
           version: response.version,
+          ...(canvasId ? { canvasId: targetId } : {}),
           isLoading: false,
+          canvasNotFound: false,
+          canvasLoadFailure: null,
+          versionConflict: false,
+          versionConflictServerVersion: null,
           canUndo: canvasHistoryManager.canUndo,
           canRedo: canvasHistoryManager.canRedo,
           ingestionByNodeId: {},
@@ -2049,15 +2068,33 @@ const useCanvasStore = create<RFState>()(
           if (!shouldBackfillNodeLabel(node)) continue;
           preprocessQueue.schedule(node);
         }
+        return true;
       } catch (error) {
+        if (!isCurrentRequest()) return false;
         console.error('Failed to load canvas:', error);
-        set({ isLoading: false });
+        set({
+          isLoading: false,
+          canvasNotFound: false,
+          canvasLoadFailure: {
+            canvasId: targetId,
+            kind: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+        return false;
       }
     },
 
     switchCanvas: async (canvasId: string) => {
       const currentId = get().canvasId;
-      if (canvasId === currentId) return;
+      if (canvasId === currentId && get().canvasLoadFailure?.canvasId !== canvasId) {
+        // Choosing the still-current source cancels an in-flight destination.
+        // Its late response must not replace the source after we report arrival.
+        ++canvasLoadRequestGeneration;
+        get()._setStateNoAutosave({ isLoading: false, canvasNotFound: false, canvasLoadFailure: null });
+        return true;
+      }
+      const requestGeneration = ++canvasLoadRequestGeneration;
 
       // Flip into the loading state *before* awaiting anything so the
       // shell shows the loading state on the very next render instead of
@@ -2067,43 +2104,40 @@ const useCanvasStore = create<RFState>()(
       set({
         isLoading: true,
         canvasNotFound: false,
-        versionConflict: false,
-        versionConflictServerVersion: null,
+        canvasLoadFailure: null,
       });
-      // Same rationale as `loadCanvas`: the persistent conflict toast
-      // is bound to the outgoing canvas; clear it so it doesn't bleed
-      // into the new one (which has its own fresh version baseline).
-      dismissVersionConflictToast();
 
-      // Flush any pending save for the current canvas before switching
-      await structureScheduler.flushAsync();
-      // Also drain any pending per-node content PUTs so editor edits
-      // made on the outgoing canvas land before we tear its state down.
-      await nodeContentQueue.flushAll();
+      try {
+        // The same drain is used by native navigation and cross-canvas moves.
+        await drainPendingSaves();
+        if (get().versionConflict || get().isSaving || get().pendingContentNodeIds().length > 0) {
+          throw new Error('当前现场仍有未保存的修改，请处理保存状态后重试');
+        }
+      } catch (error) {
+        if (requestGeneration !== canvasLoadRequestGeneration) return false;
+        set({
+          isLoading: false,
+          canvasNotFound: false,
+          canvasLoadFailure: {
+            canvasId,
+            kind: 'error',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+        return false;
+      }
+      if (requestGeneration !== canvasLoadRequestGeneration) return false;
 
-      // Cancel all pending preprocessing timers
-      preprocessQueue.cancelAll();
-
-      // Reset state for clean slate. `viewport` is cleared so the new
-      // canvas's restore effect either applies its own saved viewport
-      // or, for older canvases without one, runs a one-shot fitView.
-      set({
-        pendingInlineEditNodeId: null,
-        collapsedFrameIds: new Set(),
-        canvasNotFound: false,
-        viewport: null,
-      });
-      useToolStore.getState().resetForCanvasSwitch();
-      useGesturePreviewStore.getState().resetCanvasScopedTransients();
-      // Load the new canvas
-      await get().loadCanvas(canvasId);
+      // Load the new canvas. It commits the replacement only after fetch and
+      // warmup succeed, so a failed switch leaves the source canvas intact.
+      return get().loadCanvas(canvasId, { requestGeneration });
     },
 
     saveCanvas: async (options) => {
       // Pause structure saves after an unresolved version mismatch so we do
       // not pile up 409s. Canvas Sync automatically clears this gate and
       // retries once it reaches the server version reported by the conflict.
-      if (get().versionConflict) return;
+      if (get().versionConflict) return false;
 
       const { isSaving } = get();
       // `force` (unload path) skips coalescing: we want the latest
@@ -2125,7 +2159,7 @@ const useCanvasStore = create<RFState>()(
       }
       if (isSaving && !options?.force) {
         set({ pendingSave: true });
-        return;
+        return false;
       }
 
       set({ isSaving: true });
@@ -2176,7 +2210,7 @@ const useCanvasStore = create<RFState>()(
               // latest local structure against that fresh baseline instead
               // of turning this delayed response into a global conflict.
               set({ pendingSave: true });
-              return;
+              return false;
             }
             // Server is ahead of us (another tab / device / agent wrote
             // first). Stop the autosave loop and surface a persistent
@@ -2192,7 +2226,7 @@ const useCanvasStore = create<RFState>()(
               });
               showVersionConflictToast();
             }
-            return;
+            return false;
           }
           // Surface other conflicts (e.g. CANVAS_TITLE_CONFLICT) to the
           // caller — `tryRename` reverts the optimistic UI on those.
@@ -2224,6 +2258,7 @@ const useCanvasStore = create<RFState>()(
       if (saveSucceeded) {
         void canvasEvents.flush(get().canvasId);
       }
+      return saveSucceeded;
     },
 
     tryRename: async (kind, id, nextName) => {
@@ -2245,12 +2280,12 @@ const useCanvasStore = create<RFState>()(
         const previous = canvasTitle;
         set({ canvasTitle: trimmed });
         try {
-          await get().saveCanvas();
+          const saved = await get().saveCanvas();
           // `saveCanvas` swallows `CANVAS_VERSION_CONFLICT` (sets the
           // store flag + toast). When that path fired, the title we
           // optimistically applied was never actually persisted, so
           // revert and report failure to the caller.
-          if (get().versionConflict) {
+          if (!saved) {
             set({ canvasTitle: previous });
             return false;
           }

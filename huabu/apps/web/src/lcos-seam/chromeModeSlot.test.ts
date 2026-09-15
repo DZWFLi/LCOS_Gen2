@@ -19,7 +19,7 @@ describe('R2 旧壳退役策略', () => {
   });
 
   it('lcos 模式下未覆盖的类型继续挂旧工具条（避免删能力）', () => {
-    // sketch=笔触控制、question=AI 运行/取消、frame=容器布局、text=原生自由文本格式、
+    // sketch=笔触控制、question=AI 运行/取消、frame=容器布局、未绑定 text=原生自由文本格式、
     // pdf/office=下载（LCOS 未接线）、web=打开外链（LCOS 未接线）。
     for (const type of ['sketch', 'question', 'frame', 'text', 'pdf', 'office', 'web']) {
       expect(shouldStandDownLegacyNodeToolbar('lcos', type)).toBe(false);
@@ -27,5 +27,6 @@ describe('R2 旧壳退役策略', () => {
     for (const type of ['sketch', 'question', 'frame', 'text', 'pdf', 'office', 'web']) {
       expect(LCOS_STANDDOWN_TOOLBAR_TYPES.has(type)).toBe(false);
     }
+    expect(shouldStandDownLegacyNodeToolbar('lcos', 'text', true)).toBe(true);
   });
 });

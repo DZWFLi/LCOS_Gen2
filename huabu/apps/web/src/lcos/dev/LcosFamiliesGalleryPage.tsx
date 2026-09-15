@@ -314,9 +314,11 @@ export default function LcosFamiliesGalleryPage(): React.JSX.Element {
                   projectId="gallery"
                   projectName={`现场=${variant}`}
                   surface={variant}
+                  workspaces={[]}
                   canvasBySurface={{}}
                   surfaceByWorkspace={new Map()}
                   ensureCanvas={async () => undefined}
+                  ensureWorkspaceCanvas={async () => undefined}
                   shellStatus="loading"
                   onRetry={() => undefined}
                 />

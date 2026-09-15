@@ -15,19 +15,36 @@ type InitialCanvasViewport = {
   nodeIdsToFit: string[];
 };
 
+export interface InitialCanvasViewportOptions {
+  /**
+   * LCOS owns the first frame through `LcosCanvasCommands`, which can account
+   * for the route-level HUD safe area and its projection completion signal.
+   * The legacy fit would otherwise run first and zoom a sparse canvas to giant
+   * text before LCOS gets a chance to frame it.
+   */
+  readonly deferFit?: boolean;
+}
+
 /** Restore a saved viewport or fit persisted node bounds on first mount. */
-export const useInitialCanvasViewport = () => {
+export const useInitialCanvasViewport = (
+  options: InitialCanvasViewportOptions = {},
+) => {
+  const deferFit = options.deferFit === true;
   const initialViewport = useMemo<InitialCanvasViewport>(() => {
     const { viewport, nodes } = useCanvasStore.getState();
     if (viewport) return { defaultViewport: viewport, nodeIdsToFit: [] };
     return { nodeIdsToFit: nodes.map((node) => node.id) };
   }, []);
   const [isPending, setIsPending] = useState(
-    initialViewport.nodeIdsToFit.length > 0,
+    initialViewport.nodeIdsToFit.length > 0 && !deferFit,
   );
 
   const fitInitialViewport = useCallback(
     (instance: ReactFlowInstance) => {
+      if (deferFit) {
+        setIsPending(false);
+        return;
+      }
       if (initialViewport.nodeIdsToFit.length === 0) return;
 
       try {
@@ -40,7 +57,7 @@ export const useInitialCanvasViewport = () => {
         setIsPending(false);
       }
     },
-    [initialViewport.nodeIdsToFit],
+    [deferFit, initialViewport.nodeIdsToFit],
   );
 
   return {

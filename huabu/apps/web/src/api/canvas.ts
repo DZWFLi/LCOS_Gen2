@@ -130,8 +130,7 @@ export async function getCanvas(
     });
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
-    console.error('Failed to get canvas:', error);
-    return null;
+    throw error;
   }
 }
 

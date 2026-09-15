@@ -14,6 +14,7 @@ import { Loading } from '@/components/Common/Loading';
 import { MilkdownPreview } from '@/components/Milkdown';
 import { useNodeLOD } from '@/hooks/useNodeLOD';
 import { useNodeScale } from '@/hooks/useNodeScale';
+import { useResolvedNodeBody } from '@/lcos-seam/nodeBodySlot';
 import useCanvasStore from '@/store/canvasStore';
 import { openPreviewNode } from '@/store/previewWorkspace/actions';
 import {
@@ -26,7 +27,6 @@ import { isMac } from '@/utils/platform';
 
 import { MissingFileBanner } from '../MissingFileBanner';
 import { NodeWrapper } from '../NodeWrapper';
-import { useResolvedNodeBody } from '@/lcos-seam/nodeBodySlot';
 import { useTrackNoteFixedHeight } from './heightMemory';
 import {
   NOTE_CONTENT_HOST_CLASS,
@@ -143,7 +143,11 @@ export const NoteNode = memo(
     // re-enqueues. Once hydrated we keep the editor mounted (never tear
     // down) so zooming back out and in again doesn't re-pay the build
     // cost. See `../shared/nodeHydrationScheduler`.
-    const hydrated = useDeferredHydration(isMinimalLOD);
+    // Core-bound LCOS projections replace the native note body entirely.
+    // Do not enqueue Milkdown for a body that will never render.
+    const hydrated = useDeferredHydration(
+      isMinimalLOD || BodyOverride !== undefined,
+    );
 
     // Session-scoped memory of "last pinned height" for this note. Lets a
     // "fixed → auto → fixed" round-trip restore the previous size instead
@@ -173,6 +177,7 @@ export const NoteNode = memo(
     // changes with content, and we have to watch the editor's root plus a
     // MutationObserver for (re)mounts.
     useEffect(() => {
+      if (BodyOverride !== undefined) return;
       const host = previewHostRef.current;
       if (!host) return;
       // While the spinner placeholder is showing there is no `.ProseMirror`
@@ -227,13 +232,14 @@ export const NoteNode = memo(
         mo.disconnect();
         ro.disconnect();
       };
-    }, [hydrated, measurementKey]);
+    }, [BodyOverride, hydrated, measurementKey]);
 
     // Truncation is no longer conditional on fixed mode. In auto mode it
     // surfaces the window between "the content grew" and "the correction
     // committed", which is the honest signal: the node really is showing
     // less than it holds right now.
     const isTruncated =
+      BodyOverride === undefined &&
       contentHeight > 0 && hostHeight > 0 && contentHeight - hostHeight > 1;
 
     // Report the measured intrinsic height as a *proposal*. The queue
@@ -248,6 +254,7 @@ export const NoteNode = memo(
     // height the next measurement would be compared against.
     // `setNoteHeightMode` measures offscreen instead when it needs one.
     useEffect(() => {
+      if (BodyOverride !== undefined) return;
       if (!contentMeasurement) return;
       if (isFixedHeight) return;
       proposeMeasuredHeight({
@@ -255,7 +262,7 @@ export const NoteNode = memo(
         intrinsicHeight: contentMeasurement.height,
         measuredFor: contentMeasurement.measuredFor,
       });
-    }, [contentMeasurement, id, isFixedHeight]);
+    }, [BodyOverride, contentMeasurement, id, isFixedHeight]);
 
     // A pending proposal for an unmounting node describes a measurement
     // nobody is waiting for. Dropping it also keeps a virtualization
@@ -267,7 +274,7 @@ export const NoteNode = memo(
     useAutoHeightInvariant(
       id,
       previewHostRef,
-      hydrated && !isFixedHeight,
+      BodyOverride === undefined && hydrated && !isFixedHeight,
       contentHeight,
     );
 
@@ -423,7 +430,9 @@ export const NoteNode = memo(
         // as NotePreview's insertion bar but softer so it reads as a
         // "zone" rather than a precise insertion point.
         className={
-          isDropTarget ? 'ring-info-light bg-info-light/60 ring-4' : undefined
+          BodyOverride === undefined && isDropTarget
+            ? 'ring-info-light bg-info-light/60 ring-4'
+            : undefined
         }
       >
         {isContentMissing ? (
@@ -433,19 +442,19 @@ export const NoteNode = memo(
             <div
               className={clsx(
                 'relative h-full w-full overflow-hidden',
-                !hasAccent && 'bg-surface',
+                BodyOverride === undefined && !hasAccent && 'bg-surface',
               )}
-              onDragEnter={handleNoteDragEnter}
-              onDragOver={handleNoteDragOver}
-              onDragLeave={handleNoteDragLeave}
-              onDrop={handleNoteDrop}
+              onDragEnter={BodyOverride === undefined ? handleNoteDragEnter : undefined}
+              onDragOver={BodyOverride === undefined ? handleNoteDragOver : undefined}
+              onDragLeave={BodyOverride === undefined ? handleNoteDragLeave : undefined}
+              onDrop={BodyOverride === undefined ? handleNoteDrop : undefined}
             >
               <div
                 style={{
-                  transform: `scale(${scale})`,
+                  transform: BodyOverride === undefined ? `scale(${scale})` : undefined,
                   transformOrigin: 'top left',
-                  width: `${100 / scale}%`,
-                  height: `${100 / scale}%`,
+                  width: BodyOverride === undefined ? `${100 / scale}%` : '100%',
+                  height: BodyOverride === undefined ? `${100 / scale}%` : '100%',
                 }}
               >
                 {/*
@@ -468,7 +477,9 @@ export const NoteNode = memo(
                   className={clsx(
                     NOTE_CONTENT_HOST_CLASS,
                     'h-full',
-                    !hasAccent && 'bg-surface',
+                    BodyOverride === undefined &&
+                      !hasAccent &&
+                      'bg-surface',
                   )}
                 >
                   {BodyOverride ? (

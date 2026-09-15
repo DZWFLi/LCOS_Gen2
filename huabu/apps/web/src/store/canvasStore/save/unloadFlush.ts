@@ -32,7 +32,7 @@ import type { StructureScheduler } from './structureScheduler';
 type SaveCanvasFn = (opts?: {
   keepalive?: boolean;
   force?: boolean;
-}) => Promise<void>;
+}) => Promise<boolean>;
 
 export type UnloadFlushDeps = {
   events: CanvasEventBuffer;

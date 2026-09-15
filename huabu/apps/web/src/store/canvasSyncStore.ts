@@ -175,7 +175,8 @@ export const useCanvasSyncStore = create<CanvasSyncState>((set, get) => ({
                 if (event.data.version !== canvasStore.version) {
                   void canvasStore
                     .loadCanvas(canvasId, { resetHistory: true })
-                    .then(() => {
+                    .then((loaded) => {
+                      if (!loaded) return;
                       const current = useCanvasStore.getState();
                       if (current.canvasId === canvasId) {
                         invalidateUnclaimedAgentHistories(
@@ -206,7 +207,8 @@ export const useCanvasSyncStore = create<CanvasSyncState>((set, get) => ({
                 if (canvasStore.pendingContentNodeIds().length === 0) {
                   void canvasStore
                     .loadCanvas(canvasId, { resetHistory: true })
-                    .then(() => {
+                    .then((loaded) => {
+                      if (!loaded) return;
                       const current = useCanvasStore.getState();
                       if (current.canvasId === canvasId) {
                         invalidateUnclaimedAgentHistories(

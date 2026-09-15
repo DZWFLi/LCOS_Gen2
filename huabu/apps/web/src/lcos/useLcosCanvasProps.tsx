@@ -27,6 +27,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 
 import useCanvasStore from '@/store/canvasStore';
+import { useCanvasSyncStore } from '@/store/canvasSyncStore';
 
 import { LcosCameraMotionPolicy } from './host/LcosCameraMotionPolicy';
 import { useLcosHostStore } from './host/lcosHostState';
@@ -55,6 +56,8 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
 
   const canvasId = useCanvasStore((state) => state.canvasId);
   const isLoading = useCanvasStore((state) => state.isLoading);
+  const connectCanvasSync = useCanvasSyncStore((state) => state.connect);
+  const disconnectCanvasSync = useCanvasSyncStore((state) => state.disconnect);
 
   // 1) 会话级 runtime 一次创建；projectId 变化时重建（dispose 旧的），re-render 不重建。
   useEffect(() => {
@@ -108,12 +111,26 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     };
   }, []);
 
-  // 3) 画布就绪后：retarget 到真实 canvas + 正式 reconcile（project-open）。
+  // 3) Gen2 project route does not mount CanvasPage, so it must own the same
+  // canvas SSE subscription. Reconcile writes Huabu server state first; this
+  // subscription is what delivers those deltas into the browser canvas store.
+  useEffect(() => {
+    if (!canvasId || isLoading) return;
+    connectCanvasSync(canvasId);
+    return () => disconnectCanvasSync();
+  }, [canvasId, isLoading, connectCanvasSync, disconnectCanvasSync]);
+
+  // 4) 画布就绪后：retarget 到真实 canvas + 正式 reconcile（project-open）。
   //    不在 render 中触发（A11 规则 1）。
   useEffect(() => {
     if (!canvasId || isLoading) return;
     const rt = runtimeRef.current;
     if (!rt) return;
+    let active = true;
+    const isCurrent = (): boolean => active
+      && runtimeRef.current === rt
+      && useLcosReferenceStore.getState().projectId === projectId
+      && useCanvasStore.getState().canvasId === canvasId;
     rt.retarget({ canvasId });
     useLcosHostStore.getState().setHost(rt.host);
     void (async () => {
@@ -124,9 +141,11 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
           console.info(`[lcos] reconcile start canvas=${canvasId}`);
         }
         await rt.host.reconcile('project-open');
+        if (!isCurrent()) return;
         // P0-5: identity cache derives from ProjectionBinding — reconcile just
         // established/refreshed the bindings, so re-sync the reference index.
         const bindings = await rt.host.listNodeBindings();
+        if (!isCurrent()) return;
         useLcosReferenceStore.getState().resetNodeEntities();
         for (const binding of bindings) {
           useLcosReferenceStore.getState().registerNodeEntity(
@@ -149,14 +168,16 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
         }
         // R2 真实内容位：把 Core 的字节搬进画布资产区，作为图片节点的 data.src。
         // 不做这一步，Huabu 原生 ImageNode 只会渲染"无图片来源"的空白块（用户已否决的形态）。
-        const staged = await stageProjectedSources(projectId, bindings);
+        const staged = await stageProjectedSources(projectId, bindings, isCurrent);
         if (import.meta.env.DEV) {
           console.info(`[lcos] node sources staged: ${staged}`);
         }
       } catch (error) {
+        if (!isCurrent()) return;
         console.warn('[lcos] project-open reconcile failed', error);
       }
     })();
+    return () => { active = false; };
   }, [canvasId, isLoading, projectId]);
 
   return { hostExtension };

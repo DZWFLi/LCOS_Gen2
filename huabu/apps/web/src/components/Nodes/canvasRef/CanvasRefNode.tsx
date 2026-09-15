@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/Common/Button';
 import { NodeWrapper } from '@/components/Nodes/NodeWrapper';
 import { isEditableTarget } from '@/hooks/shortcuts/isEditableTarget';
+import { useResolvedNodeBody } from '@/lcos-seam/nodeBodySlot';
 import useCanvasStore from '@/store/canvasStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 
@@ -21,6 +22,7 @@ export const CanvasRefNode = memo(
   ({ id, data, selected }: NodeProps<CanvasRefNodeType>) => {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const hostBody = useResolvedNodeBody({ nodeId: id, nodeType: 'canvasRef', data });
     const title = useWorkspaceStore(
       (state) => state.spaceTitles[data.targetCanvasId],
     );
@@ -40,7 +42,7 @@ export const CanvasRefNode = memo(
     }, [broken, data.targetCanvasId, navigate]);
 
     useEffect(() => {
-      if (!isOnlySelected) return;
+      if (!isOnlySelected || hostBody) return;
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.key !== 'Enter' || isEditableTarget(event.target)) return;
         const target = event.target instanceof Element ? event.target : null;
@@ -57,7 +59,7 @@ export const CanvasRefNode = memo(
       };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOnlySelected, openTarget]);
+    }, [isOnlySelected, openTarget, hostBody]);
 
     return (
       <NodeWrapper
@@ -66,7 +68,7 @@ export const CanvasRefNode = memo(
         type="canvasRef"
         selected={selected}
         allowOverflow
-        onDoubleClick={openTarget}
+        {...(hostBody ? {} : { onDoubleClick: openTarget })}
       >
         <div className="flex h-full w-full flex-col">
           <div className="border-edge-default flex items-center gap-2 border-b px-4 py-3">

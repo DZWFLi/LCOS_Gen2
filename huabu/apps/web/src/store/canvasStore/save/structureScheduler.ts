@@ -37,10 +37,8 @@ export type StructureScheduler = {
   schedule(): void;
 
   /**
-   * If a save is currently pending, cancel its timer and immediately
-   * await the regular (non-keepalive) save. Swallows
-   * `CanvasConflictError` for the same reason as {@link schedule}.
-   * No-op when no save is pending.
+   * Await both in-flight and trailing edits. Failed writes remain pending
+   * for a later retry; a caller must not leave the canvas on rejection.
    */
   flushAsync(): Promise<void>;
 
@@ -61,10 +59,13 @@ export type StructureScheduler = {
  * store is recreated (e.g. HMR).
  */
 export function createStructureScheduler(opts: {
-  getSaveCanvas: () => () => Promise<void>;
+  getSaveCanvas: () => () => Promise<boolean>;
   delayMs: number;
 }): StructureScheduler {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let revision = 0;
+  let savedRevision = 0;
+  let inflight: Promise<void> | null = null;
 
   const logIfNotConflict = (label: string, err: unknown): void => {
     if (!(err instanceof CanvasConflictError)) {
@@ -72,33 +73,43 @@ export function createStructureScheduler(opts: {
     }
   };
 
+  async function savePending(): Promise<void> {
+    if (inflight) await inflight;
+    if (savedRevision >= revision) return;
+    const savingRevision = revision;
+    const save = opts.getSaveCanvas()().then((saved) => {
+      if (!saved) throw new Error('当前现场的修改尚未保存成功，请重试');
+      savedRevision = Math.max(savedRevision, savingRevision);
+    });
+    inflight = save;
+    try {
+      await save;
+    } finally {
+      if (inflight === save) inflight = null;
+    }
+  }
+
   return {
     schedule(): void {
+      revision += 1;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        opts
-          .getSaveCanvas()()
+        savePending()
           .catch((err) => logIfNotConflict('Autosave failed', err));
       }, opts.delayMs);
     },
 
     async flushAsync(): Promise<void> {
-      if (!timer) return;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       timer = null;
-      try {
-        await opts.getSaveCanvas()();
-      } catch (err) {
-        logIfNotConflict('Failed to flush autosave', err);
-      }
+      await savePending();
     },
 
     cancelPending(): boolean {
-      if (!timer) return false;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       timer = null;
-      return true;
+      return savedRevision < revision;
     },
   };
 }

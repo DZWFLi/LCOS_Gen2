@@ -1,18 +1,35 @@
 // LcosSurfaceDock — 底部常驻现场切换（Figma Main/ProjectShell：SurfaceDock 底 24 常驻）。
 // 三现场切换驱动真实 worksite canvasId（切换 = switchCanvas / 首次 = createCanvas + 回写）。
-// Assembly 入口 Wave 5 接入，现在禁用并标注 GAP（不点后无果）。
+// Assembly 有独立入口；Dock 只呈现三个一级 Surface。
 
-import { Blocks } from 'lucide-react';
-import { useState } from 'react';
+import { GitBranch, Network, PanelsTopLeft } from 'lucide-react';
 
-import { LCOS_SURFACES, useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
+import {
+  LCOS_SURFACES,
+  useLcosShellStore,
+  type LcosSurfaceKey,
+} from './lcosShellStore';
 import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
-import { lcosHitArea, lcosTokens } from '../ui/lcosTokens';
+import { lcosTokens } from '../ui/lcosTokens';
 
 export interface LcosSurfaceDockProps {
   readonly projectId: string;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
+  readonly ensureCanvas: (
+    surface: LcosSurfaceKey,
+    force?: boolean,
+  ) => Promise<string | undefined>;
+}
+
+function surfaceIcon(surface: LcosSurfaceKey): React.JSX.Element {
+  switch (surface) {
+    case 'main':
+      return <PanelsTopLeft className="h-[18px] w-[18px]" aria-hidden />;
+    case 'context':
+      return <Network className="h-[18px] w-[18px]" aria-hidden />;
+    case 'workflow':
+      return <GitBranch className="h-[18px] w-[18px]" aria-hidden />;
+  }
 }
 
 export function LcosSurfaceDock({
@@ -21,25 +38,19 @@ export function LcosSurfaceDock({
   ensureCanvas,
 }: LcosSurfaceDockProps): React.JSX.Element {
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
-  const openWindow = useLcosShellStore((s) => s.openWindow);
   const { busySurface, transitionError, switchWorksite } = useLcosWorksiteNav({
     projectId,
     canvasBySurface,
     ensureCanvas,
   });
-  const [toast, setToast] = useState<string | undefined>(undefined);
-
   const handleSwitch = (surface: LcosSurfaceKey): void => {
-    setToast(undefined);
-    void switchWorksite(surface).then(() => {
-      if (transitionError) setToast(transitionError);
-    });
+    void switchWorksite(surface);
   };
 
   return (
     <div
       data-lcos-surface-dock
-      className="pointer-events-auto fixed z-40 flex items-center gap-1 overflow-x-auto rounded-full px-2 py-1.5"
+      className="pointer-events-auto fixed z-40 rounded-full px-2 py-1.5"
       style={{
         left: '50%',
         bottom: 24,
@@ -52,16 +63,7 @@ export function LcosSurfaceDock({
         boxShadow: '0 4px 20px rgba(0,0,0,0.10)',
       }}
     >
-      {/* Navigator placeholder — Wave 4 接入搜索岛；窄屏隐藏（搜索岛本身已在顶左常驻） */}
-      <div
-        title="Navigator（未启用）"
-        className="mr-1 hidden items-center justify-center rounded-full sm:flex"
-        style={{ width: 44, height: 44, color: lcosTokens.color.muted, opacity: 0.55, cursor: 'not-allowed' }}
-        aria-hidden
-      >
-        <Blocks className="h-4 w-4" />
-      </div>
-
+      <div className="flex items-center gap-1 overflow-x-auto">
       {LCOS_SURFACES.map(({ key, label }) => {
         const active = activeSurface === key;
         const creating = busySurface === key;
@@ -74,43 +76,42 @@ export function LcosSurfaceDock({
             data-lcos-surface-active={active ? 'true' : 'false'}
             onClick={() => handleSwitch(key)}
             title={`${label} · ${canvasBySurface[key] !== undefined ? '现场画布' : '首次进入会建立现场画布'}`}
-            className="rounded-full px-3 text-sm transition-colors disabled:opacity-60 sm:px-4"
+            aria-label={label}
+            aria-pressed={active}
+            className="flex h-11 w-11 items-center justify-center rounded-xl transition-colors disabled:opacity-60"
             style={{
-              ...lcosHitArea,
               minHeight: 44,
-              fontWeight: active ? 600 : 400,
-              color: active ? lcosTokens.color.textOnInverse : lcosTokens.color.text,
-              background: active ? lcosTokens.color.inverse : 'transparent',
+              minWidth: 44,
+              color: active ? lcosTokens.color.text : lcosTokens.color.muted,
+              background: active ? lcosTokens.color.raised : 'transparent',
             }}
           >
-            {creating ? '建立中…' : label}
+            {creating ? (
+              <span
+                className="h-4 w-4 animate-pulse rounded-full"
+                style={{ background: lcosTokens.color.muted }}
+                aria-hidden
+              />
+            ) : (
+              surfaceIcon(key)
+            )}
           </button>
         );
       })}
+      </div>
 
-      <div className="mx-1 h-5 w-px" style={{ background: lcosTokens.color.borderSubtle }} />
-
-      <button
-        type="button"
-        data-lcos-surface="assembly"
-        onClick={() => openWindow('assembly', 'Assembly')}
-        title="Assembly · 项目共享仓库"
-        className="rounded-full px-3 text-sm transition-colors sm:px-4"
-        style={{ ...lcosHitArea, minHeight: 44, color: lcosTokens.color.text }}
-      >
-        Assembly
-      </button>
-
-      {toast && (
+      {transitionError && (
         <div
-          className="absolute -top-11 left-1/2 -translate-x-1/2 rounded-full px-3 py-1.5 text-xs whitespace-nowrap"
+          role="alert"
+          className="absolute bottom-full left-1/2 mb-3 w-max -translate-x-1/2 rounded-2xl px-3 py-1.5 text-xs"
           style={{
+            maxWidth: 'min(400px, calc(100vw - 32px))',
             background: lcosTokens.color.inverse,
             color: lcosTokens.color.textOnInverse,
             boxShadow: lcosTokens.glass.shadow,
           }}
         >
-          {toast}
+          {transitionError}
         </div>
       )}
     </div>

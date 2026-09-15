@@ -17,13 +17,9 @@ export function TemporalRail(): React.JSX.Element {
       <div className="flex flex-col items-center gap-1">
         <span className="text-[10px] font-medium" style={{ color: lcosTokens.color.muted }}>时间轨</span>
         <span className="text-center text-[9px] leading-tight" style={{ color: lcosTokens.color.muted }}>
-          时间分组尚未接入
+          暂无时间记录
         </span>
       </div>
-      <span className="h-px w-8" style={{ background: lcosTokens.color.borderSubtle }} aria-hidden />
-      <span className="text-[9px] leading-tight" style={{ color: lcosTokens.color.muted }}>
-        不绘制虚假刻度
-      </span>
     </div>
   );
 }

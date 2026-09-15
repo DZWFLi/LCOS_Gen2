@@ -9,7 +9,7 @@
 // 诚实回退：未绑定 / 物种不在注册表 → undefined（native body），不静默降级成别的物种。
 // reactive：store 变更时 notify，late binding 就位后原位换 body（同节点 geometry 不变）。
 
-import { resolveNodeSpeciesFromFacts } from '@local-creative-os/web-gen2';
+import { resolveLcosNodeHostPresentation, resolveNodeSpeciesFromFacts } from '@local-creative-os/web-gen2';
 
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { lcosNodeCardRegistry } from './lcosNodeCardRegistry';
@@ -33,6 +33,18 @@ export function createLcosNodePresentationSeam(): CanvasNodeBodySeam {
       const card = lcosNodeCardRegistry.resolveNodeCard(species);
       if (card === undefined) return undefined; // 未注册 → native（诚实回退）
       return card;
+    },
+    resolveHostPresentation(input: CanvasNodeBodySlotInput) {
+      const ref = useLcosReferenceStore.getState().nodeEntityRefs.get(input.nodeId);
+      if (!ref) return undefined;
+      const descriptor = ref.descriptor;
+      return resolveLcosNodeHostPresentation({
+        entityType: ref.entityType,
+        ...(descriptor?.artifactKind === undefined ? {} : { artifactKind: descriptor.artifactKind }),
+        ...(descriptor?.mimeType === undefined ? {} : { mimeType: descriptor.mimeType }),
+        ...(descriptor?.sourceKind === undefined ? {} : { sourceKind: descriptor.sourceKind }),
+        ...(descriptor?.managed === undefined ? {} : { managed: descriptor.managed }),
+      });
     },
     subscribe(listener: () => void) {
       return useLcosReferenceStore.subscribe(listener);

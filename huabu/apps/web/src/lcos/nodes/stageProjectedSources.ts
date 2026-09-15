@@ -18,12 +18,12 @@
 //   - 本模块只读 Core 字节、只写 Huabu 节点 `data.src`，**不做任何 Core 写操作**，
 //     也不新建 store / 不改 ProjectionBinding。
 //
-// 覆盖范围（GAP，如实标注）：当前**只处理 image**。pdf / video / audio / office 的同类
-// 落成依赖各自的 Huabu 节点形态与资产类型，尚未接线 —— 未接线即不可用，不假装支持。
+// 覆盖范围：image + audio。两者都有现成 Huabu asset API / native node consumer。
+// pdf / video / office 仍保持 GAP，不把未接 producer 写成成功。
 
 import { HttpClient } from '@local-creative-os/web-gen2';
 
-import { uploadImage } from '@/api/artifact';
+import { uploadAudio, uploadImage } from '@/api/artifact';
 import { readLcosHostConfig } from '@/lcos/lcosHost';
 import useCanvasStore from '@/store/canvasStore';
 
@@ -39,12 +39,12 @@ type ProjectedSourceBinding = {
 };
 
 /**
- * 已在途/已落成的节点内容（`<nodeId>:<fileRecordId>`）。
+ * 已在途/已落成的节点内容（project / canvas / node / fileRecord 组合）。
  *
  * 在途期间跳过重复调用；**成功后永久跳过**（重放 reconcile 不会重复上传字节）。
  * 失败时把键放行，允许下一次 reconcile 重试。模块级状态，页面重载即清空。
  */
-const stagedSources = new Set<string>();
+const stagedSources = new Map<string, () => boolean>();
 
 /**
  * 图片 MIME → 扩展名。服务端**按上传文件名的扩展名**决定存下来的 artifact key
@@ -64,9 +64,35 @@ const IMAGE_EXT_BY_MIME: Readonly<Record<string, string>> = {
   'image/bmp': '.bmp',
 };
 
-function imageExtensionFor(mimeType: string): string {
+const AUDIO_EXT_BY_MIME: Readonly<Record<string, string>> = {
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
+  'audio/webm': '.webm',
+  'audio/ogg': '.ogg',
+  'audio/mpeg': '.mp3',
+  'audio/mp4': '.m4a',
+};
+
+type StageKind = 'image' | 'audio';
+
+function stageKindOf(binding: ProjectedSourceBinding): StageKind | undefined {
+  const mime = (binding.descriptor?.mimeType ?? '').toLowerCase().split(';', 1)[0].trim();
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (binding.descriptor?.artifactKind === 'image') return 'image';
+  return undefined;
+}
+
+function nativeHostTypeForStage(kind: StageKind): 'image' | 'note' {
+  // Audio morphology is hosted by the agent-creatable neutral note node. The
+  // Huabu audio renderer remains available for user-created native audio, but
+  // CREATE_NODES cannot create it for Core projection.
+  return kind === 'image' ? 'image' : 'note';
+}
+
+function extensionFor(kind: StageKind, mimeType: string): string {
   const bare = mimeType.toLowerCase().split(';')[0].trim();
-  return IMAGE_EXT_BY_MIME[bare] ?? '.png';
+  return kind === 'image' ? IMAGE_EXT_BY_MIME[bare] ?? '.png' : AUDIO_EXT_BY_MIME[bare] ?? '.webm';
 }
 
 /** `data.src` 为空（缺省 / null / 空串）才需要落成；已有内容一律不覆盖。 */
@@ -81,8 +107,9 @@ function isEmptySource(value: unknown): boolean {
  * 但浏览器 store 是通过画布同步异步收到的。紧随 reconcile 之后立刻读 store 可能还看不到新节点
  * （实测第一次落成读到 0 个候选节点）。这里事件驱动地等，且有上限，不阻塞打开。
  */
-async function waitForNodesInStore(ids: readonly string[], timeoutMs: number): Promise<void> {
+async function waitForNodesInStore(ids: readonly string[], timeoutMs: number, isCurrent: () => boolean): Promise<void> {
   const anyMissing = (): boolean => {
+    if (!isCurrent()) return false;
     const present = new Set(useCanvasStore.getState().nodes.map((node) => node.id));
     return ids.some((id) => !present.has(id));
   };
@@ -102,22 +129,23 @@ async function waitForNodesInStore(ids: readonly string[], timeoutMs: number): P
 }
 
 /**
- * 为绑定的图片 artifact 落成画布内容，返回本次**真正落成**的节点数。
+ * 为绑定的 image/audio artifact 落成画布内容，返回本次**真正落成**的节点数。
  *
- * 只处理：`entityType === 'artifact'` 且 `descriptor.artifactKind === 'image'` 且带
- * `descriptor.fileRecordId`。节点侧还要求：节点存在、`node.type === 'image'`、
- * `node.data.src` 为空。
+ * 只处理真实 MIME 能确定为 image/audio 且带 `descriptor.fileRecordId` 的 artifact。
+ * 节点侧还要求 native node type 与 MIME 家族一致，且 `data.src` 为空。
  *
  * 绝不抛出：每个绑定独立 try/catch，失败只 warn 并继续下一个。
  */
 export async function stageProjectedSources(
   projectId: string,
   bindings: readonly ProjectedSourceBinding[],
+  isCurrent: () => boolean = () => true,
 ): Promise<number> {
+  if (!isCurrent()) return 0;
   const candidates = bindings.filter(
     (binding) =>
       binding.entityType === 'artifact' &&
-      binding.descriptor?.artifactKind === 'image' &&
+      stageKindOf(binding) !== undefined &&
       (binding.descriptor?.fileRecordId ?? '') !== '',
   );
   if (candidates.length === 0) return 0;
@@ -126,12 +154,15 @@ export async function stageProjectedSources(
   const canvasId = useCanvasStore.getState().canvasId;
   // 画布未就绪时没有资产区可落；不猜 id，留给下一次 reconcile。
   if (!canvasId) return 0;
+  const ownsCanvas = (): boolean => isCurrent() && useCanvasStore.getState().canvasId === canvasId;
 
   // 投影的服务端写入先于浏览器 store 同步到，这里等节点真的出现在 store 里再动手。
   await waitForNodesInStore(
     candidates.map((binding) => binding.spatialId),
     15000,
+    ownsCanvas,
   );
+  if (!ownsCanvas()) return 0;
 
   const config = readLcosHostConfig(
     import.meta.env as Record<string, string | undefined>,
@@ -140,6 +171,7 @@ export async function stageProjectedSources(
   let staged = 0;
 
   for (const binding of candidates) {
+    if (!ownsCanvas()) break;
     const fileRecordId = binding.descriptor?.fileRecordId;
     if (!fileRecordId) continue;
 
@@ -147,11 +179,21 @@ export async function stageProjectedSources(
     const node = useCanvasStore
       .getState()
       .nodes.find((candidate) => candidate.id === binding.spatialId);
-    if (!node || node.type !== 'image' || !isEmptySource(node.data?.src)) continue;
+    const stageKind = stageKindOf(binding);
+    if (
+      !node ||
+      stageKind === undefined ||
+      node.type !== nativeHostTypeForStage(stageKind) ||
+      !isEmptySource(node.data?.src)
+    ) continue;
 
-    const dedupeKey = `${node.id}:${fileRecordId}`;
-    if (stagedSources.has(dedupeKey)) continue;
-    stagedSources.add(dedupeKey);
+    const dedupeKey = JSON.stringify([projectId, canvasId, node.id, fileRecordId]);
+    if (stagedSources.get(dedupeKey)?.()) continue;
+    stagedSources.set(dedupeKey, ownsCanvas);
+    const release = (): void => {
+      // An obsolete request must not remove a newer request for the same node.
+      if (stagedSources.get(dedupeKey) === ownsCanvas) stagedSources.delete(dedupeKey);
+    };
 
     try {
       if (!http) {
@@ -165,19 +207,32 @@ export async function stageProjectedSources(
           fileRecordId,
         )}/content`,
       );
-      // 字节的 MIME 以 Core 响应头为准，其次用投影描述里的 mimeType。
-      const mimeType = blob.type || binding.descriptor?.mimeType || 'image/png';
+      if (!ownsCanvas()) { release(); break; }
+      // 字节的 MIME 以 Core 响应头为准，其次用投影描述里的真实 mimeType。
+      const mimeType = (blob.type || binding.descriptor?.mimeType || (stageKind === 'image' ? 'image/png' : 'audio/webm'))
+        .toLowerCase()
+        .split(';', 1)[0]
+        .trim();
       const file = new File(
         [blob],
-        `${fileRecordId}${imageExtensionFor(mimeType)}`,
+        `${fileRecordId}${extensionFor(stageKind, mimeType)}`,
         { type: mimeType },
       );
-      const artifactKey = await uploadImage(file, canvasId);
+      const artifactKey = stageKind === 'image'
+        ? await uploadImage(file, canvasId)
+        : await uploadAudio(file, canvasId);
+      if (!ownsCanvas()) { release(); break; }
+      const currentNode = useCanvasStore.getState().nodes.find((candidate) => candidate.id === node.id);
+      if (!currentNode || currentNode.type !== nativeHostTypeForStage(stageKind) || !isEmptySource(currentNode.data?.src)) {
+        release();
+        continue;
+      }
       useCanvasStore.getState().updateNodeData(node.id, { src: artifactKey });
+      stagedSources.set(dedupeKey, () => true);
       staged += 1;
     } catch (error) {
       // 失败放行去重键：下次 reconcile 允许重试（只有成功才永久跳过）。
-      stagedSources.delete(dedupeKey);
+      release();
       console.warn(
         '[lcos] 节点内容落成失败',
         { nodeId: node.id, fileRecordId },

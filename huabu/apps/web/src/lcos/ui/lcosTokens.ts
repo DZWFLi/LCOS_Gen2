@@ -33,6 +33,14 @@ export const lcosTokens = {
     pinAmber: 'var(--lcos-pin-amber)',
     // Figma manifest 无 danger 变量：在 lcos.css 显式声明为 LCOS 状态色（ledger honest remainder）
     danger: 'var(--lcos-status-danger)',
+    mainPaper: 'var(--lcos-main-paper)',
+    mainWaveActive: 'var(--lcos-main-wave-active)',
+    mainWaveTail: 'var(--lcos-main-wave-tail)',
+    mainMarkerAmber: 'var(--lcos-main-marker-amber)',
+    mainMarkerGreen: 'var(--lcos-main-marker-green)',
+    mainImageShadow: 'var(--lcos-main-image-shadow)',
+    mainImageShadowSmall: 'var(--lcos-main-image-shadow-small)',
+    mainPaperShadow: 'var(--lcos-main-paper-shadow)',
   },
   radius: {
     control: 'var(--lcos-radius-control)',
@@ -57,6 +65,11 @@ export const lcosTokens = {
   },
   shadow: {
     default: 'var(--lcos-shadow-default)',
+  },
+  actionOrb: {
+    background: 'var(--lcos-action-orb-bg)',
+    border: 'var(--lcos-action-orb-border)',
+    shadow: 'var(--lcos-action-orb-shadow)',
   },
   typography: {
     fontFamily: `'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif`,

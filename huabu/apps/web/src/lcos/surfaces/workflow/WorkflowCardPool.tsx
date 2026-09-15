@@ -1,5 +1,5 @@
 // WorkflowCardPool — 材料/任务卡池（Figma 卡 5335:110 取用卡 7 状态；3:4 竖卡）。
-// 真实数据：warehouse（artifact/conversation/workflow）；「取用」→ 加入 Composer 草稿（未发送）；
+// 真实数据：warehouse 中真正的 workflow；普通 artifact/conversation 走 Assembly/会话入口，不伪装成任务卡。
 // 「打开/续接」真实动作 Wave 8（当前标注）。不把卡复制进 Main。
 
 
@@ -8,6 +8,7 @@ import { PlusCircle, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 
+import { isWorkflowCardItem } from './workflowCardSemantics';
 import { createLcosCoreSession } from '../../app/lcosCoreClient';
 import { useLcosReferenceStore } from '../../lcosReferenceState';
 import { sameEntityRef } from '../../referenceBridge';
@@ -28,17 +29,25 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
   const draftRefs = useLcosReferenceStore((s) => s.draft.orderedEntityRefs);
 
   useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
     setState('loading');
     void assembly
-      .getWarehouse(projectId)
+      .getWarehouse(projectId, controller.signal)
       .then((snapshot) => {
-        setItems(snapshot.items.filter((i) => i.kind === 'artifact' || i.kind === 'conversation' || i.kind === 'workflow'));
+        if (!active || controller.signal.aborted) return;
+        setItems(snapshot.items.filter(isWorkflowCardItem));
         setState('ready');
       })
       .catch((error: unknown) => {
+        if (!active || controller.signal.aborted) return;
         setState('error');
         setErrorDetail(error instanceof HttpError ? error.message : String(error));
       });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [projectId, assembly]);
 
   const filtered = useMemo(() => {
@@ -66,7 +75,7 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索材料 / 工作流"
+            placeholder="搜索工作流"
             className="w-full bg-transparent text-sm outline-none"
             style={{ color: lcosTokens.color.text }}
           />
@@ -79,7 +88,7 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
       )}
       {state === 'ready' && filtered.length === 0 && (
         <div className="py-8">
-          <LcosSurfaceFeedback presentation="empty" message={query ? '没有匹配项' : '尚无工作流 · 从 Main/会话提炼（Wave 8）或取用下面材料'} />
+          <LcosSurfaceFeedback presentation="empty" message={query ? '没有匹配项' : '还没有工作流卡片'} />
         </div>
       )}
 
@@ -90,8 +99,8 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
               key={`${item.kind}:${item.entityRef.id}`}
               state={cardState(item)}
               title={item.title ?? '未命名'}
-              meta={`${item.kind} · 卡牌（3:4）`}
-              legacyWorkflowKind={item.kind}
+              meta="工作流 · 卡牌（3:4）"
+              legacyWorkflowKind="workflow"
               footer={
                 <>
                   <button
@@ -111,7 +120,7 @@ export function WorkflowCardPool({ projectId }: { readonly projectId: string }):
               }
             >
               <span data-lcos-card-preview className="text-[10px] opacity-60">
-                {item.kind === 'conversation' ? '会话' : '材料'}
+                工作流装备
               </span>
             </LcosTaskCard>
           ))}

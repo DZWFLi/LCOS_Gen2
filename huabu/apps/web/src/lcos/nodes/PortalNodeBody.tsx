@@ -4,6 +4,11 @@
 // 目标身份取真实 Huabu 节点字段：canvasRef 节点的 data.targetCanvasId（见 CanvasRefNode）。
 // 没有可解析目标时不假装可预览——窗口 body 会明确显示「目标缺失」。
 
+import { useCallback, useEffect } from 'react';
+
+import { isEditableTarget } from '@/hooks/shortcuts/isEditableTarget';
+import useCanvasStore from '@/store/canvasStore';
+
 import { LcosSpeciesBodyContent, SPECIES_ACCENT } from './LcosSpeciesBodies';
 import { useLcosDensity } from './useLcosDensity';
 import { useLcosShellStore } from '../shell/lcosShellStore';
@@ -24,9 +29,29 @@ export function PortalNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
   const title = typeof rawTitle === 'string' && rawTitle.trim() !== '' ? rawTitle.trim() : '入口';
   const target = readTarget(data);
 
-  const openPreview = (): void => {
-    useLcosShellStore.getState().openWindow('portal-preview', `入口 · ${title}`, target);
-  };
+  const isOnlySelected = useCanvasStore((state) => {
+    const selected = state.nodes.filter((node) => node.selected);
+    return selected.length === 1 && selected[0]?.id === input.nodeId;
+  });
+  const openPreview = useCallback((): void => {
+    useLcosShellStore.getState().openWindow('portal-preview', `入口 · ${title}`, target, 'canvas');
+  }, [title, target]);
+
+  useEffect(() => {
+    if (!isOnlySelected) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const shell = useLcosShellStore.getState();
+      const element = event.target instanceof Element ? event.target : null;
+      if (event.key !== 'Enter' || event.defaultPrevented || isEditableTarget(event.target)
+        || shell.composerOpen || shell.windows.some((window) => window.active)
+        || document.querySelector('[aria-modal="true"]')
+        || element?.closest('button, a, select, [role="button"], [role="menuitem"]')) return;
+      event.preventDefault();
+      openPreview();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOnlySelected, openPreview]);
 
   return (
     <div
@@ -39,6 +64,7 @@ export function PortalNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter') {
+          event.preventDefault();
           event.stopPropagation();
           openPreview();
         }

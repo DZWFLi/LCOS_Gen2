@@ -32,6 +32,8 @@ export interface LcosWorksiteState {
    * 见 WorksiteStage「重新建立现场画布」）。
    */
   ensureSurfaceCanvas(surface: LcosSurfaceKey, force?: boolean): Promise<string | undefined>;
+  /** Same operation for an explicitly addressed child workspace. */
+  ensureWorkspaceCanvas(workspaceId: string, force?: boolean): Promise<string | undefined>;
   retry(): void;
 }
 
@@ -40,6 +42,20 @@ const SURFACE_PREFERENCE: Readonly<Record<LcosSurfaceKey, string>> = {
   context: 'context',
   workflow: 'workflow',
 };
+
+function buildSurfaceCanvasMap(workspaces: readonly Workspace[]): Partial<Record<LcosSurfaceKey, string>> {
+  const bySurface = new Map<LcosSurfaceKey, readonly Workspace[]>();
+  for (const workspace of workspaces) {
+    const pref = workspace.preferredSurface as LcosSurfaceKey | undefined;
+    if (!pref || !Object.prototype.hasOwnProperty.call(SURFACE_PREFERENCE, pref)) continue;
+    bySurface.set(pref, [...(bySurface.get(pref) ?? []), workspace]);
+  }
+  const map: Partial<Record<LcosSurfaceKey, string>> = {};
+  for (const [pref, candidates] of bySurface) {
+    if (candidates.length === 1 && candidates[0]?.canvasId !== undefined) map[pref] = candidates[0].canvasId;
+  }
+  return map;
+}
 
 export function useLcosWorksite(projectId: string): LcosWorksiteState {
   const session: LcosCoreSession = useMemo(() => createLcosCoreSession(), []);
@@ -52,7 +68,6 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
 
   const surfaceCanvasId = useLcosShellStore((s) => s.surfaceCanvasId);
   const setSurfaceCanvasMap = useLcosShellStore((s) => s.setSurfaceCanvasMap);
-  const setSurfaceCanvasId = useLcosShellStore((s) => s.setSurfaceCanvasId);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,15 +81,14 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
         if (cancelled) return;
         const matched = list.find((p) => p.id === projectId);
         setProjectName(matched?.name ?? null);
-        const map: Partial<Record<LcosSurfaceKey, string>> = {};
         const workspaceSurface = new Map<string, LcosSurfaceKey>();
         for (const workspace of ws) {
           const pref = workspace.preferredSurface as LcosSurfaceKey | undefined;
-          if (pref) workspaceSurface.set(String(workspace.id), pref);
-          if (pref && workspace.canvasId !== undefined) map[pref] = workspace.canvasId;
+          if (!pref || !Object.prototype.hasOwnProperty.call(SURFACE_PREFERENCE, pref)) continue;
+          workspaceSurface.set(String(workspace.id), pref);
         }
         setSurfaceByWorkspace(workspaceSurface);
-        setSurfaceCanvasMap(map);
+        setSurfaceCanvasMap(buildSurfaceCanvasMap(ws));
         setWorkspaces(ws);
         setStatus('ready');
       } catch (error) {
@@ -90,23 +104,38 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, reloadKey]);
 
-  const ensureSurfaceCanvas = useCallback(
-    async (surface: LcosSurfaceKey, force = false): Promise<string | undefined> => {
-      const existing = surfaceCanvasId[surface];
-      if (!force && existing) return existing;
-      const workspace = workspaces.find((w) => w.preferredSurface === SURFACE_PREFERENCE[surface]);
+  const ensureWorkspaceCanvas = useCallback(
+    async (workspaceId: string, force = false): Promise<string | undefined> => {
+      const workspace = workspaces.find((candidate) => String(candidate.id) === workspaceId);
       if (!workspace) return undefined;
+      if (!force && workspace.canvasId !== undefined) return workspace.canvasId;
       try {
         const created = await createCanvas();
-        await session.projects.updateWorkspaceCanvasId(projectId, String(workspace.id), created.canvasId);
-        setSurfaceCanvasId(surface, created.canvasId);
+        const updated = await session.projects.updateWorkspaceCanvasId(projectId, workspaceId, created.canvasId);
+        setWorkspaces((current) => {
+          const next = current.map((candidate) => String(candidate.id) === workspaceId ? updated : candidate);
+          setSurfaceCanvasMap(buildSurfaceCanvasMap(next));
+          return next;
+        });
         return created.canvasId;
       } catch (error) {
         setStatusDetail(error instanceof Error ? error.message : String(error));
         return undefined;
       }
     },
-    [surfaceCanvasId, workspaces, session, projectId, setSurfaceCanvasId],
+    [workspaces, session, projectId, setSurfaceCanvasMap],
+  );
+
+  const ensureSurfaceCanvas = useCallback(
+    async (surface: LcosSurfaceKey, force = false): Promise<string | undefined> => {
+      const existing = surfaceCanvasId[surface];
+      if (!force && existing) return existing;
+      const candidates = workspaces.filter((workspace) => workspace.preferredSurface === SURFACE_PREFERENCE[surface]);
+      // Root navigation cannot silently choose among same-surface workspaces.
+      if (candidates.length !== 1 || candidates[0] === undefined) return undefined;
+      return ensureWorkspaceCanvas(String(candidates[0].id), force);
+    },
+    [ensureWorkspaceCanvas, surfaceCanvasId, workspaces],
   );
 
   const retry = useCallback(() => {
@@ -121,6 +150,7 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
     surfaceCanvasId,
     surfaceByWorkspace,
     ensureSurfaceCanvas,
+    ensureWorkspaceCanvas,
     retry,
   };
 }

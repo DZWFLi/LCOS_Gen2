@@ -536,7 +536,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     defaultViewport,
     fitInitialViewport,
     isPending: isInitialViewportPending,
-  } = useInitialCanvasViewport();
+  } = useInitialCanvasViewport({ deferFit: chromeMode === 'lcos' });
 
   // When locked, the user can neither drag, connect, nor select elements.
   // Gating the controlled `<ReactFlow>` props from this single state (rather
@@ -557,6 +557,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     },
     {
       disabled: shortcutsDisabled,
+      chromeMode,
     },
   );
   useCanvasPanReleaseGuard(wrapperRef, !isNotMouse && tool === 'pan');

@@ -37,6 +37,13 @@ export type CanvasNodeBodyResolver = (
   input: CanvasNodeBodySlotInput,
 ) => ComponentType<CanvasNodeBodySlotInput> | undefined;
 
+/** Presentation-only host chrome. Huabu still owns every mechanical behavior. */
+export interface CanvasNodeHostPresentation {
+  readonly surface: 'transparent' | 'paper' | 'media' | 'card';
+  readonly showAiBadge: boolean;
+  readonly allowOverflow: boolean;
+}
+
 /**
  * Reactive handle for the body seam. The resolution may change asynchronously
  * (e.g. the host app's binding cache is still syncing); the consumer
@@ -47,6 +54,10 @@ export type CanvasNodeBodyResolver = (
  */
 export interface CanvasNodeBodySeam {
   readonly resolve: CanvasNodeBodyResolver;
+  /** Same binding-aware seam, no second registry/store. Unbound nodes return undefined. */
+  readonly resolveHostPresentation?: (
+    input: CanvasNodeBodySlotInput,
+  ) => CanvasNodeHostPresentation | undefined;
   readonly subscribe: (listener: () => void) => () => void;
 }
 

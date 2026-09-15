@@ -1,73 +1,145 @@
-// LcosRailway — 左缘现场导航脊柱（Figma Railway 5385:283；左 24 居中、宽 52、高随 items）。
-// 数据：三现场（真实 canvasId 切换）；durable view order（CoreRailwayClient.read）可用时
-// 追加长期 worksite 条目；reorder / Receive / +N 溢出 → Wave 9 补（当前诚实不伪造）。
+// LcosRailway — 项目具体目的地导航脊柱（Figma Railway 5385:283）。
+// Railway 不承担 Main/Context/Workflow 一级切换；SurfaceDock 才是唯一一级入口。
+// 这里读取 Core orderedRefs，按 kind + viewId 解析真实目的地；无法解析的 ref
+// 保留为 disabled，避免用静态 roots 或“+N”占位冒充恢复能力。
 
-import { CoreRailwayClient } from '@local-creative-os/web-gen2';
-import { Layers, ListTree, PanelsTopLeft } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  CoreProjectClient,
+  CoreRailwayClient,
+} from '@local-creative-os/web-gen2';
+import { FolderOpen, Layers, ListTree, PanelsTopLeft } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
-
-import { LCOS_SURFACES, useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
-import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
+import { useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
+import { createLcosCoreSession } from '../app/lcosCoreClient';
+import {
+  projectRailwayDestinations,
+  type RailwayDestinationProjection,
+} from '../navigation/railwayProjection';
 import { LcosRailwayView, type LcosRailwayViewItem } from '../ui/families';
-
-const SURFACE_ICON: Readonly<Record<LcosSurfaceKey, React.ComponentType<{ className?: string }>>> = {
-  main: PanelsTopLeft,
-  context: Layers,
-  workflow: ListTree,
-};
 
 export interface LcosRailwayProps {
   readonly projectId: string;
-  readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
-  readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
+  readonly surfaceByWorkspace: ReadonlyMap<string, LcosSurfaceKey>;
+  readonly activateDestination: (
+    destination: RailwayDestinationProjection,
+  ) => Promise<void> | void;
 }
 
-export function LcosRailway({ projectId, canvasBySurface, ensureCanvas }: LcosRailwayProps): React.JSX.Element {
+function iconFor(
+  kind: RailwayDestinationProjection['kind'],
+): React.ComponentType<{ className?: string }> {
+  switch (kind) {
+    case 'scene':
+      return PanelsTopLeft;
+    case 'context':
+      return Layers;
+    case 'workflow':
+      return ListTree;
+    case 'collection':
+      return FolderOpen;
+  }
+}
+
+export function LcosRailway({
+  projectId,
+  surfaceByWorkspace,
+  activateDestination,
+}: LcosRailwayProps): React.JSX.Element {
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
-  const { busySurface, switchWorksite } = useLcosWorksiteNav({ projectId, canvasBySurface, ensureCanvas });
-  // durable rail order 读取（真实 Core；不可用时不驻留 localStorage 伪持久化；reorder/+N 溢出 Wave 9）。
-  const [railInfo, setRailInfo] = useState<string | undefined>(undefined);
+  const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
+  const [destinations, setDestinations] = useState<
+    readonly RailwayDestinationProjection[]
+  >([]);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [activatingKey, setActivatingKey] = useState<string | undefined>(undefined);
+  const session = useMemo(() => createLcosCoreSession(), []);
+  const railway = useMemo(() => new CoreRailwayClient(session.http), [session]);
+  const projects = useMemo(
+    () => new CoreProjectClient(session.http),
+    [session],
+  );
 
   useEffect(() => {
+    const controller = new AbortController();
     let cancelled = false;
-    void (async () => {
-      try {
-        const client = new CoreRailwayClient(
-          (await import('../app/lcosCoreClient')).createLcosCoreSession().http,
-        );
-        const order = await client.read(projectId);
+    void Promise.all([
+      railway.read(projectId, controller.signal),
+      projects.getProjectGraph(projectId),
+    ])
+      .then(([order, graph]) => {
         if (cancelled) return;
-        if (order?.orderedRefs && order.orderedRefs.length > 0) {
-          setRailInfo(`+${order.orderedRefs.length} 个长期现场`);
+        if (!order || !graph) {
+          setDestinations([]);
+          setError(undefined);
+          return;
         }
-      } catch {
-        if (!cancelled) setRailInfo('rail order 读取失败（默认现场骨架）');
-      }
-    })();
+        setDestinations(
+          projectRailwayDestinations({
+            orderedRefs: order.orderedRefs,
+            workspaces: graph.workspaces.map((workspace) => ({
+              id: String(workspace.id),
+              name: workspace.name,
+              scopeId: String(workspace.scopeId),
+            })),
+            scopes: graph.scopes.map((scope) => ({
+              id: String(scope.id),
+              name: scope.name,
+              kind: scope.kind,
+            })),
+            surfaceByWorkspace,
+          }),
+        );
+        setError(undefined);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled && (cause as { name?: string }).name !== 'AbortError') {
+          setDestinations([]);
+          setError('Railway 目的地读取失败');
+        }
+      });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-     
-  }, [projectId]);
+  }, [projectId, projects, railway, surfaceByWorkspace]);
 
-  const items: readonly LcosRailwayViewItem[] = LCOS_SURFACES.map(({ key, label }) => ({
-    key,
-    label,
-    icon: SURFACE_ICON[key],
-    selected: activeSurface === key,
-    disabled: busySurface === key,
-  }));
+  const items: readonly LcosRailwayViewItem[] = destinations.map(
+    (destination) => ({
+      key: destination.key,
+      label: destination.label,
+      icon: iconFor(destination.kind),
+      selected:
+        destination.available &&
+        (destination.workspaceId !== undefined
+          ? destination.workspaceId === activeWorkspaceId
+          : destination.surface === activeSurface),
+      disabled: !destination.available || activatingKey !== undefined,
+    }),
+  );
+
+  // An empty project has no Railway yet. Do not leave a decorative empty rail
+  // on screen: the rail appears only after the user has durable destinations.
+  if (items.length === 0 && error === undefined) return <></>;
 
   return (
     <div
       data-lcos-railway
-      className="pointer-events-auto fixed left-6 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-2"
+      className="pointer-events-auto fixed top-1/2 left-6 z-40 flex -translate-y-1/2 flex-col items-center gap-2"
     >
       <LcosRailwayView
         items={items}
-        onSelect={(key) => void switchWorksite(key as LcosSurfaceKey)}
-        footer={railInfo}
+        onSelect={(key) => {
+          const destination = destinations.find((item) => item.key === key);
+          if (!destination?.available || activatingKey !== undefined) return;
+          setActivatingKey(destination.key);
+          void Promise.resolve(activateDestination(destination))
+            .catch((cause: unknown) => {
+              setError(cause instanceof Error ? cause.message : String(cause));
+            })
+            .finally(() => setActivatingKey(undefined));
+        }}
+        footer={error}
       />
     </div>
   );

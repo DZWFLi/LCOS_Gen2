@@ -5,15 +5,15 @@ import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react-dom/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
 
-
 import { useLcosDropStore } from './lcosDropState';
 import { LcosHostOverlay } from './LcosHostOverlay';
 import { useLcosReferenceStore } from './lcosReferenceState';
 
 import type { SemanticDropState } from '@local-creative-os/web-gen2';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 let roots: Root[] = [];
 let containers: HTMLElement[] = [];
@@ -67,22 +67,26 @@ describe('LcosHostOverlay (A07)', () => {
   });
 
   it('drop in transit suppresses the drop preview (single canopy, no Christmas tree)', () => {
-    // A draft exists -> 历史 A04 画布级 composer 会在此时出现；Wave 10 已退役该壳
-    // （唯一 Composer = route-level LcosComposerHost），本断言固定"画布级不产出
-    // 第二个输入面"这一不变量。
+    // Existing reference draft is not an open request: dragging keeps the
+    // selection-local Composer hidden until an explicit target intent arrives.
     useLcosReferenceStore.getState().registerNodeEntity('node-9', {
       entityType: 'artifact',
       entityId: 'e-9',
     });
     useLcosReferenceStore.getState().toggleNodeReference('node-9');
-    useLcosDropStore.setState({ state: { status: 'tracking', payload: { kind: 'object', entityType: 'artifact', entityId: 'a1' } } as SemanticDropState });
+    useLcosDropStore.setState({
+      state: {
+        status: 'tracking',
+        payload: { kind: 'object', entityType: 'artifact', entityId: 'a1' },
+      } as SemanticDropState,
+    });
     const container = render(<LcosHostOverlay />);
     expect(container.querySelector('[data-lcos-composer]')).toBeNull();
     // Not in preview yet either.
     expect(container.querySelector('[data-lcos-drop-preview]')).toBeNull();
   });
 
-  it('有草稿时画布级 overlay 仍不产出 composer（composer 归 route-level Host）', () => {
+  it('有草稿但没有明确目标时不产出 composer', () => {
     useLcosReferenceStore.getState().registerNodeEntity('node-9', {
       entityType: 'artifact',
       entityId: 'e-9',

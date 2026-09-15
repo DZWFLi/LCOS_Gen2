@@ -45,7 +45,7 @@ export function LcosPortalPreview({
           children ?? <span className="text-xs opacity-70">{state}</span>
         )}
       </div>
-      {(state === '预览失败' || state === '部分预览') && onRetry && (
+      {(state === '预览失败' || state === '部分预览' || state === '旧缓存' || state === '目标缺失') && onRetry && (
         <button
           type="button"
           onClick={onRetry}

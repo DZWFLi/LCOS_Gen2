@@ -5,6 +5,8 @@
 import { Hand, X } from 'lucide-react';
 import { useState } from 'react';
 
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
+
 import { WorkflowCardPool } from './WorkflowCardPool';
 import { LcosWorksiteStage } from '../../shell/LcosWorksiteStage';
 import { lcosTokens } from '../../ui/lcosTokens';
@@ -16,6 +18,38 @@ export interface WorkflowWorksiteProps {
   readonly surface: LcosSurfaceKey;
   readonly canvasId?: string;
   readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
+}
+
+export interface WorkflowHandOverlayProps {
+  readonly projectId: string;
+  readonly open: boolean;
+  readonly onClose: () => void;
+}
+
+/** 可由 Main / Workflow 现场共同呼出的手牌；不拥有 Canvas 或业务 truth。 */
+export function WorkflowHandOverlay({ projectId, open, onClose }: WorkflowHandOverlayProps): React.JSX.Element | null {
+  useCloseOnEscape(open, onClose);
+  if (!open) return null;
+  return (
+    <div
+      data-lcos-workflow-hand
+      className="pointer-events-auto fixed left-24 bottom-20 z-30 flex w-[min(520px,calc(100vw-160px))] flex-col rounded-2xl"
+      style={{
+        background: lcosTokens.color.surface,
+        border: '1px solid rgba(0,0,0,0.10)',
+        boxShadow: '0 12px 40px rgba(40,48,58,0.14)',
+        maxHeight: 'calc(100vh - 140px)',
+      }}
+    >
+      <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ minHeight: 44, borderColor: lcosTokens.color.borderSubtle }}>
+        <span className="text-sm font-semibold" style={{ color: lcosTokens.color.text }}>手牌 · Card Pool</span>
+        <button type="button" aria-label="关闭手牌" onClick={onClose} className="rounded-full p-1" style={{ color: lcosTokens.color.muted }}>
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <WorkflowCardPool projectId={projectId} />
+    </div>
+  );
 }
 
 export function WorkflowWorksite({
@@ -57,26 +91,7 @@ export function WorkflowWorksite({
         </button>
       </div>
 
-      {handOpen && (
-        <div
-          data-lcos-workflow-hand
-          className="pointer-events-auto fixed left-24 bottom-20 z-30 flex w-[min(520px,calc(100vw-160px))] flex-col rounded-2xl"
-          style={{
-            background: lcosTokens.color.surface,
-            border: '1px solid rgba(0,0,0,0.10)',
-            boxShadow: '0 12px 40px rgba(40,48,58,0.14)',
-            maxHeight: 'calc(100vh - 140px)',
-          }}
-        >
-          <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ minHeight: 44, borderColor: lcosTokens.color.borderSubtle }}>
-            <span className="text-sm font-semibold" style={{ color: lcosTokens.color.text }}>手牌 · Card Pool</span>
-            <button type="button" aria-label="关闭手牌" onClick={() => setHandOpen(false)} className="rounded-full p-1" style={{ color: lcosTokens.color.muted }}>
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <WorkflowCardPool projectId={projectId} />
-        </div>
-      )}
+      <WorkflowHandOverlay projectId={projectId} open={handOpen} onClose={() => setHandOpen(false)} />
     </div>
   );
 }

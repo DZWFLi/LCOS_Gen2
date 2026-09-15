@@ -3,11 +3,15 @@
 // 所有 body 只接收中性 slot input（nodeId/nodeType/data），不直连 Core/Huabu store（只读 data）。
 // unknown 不静默降级——显示诊断原因。
 
-import { NODE_SPECIES_LABEL, type LcosNodeSpecies } from '@local-creative-os/web-gen2';
+import {
+  NODE_SPECIES_LABEL,
+  resolveVisualFamily,
+  type LcosNodeSpecies,
+  type LcosVisualFamily,
+} from '@local-creative-os/web-gen2';
 import {
   Bookmark,
   CircleDot,
-  FileText,
   Folder,
   Grip,
   Puzzle,
@@ -16,9 +20,14 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+import { resolveArtifactUrl } from '@/api/artifact';
+import { useLcosNodePresentation } from '@/lcos-seam/nodePresentation';
+import useCanvasStore from '@/store/canvasStore';
 
+import { SourceMorphology } from './source/SourceMorphology';
 import { useLcosDensity } from './useLcosDensity';
 import { useLcosReferenceStore } from '../lcosReferenceState';
+import { useLcosShellStore } from '../shell/lcosShellStore';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { CanvasNodeBodySlotInput } from '@/lcos-seam/types';
@@ -51,8 +60,8 @@ function SpeciesChip({ label, accent }: { label: string; accent: string }): JSX.
       className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none"
       style={{
         color: accent,
-        background: `${accent}14`,
-        border: `1px solid ${accent}33`,
+        background: `color-mix(in srgb, ${accent} 10%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${accent} 20%, transparent)`,
         minHeight: 18,
       }}
     >
@@ -91,10 +100,18 @@ export function LcosSpeciesBodyContent({
   density,
   secondary,
   preview,
+  visualFamily = 'unknown',
+  mediaSrc,
+  durationSec,
+  worldWidth,
 }: {
   species: LcosNodeSpecies;
   title: string;
   density: 'mark' | 'summary' | 'working' | 'reading';
+  visualFamily?: LcosVisualFamily;
+  mediaSrc?: string;
+  durationSec?: number;
+  worldWidth?: number;
   /**
    * 真实次级行（来自 Core 元数据：kind/受管/可用性/revision）。
    * 有真实事实就显示真实事实；没有就退回该物种的**形态说明**（说清这是什么，不假装有数据）。
@@ -107,43 +124,22 @@ export function LcosSpeciesBodyContent({
   preview?: string;
 }): JSX.Element {
   // `flex: 1` 让内容列撑满 body 高度，次级行才能真正贴底（见上面 source 分支的注释）。
-  const root = {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 6,
-    width: '100%',
-    minWidth: 0,
-    flex: 1,
-    minHeight: 0,
-  };
+  const root = { display: 'flex', flex: 1, minHeight: 0, flexDirection: 'column' as const, gap: 6, width: '100%', minWidth: 0 };
   const meta = (fallback: string): JSX.Element => <MetaLine text={secondary ?? fallback} />;
-  // 正文预览只接在**有正文语义**的物种上；当前只有 source（Core 文本/文档族落到这里）。
-  const bodyPreview = (): JSX.Element | null =>
-    density !== 'mark' && preview !== undefined && preview !== '' ? (
-      <span
-        data-lcos-node-preview
-        className="line-clamp-5 text-[11px] leading-relaxed"
-        style={{ color: lcosTokens.color.muted }}
-      >
-        {preview}
-      </span>
-    ) : null;
-
   switch (species) {
     case 'source':
       return (
-        <div style={root} data-lcos-species="source">
-          {density !== 'mark' && <SpeciesChip label="材料" accent={SPECIES_ACCENT.source} />}
-          {/* 行必须撑满卡片高度（h-full + items-stretch），次级行的 `mt-auto` 才真的贴到卡片底部 ——
-              否则标题与事实挤在卡片上沿、下半张留白（首轮"构图极空"在单卡上的表现）。 */}
-          <div className="flex h-full items-stretch gap-2">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: SPECIES_ACCENT.source }} aria-hidden />
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <TitleLine text={title} density={density} />
-              {bodyPreview()}
-              {density !== 'mark' && meta('来源文件 · 只读原始')}
-            </div>
-          </div>
+        <div style={root} data-lcos-species="source" data-lcos-visual-family={visualFamily}>
+          <SourceMorphology
+            family={visualFamily}
+            title={title}
+            secondary={secondary}
+            preview={preview}
+            mediaSrc={mediaSrc}
+            durationSec={durationSec}
+            density={density}
+            worldWidth={worldWidth}
+          />
         </div>
       );
 
@@ -300,30 +296,67 @@ function LcosSpeciesBody({
   input: CanvasNodeBodySlotInput;
 }): JSX.Element {
   const density = useLcosDensity();
+  const presentation = useLcosNodePresentation();
+  const canvasId = useCanvasStore((state) => state.canvasId);
   const title = titleOf(input.data as Readonly<Record<string, unknown>> | undefined);
-  // R2 真实内容位：次级行与正文预览都来自 host 在 reconcile 后派生的 Core 事实
-  // （kind/受管/可用性/revision + FileRecord 正文），读不到就不显示，不编造。
-  const secondary = useLcosReferenceStore((s) => s.nodeEntityRefs.get(input.nodeId)?.descriptor?.secondaryLine);
-  const preview = useLcosReferenceStore((s) => s.nodeEntityRefs.get(input.nodeId)?.descriptor?.preview);
+  // Core facts are read from the single reference store. The visual family is
+  // resolved from those facts, never from a title or node id guess.
+  const ref = useLcosReferenceStore((s) => s.nodeEntityRefs.get(input.nodeId));
+  const descriptor = ref?.descriptor;
+  const visualFamily = species === 'source'
+    ? resolveVisualFamily({
+        entityType: ref?.entityType,
+        artifactKind: descriptor?.artifactKind,
+        mimeType: descriptor?.mimeType,
+        sourceKind: descriptor?.sourceKind,
+        managed: descriptor?.managed,
+      })
+    : 'unknown';
+  const presentationMediaSrc = input.data.presentationMediaSrc;
+  const rawMediaSrc = input.data.src;
+  const mediaSrc =
+    typeof presentationMediaSrc === 'string' && presentationMediaSrc !== ''
+      ? presentationMediaSrc
+      : typeof rawMediaSrc === 'string' && rawMediaSrc !== ''
+        ? resolveArtifactUrl(rawMediaSrc, canvasId ?? undefined)
+        : undefined;
+  const rawDuration = input.data.presentationDurationSec;
+  const durationSec = typeof rawDuration === 'number' && Number.isFinite(rawDuration) ? rawDuration : undefined;
+  const isFreeformSource = species === 'source';
   return (
     <div
       data-lcos-species-body
       data-lcos-density={density}
-      className="flex h-full w-full flex-col overflow-hidden"
-      style={{
-        background: lcosTokens.color.surface,
-        border: `1px solid ${SPECIES_ACCENT[species]}2E`,
-        borderRadius: lcosTokens.radius.cardSmall,
-        boxShadow: lcosTokens.shadow.default,
-        padding: 10,
-      }}
+      data-lcos-visual-family={visualFamily}
+      className={`flex h-full w-full flex-col ${isFreeformSource ? 'overflow-visible' : 'overflow-hidden'}`}
+      onDoubleClick={
+        species === 'source' && ref?.entityType === 'artifact'
+          ? (event) => {
+              event.stopPropagation();
+              useLcosShellStore.getState().openWindow('reader', `阅读 · ${title}`, ref.entityId);
+            }
+          : undefined
+      }
+      style={isFreeformSource
+        ? { background: 'transparent', border: 0, borderRadius: 0, boxShadow: 'none', padding: 0 }
+        : {
+            background: lcosTokens.color.surface,
+            border: `1px solid color-mix(in srgb, ${SPECIES_ACCENT[species]} 18%, transparent)`,
+            borderRadius: lcosTokens.radius.cardSmall,
+            boxShadow: lcosTokens.shadow.default,
+            padding: 10,
+          }}
     >
       <LcosSpeciesBodyContent
         species={species}
         title={title}
         density={density}
-        secondary={secondary}
-        preview={preview}
+        secondary={descriptor?.secondaryLine}
+        preview={descriptor?.preview}
+        visualFamily={visualFamily}
+        mediaSrc={mediaSrc}
+        durationSec={durationSec}
+        worldWidth={presentation?.worldWidth}
       />
     </div>
   );

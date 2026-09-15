@@ -3,13 +3,16 @@
 
 import { create } from 'zustand';
 
+import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
+
 export type LcosSurfaceKey = 'main' | 'context' | 'workflow';
 
-export const LCOS_SURFACES: readonly { key: LcosSurfaceKey; label: string }[] = [
-  { key: 'main', label: 'Main' },
-  { key: 'context', label: 'Context' },
-  { key: 'workflow', label: 'Workflow' },
-];
+export const LCOS_SURFACES: readonly { key: LcosSurfaceKey; label: string }[] =
+  [
+    { key: 'main', label: 'Main' },
+    { key: 'context', label: 'Context' },
+    { key: 'workflow', label: 'Workflow' },
+  ];
 
 export const SURFACE_LABEL: Readonly<Record<LcosSurfaceKey, string>> = {
   main: 'Main',
@@ -30,7 +33,38 @@ export interface LcosLocateRequest {
   readonly status?: 'projected' | 'unprojected' | 'unavailable';
 }
 
+/**
+ * Same-tab return context for a Context/Workflow child worksite.
+ * This is UI navigation state only; the workspace and canvas remain owned by Core/Huabu.
+ */
+export interface LcosChildReturn {
+  readonly projectId: string;
+  readonly sourceSurface: LcosSurfaceKey;
+  readonly sourceWorkspaceId?: string;
+  readonly sourceWasChild: boolean;
+  readonly sourceCanvasId?: string;
+  readonly selectedNodeIds: readonly string[];
+}
+
 export type LcosCameraCommandKind = 'zoom-in' | 'zoom-out' | 'fit' | 'reset';
+
+/** Selection-local Composer intent. It is ephemeral UI state, never Run truth. */
+export interface LcosComposerTarget {
+  readonly nodeId: string;
+  /** User-facing target identity captured from the selected node. */
+  readonly title: string;
+  readonly anchor: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly workspaceId?: string;
+  /** Canonical connected-conversation receiver, only set after an explicit Core identity read. */
+  readonly receiverConversationId?: string;
+  /** Optional honest block reason for a host that cannot resolve a receiver yet. */
+  readonly receiverBlockedReason?: string;
+}
 
 /** Professional body 键（body registry）。 */
 export type LcosProfessionalBodyKey =
@@ -48,75 +82,222 @@ export interface LcosWindow {
   readonly title: string;
   /** body 上下文（如 artifactId / projectId）。 */
   readonly target?: string;
+  /** Explicit address kind; an entity id must never be fetched as a canvas id. */
+  readonly targetKind?: 'canvas';
+  /** Assembly caller 注入的 canonical target；Assembly 本身不保存 target truth。 */
+  readonly assemblyTargetRef?: AssemblyTargetRefV1;
   readonly active: boolean;
 }
 
 export interface LcosShellUiState {
   projectId: string | null;
   activeSurface: LcosSurfaceKey;
+  /** 当前 Surface 对应的真实 Core workspace；只读镜像，用于 Run/Assembly target。 */
+  activeWorkspaceId: string | null;
   /** 现场 → stable canvasId（只读镜像；真实性来自 Core workspaces）。 */
   surfaceCanvasId: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
   /** 画布内待执行命令（route-level 组件发布，canvas-local overlay 消费）。 */
   cameraRequest: { id: number; kind: LcosCameraCommandKind } | null;
   locateRequest: LcosLocateRequest | null;
+  composerOpen: boolean;
+  composerTarget: LcosComposerTarget | null;
+  composerPrompt: string;
   /** route-level Professional 窗口（只放窗口拓扑 intent；body 数据仍在 Core）。 */
   windows: readonly LcosWindow[];
+  /** Child worksite 的来源现场；刷新后允许丢失，返回按钮仍有安全 fallback。 */
+  childReturn: LcosChildReturn | null;
   setProject(projectId: string): void;
   setActiveSurface(surface: LcosSurfaceKey): void;
+  setActiveWorkspaceId(workspaceId: string | null): void;
   setSurfaceCanvasId(surface: LcosSurfaceKey, canvasId: string): void;
-  setSurfaceCanvasMap(map: Readonly<Partial<Record<LcosSurfaceKey, string>>>): void;
+  setSurfaceCanvasMap(
+    map: Readonly<Partial<Record<LcosSurfaceKey, string>>>,
+  ): void;
+  beginChildNavigation(returnContext: LcosChildReturn): void;
+  clearChildNavigation(): void;
   requestCamera(kind: LcosCameraCommandKind): void;
   requestLocate(request: LcosLocateRequest): void;
   consumeCamera(): void;
   consumeLocate(): void;
-  openWindow(bodyKey: LcosProfessionalBodyKey, title: string, target?: string): void;
+  openComposer(target: LcosComposerTarget): void;
+  closeComposer(): void;
+  setComposerPrompt(prompt: string): void;
+  clearSubmittedComposerPrompt(projectId: string, target: LcosComposerTarget, prompt: string): void;
+  openWindow(
+    bodyKey: LcosProfessionalBodyKey,
+    title: string,
+    target?: string,
+    targetKind?: 'canvas',
+  ): void;
+  openAssembly(targetRef: AssemblyTargetRefV1, title?: string): void;
   closeWindow(id: string): void;
   activateWindow(id: string): void;
   clear(): void;
 }
 
+type ProjectUiSession = Pick<LcosShellUiState,
+  'windows' | 'composerPrompt' | 'composerTarget' | 'composerOpen' | 'activeSurface'>;
+
+// Same-tab project switching only. This is UI continuity, not reload persistence.
+const projectUiSessions = new Map<string, ProjectUiSession>();
+
 export const useLcosShellStore = create<LcosShellUiState>((set) => ({
   projectId: null,
   activeSurface: 'main',
+  activeWorkspaceId: null,
   surfaceCanvasId: {},
   cameraRequest: null,
   locateRequest: null,
+  composerOpen: false,
+  composerTarget: null,
+  composerPrompt: '',
   windows: [],
-  setProject: (projectId) => set({ projectId }),
+  childReturn: null,
+  setProject: (projectId) => set((state) => {
+    if (state.projectId === projectId) return state;
+    if (state.projectId !== null) {
+      projectUiSessions.set(state.projectId, {
+        windows: state.windows,
+        composerPrompt: state.composerPrompt,
+        composerTarget: state.composerTarget,
+        composerOpen: state.composerOpen,
+        activeSurface: state.activeSurface,
+      });
+    }
+    const restored = projectUiSessions.get(projectId);
+    return {
+      projectId,
+      windows: restored?.windows ?? [],
+      composerPrompt: restored?.composerPrompt ?? '',
+      composerTarget: restored?.composerTarget ?? null,
+      composerOpen: restored?.composerOpen ?? false,
+      activeSurface: restored?.activeSurface ?? 'main',
+      childReturn: null,
+      activeWorkspaceId: null,
+      surfaceCanvasId: {},
+      cameraRequest: null,
+      locateRequest: null,
+    };
+  }),
   setActiveSurface: (activeSurface) => set({ activeSurface }),
+  setActiveWorkspaceId: (activeWorkspaceId) => set({ activeWorkspaceId }),
   setSurfaceCanvasId: (surface, canvasId) =>
-    set((s) => ({ surfaceCanvasId: { ...s.surfaceCanvasId, [surface]: canvasId } })),
+    set((s) => ({
+      surfaceCanvasId: { ...s.surfaceCanvasId, [surface]: canvasId },
+    })),
   setSurfaceCanvasMap: (map) => set({ surfaceCanvasId: map }),
+  beginChildNavigation: (childReturn) => set({ childReturn }),
+  clearChildNavigation: () => set({ childReturn: null }),
   requestCamera: (kind) =>
-    set((s) => ({ cameraRequest: { id: (s.cameraRequest?.id ?? 0) + 1, kind } })),
+    set((s) => ({
+      cameraRequest: { id: (s.cameraRequest?.id ?? 0) + 1, kind },
+    })),
   requestLocate: (request) => set({ locateRequest: request }),
   consumeCamera: () => set({ cameraRequest: null }),
   consumeLocate: () => set({ locateRequest: null }),
-  openWindow: (bodyKey, title, target) =>
+  openComposer: (composerTarget) => set({ composerOpen: true, composerTarget }),
+  closeComposer: () => set({ composerOpen: false }),
+  setComposerPrompt: (composerPrompt) => set({ composerPrompt }),
+  clearSubmittedComposerPrompt: (projectId, target, prompt) => set((state) => {
+    if (state.projectId === projectId) {
+      return state.composerTarget === target && state.composerPrompt === prompt
+        ? { composerPrompt: '' } : state;
+    }
+    const saved = projectUiSessions.get(projectId);
+    if (saved?.composerTarget === target && saved.composerPrompt === prompt) {
+      projectUiSessions.set(projectId, { ...saved, composerPrompt: '' });
+    }
+    return state;
+  }),
+  openWindow: (bodyKey, title, target, targetKind) =>
     set((s) => {
-      const existing = s.windows.find((w) => w.bodyKey === bodyKey && (target === undefined || w.target === target));
+      const existing = s.windows.find(
+        (w) =>
+          w.bodyKey === bodyKey &&
+          w.targetKind === targetKind &&
+          w.target === target,
+      );
       if (existing) {
-        return { windows: s.windows.map((w) => ({ ...w, active: w.id === existing.id })) };
+        return {
+          windows: s.windows.map((w) => ({
+            ...w,
+            active: w.id === existing.id,
+          })),
+        };
       }
-      const id = `${bodyKey}-${Date.now()}`;
-      return { windows: [...s.windows.map((w) => ({ ...w, active: false })), { id, bodyKey, title, target, active: true }] };
+      const id = `${bodyKey}-${crypto.randomUUID()}`;
+      return {
+        windows: [
+          ...s.windows.map((w) => ({ ...w, active: false })),
+          { id, bodyKey, title, target, ...(targetKind ? { targetKind } : {}), active: true },
+        ],
+      };
+    }),
+  openAssembly: (assemblyTargetRef, title = 'Assembly') =>
+    set((s) => {
+      const sameTarget = (window: LcosWindow): boolean =>
+        window.bodyKey === 'assembly' &&
+        window.assemblyTargetRef?.kind === assemblyTargetRef.kind &&
+        ('id' in assemblyTargetRef
+          ? window.assemblyTargetRef !== undefined &&
+            'id' in window.assemblyTargetRef &&
+            window.assemblyTargetRef.id === assemblyTargetRef.id
+          : window.assemblyTargetRef !== undefined &&
+            !('id' in window.assemblyTargetRef));
+      const existing = s.windows.find(sameTarget);
+      if (existing) {
+        return {
+          windows: s.windows.map((window) => ({
+            ...window,
+            active: window.id === existing.id,
+          })),
+        };
+      }
+      const id = `assembly-${crypto.randomUUID()}`;
+      return {
+        windows: [
+          ...s.windows.map((window) => ({ ...window, active: false })),
+          {
+            id,
+            bodyKey: 'assembly',
+            title,
+            assemblyTargetRef,
+            active: true,
+          },
+        ],
+      };
     }),
   closeWindow: (id) =>
     set((s) => {
       const remaining = s.windows.filter((w) => w.id !== id);
       if (remaining.length === 0) return { windows: [] };
       const anyActive = remaining.some((w) => w.active);
-      return { windows: anyActive ? remaining : remaining.map((w, i) => (i === remaining.length - 1 ? { ...w, active: true } : w)) };
+      return {
+        windows: anyActive
+          ? remaining
+          : remaining.map((w, i) =>
+              i === remaining.length - 1 ? { ...w, active: true } : w,
+            ),
+      };
     }),
   activateWindow: (id) =>
-    set((s) => ({ windows: s.windows.map((w) => ({ ...w, active: w.id === id })) })),
-  clear: () =>
+    set((s) => ({
+      windows: s.windows.map((w) => ({ ...w, active: w.id === id })),
+    })),
+  clear: () => {
+    projectUiSessions.clear();
     set({
       projectId: null,
       activeSurface: 'main',
+      activeWorkspaceId: null,
       surfaceCanvasId: {},
       cameraRequest: null,
       locateRequest: null,
+      composerOpen: false,
+      composerTarget: null,
+      composerPrompt: '',
       windows: [],
-    }),
+      childReturn: null,
+    });
+  },
 }));

@@ -21,7 +21,7 @@ import {
 } from 'react-router-dom';
 
 import { Loading } from './components/Common/Loading';
-import { ToastContainer } from './components/Common/Toast';
+import { ToastContainer, toast } from './components/Common/Toast';
 import { GlobalModals } from './components/Shell/GlobalModals';
 import { NativeMenuBridge } from './components/Shell/NativeMenuBridge';
 import { WindowChrome } from './components/Shell/WindowChrome';
@@ -140,11 +140,16 @@ function RootLayout() {
     }, SHOW_OVERLAY_AFTER_MS);
     void (async () => {
       try {
-        // `drainPendingSaves` never throws — per-queue
-        // `handleSaveFailure` already surfaces failures via toast +
-        // console.error. We unconditionally proceed because trapping
-        // the user on the canvas after a failed save helps nothing.
         await drainPendingSaves();
+        if (!cancelled) blocker.proceed?.();
+      } catch (error: unknown) {
+        if (!cancelled) {
+          blocker.reset?.();
+          toast(
+            error instanceof Error ? error.message : '保存画布失败，导航已取消',
+            { tone: 'danger' },
+          );
+        }
       } finally {
         // `cancelled` is only ever true here if some external code
         // resets the blocker mid-drain (nothing does today, but the
@@ -154,7 +159,6 @@ function RootLayout() {
         if (!cancelled) {
           window.clearTimeout(overlayTimer);
           setIsDraining(false);
-          blocker.proceed?.();
         }
       }
     })();

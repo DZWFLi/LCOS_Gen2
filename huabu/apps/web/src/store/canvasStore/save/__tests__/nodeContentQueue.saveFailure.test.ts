@@ -122,4 +122,19 @@ describe('nodeContentQueue — save-failure surfacing', () => {
 
     expect(putMock).toHaveBeenCalledTimes(2);
   });
+
+  it('flushAll rejects on a failed write and keeps it pending for retry', async () => {
+    const node = noteNode('latest local text');
+    const { queue } = makeQueue(node);
+    queue.seedBaselines([node]);
+    queue.scheduleChanges('c1', [noteNode('old')], [node]);
+    putMock.mockRejectedValueOnce(new Error('disk fail'));
+
+    await expect(queue.flushAll()).rejects.toThrow('disk fail');
+    expect(queue.pendingNodeIds()).toEqual(['n1']);
+
+    putMock.mockResolvedValueOnce({ nodeId: 'n1', label: 'Note', rev: 'SRV2' });
+    await expect(queue.flushAll()).resolves.toBeUndefined();
+    expect(queue.pendingNodeIds()).toEqual([]);
+  });
 });

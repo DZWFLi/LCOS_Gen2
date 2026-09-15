@@ -2,11 +2,12 @@
 // Licensed under the MIT license.
 
 import { Fullscreen, Image as ImageIcon } from 'lucide-react';
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { resolveArtifactUrl } from '@/api/artifact';
 import { FloatingToolbar } from '@/components/Common/FloatingToolbar';
+import { useResolvedNodeBody } from '@/lcos-seam/nodeBodySlot';
 import useCanvasStore from '@/store/canvasStore.ts';
 import { openPreviewNode } from '@/store/previewWorkspace/actions';
 
@@ -30,6 +31,22 @@ export const ImageNode = memo(
     const src = data?.src;
     const missingFileKind = getMissingFileKind(data);
     const [imgLoaded, setImgLoaded] = useState(false);
+    const resolvedSrc =
+      typeof src === 'string' && src !== ''
+        ? resolveArtifactUrl(src, canvasId)
+        : '';
+    const presentationData = useMemo<Readonly<Record<string, unknown>>>(
+      () => ({
+        ...(data as Readonly<Record<string, unknown>>),
+        ...(resolvedSrc === '' ? {} : { presentationMediaSrc: resolvedSrc }),
+      }),
+      [data, resolvedSrc],
+    );
+    const BodyOverride = useResolvedNodeBody({
+      nodeId: id,
+      nodeType: 'image',
+      data: presentationData,
+    });
     useEffect(() => {
       // Reset loading state whenever the source changes so the
       // placeholder re-appears for the new image.
@@ -59,13 +76,15 @@ export const ImageNode = memo(
       >
         {missingFileKind ? (
           <MissingFileBanner nodeId={id} />
+        ) : BodyOverride ? (
+          <BodyOverride nodeId={id} nodeType="image" data={presentationData} />
         ) : (
           <div className="flex h-full flex-col">
             <div className="relative h-full w-full overflow-hidden">
               {src ? (
                 <>
                   <img
-                    src={resolveArtifactUrl(src, canvasId)}
+                    src={resolvedSrc}
                     alt={data?.label || t('node.nodeImage')}
                     className="pointer-events-none h-full w-full rounded-lg border-0 object-contain"
                     onLoad={() => setImgLoaded(true)}

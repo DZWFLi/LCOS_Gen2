@@ -12,6 +12,8 @@ import { ArtifactReturnSection } from './ArtifactReturnSection';
 import { RecoverySection } from './RecoverySection';
 import { WaitingInputSection } from './WaitingInputSection';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { LcosComposerHost } from '../composer/LcosComposerHost';
+import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
 
@@ -34,6 +36,11 @@ export function ConversationWorkViewBody({
   const runs = useMemo(() => new CoreRunClient(session.http), [session]);
   const continuations = useMemo(() => new CoreContinuationClient(session.http), [session]);
   const [localOperations, setLocalOperations] = useState<readonly ContinuationRecoveryProjectionV1[] | null>(null);
+  const composerOpen = useLcosShellStore((s) => s.composerOpen);
+  const composerTarget = useLcosShellStore((s) => s.composerTarget);
+  const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
+  const openComposer = useLcosShellStore((s) => s.openComposer);
+  const closeComposer = useLcosShellStore((s) => s.closeComposer);
 
   useEffect(() => {
     if (!connectedConversationId) return;
@@ -58,6 +65,16 @@ export function ConversationWorkViewBody({
   const identity = state?.sections.identity;
   const reach = state?.sections.reach;
   const operations = localOperations ?? state?.operations ?? [];
+  const receiverReady =
+    identity?.status === 'loaded' &&
+    identity.identity?.connectedConversation.id === connectedConversationId;
+  const receiverBlockedReason = receiverReady
+    ? undefined
+    : identity?.status === 'error'
+      ? '接收者身份读取失败，暂不可发送'
+      : '正在确认该会话的真实接收者，确认前暂不可发送';
+  const workComposerOpen =
+    composerOpen && composerTarget?.receiverConversationId === connectedConversationId;
 
   return (
     <div data-lcos-conversation-work-view className="flex flex-col gap-4 p-4">
@@ -115,6 +132,56 @@ export function ConversationWorkViewBody({
               )}
             </div>
           ))
+        )}
+      </section>
+
+      <section
+        data-lcos-conversation-composer
+        className="flex flex-col gap-2 rounded-xl p-3"
+        style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h4 className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>继续这个会话</h4>
+            <p className="mt-1 text-[10px]" style={{ color: lcosTokens.color.muted }}>
+              使用同一个 Composer 草稿、引用和提交入口
+            </p>
+          </div>
+          {!workComposerOpen && (
+            <button
+              type="button"
+              data-lcos-open-work-composer
+              onClick={() =>
+                openComposer({
+                  nodeId: `conversation:${connectedConversationId}`,
+                  title: identity?.identity?.connectedConversation.label ?? '当前会话',
+                  anchor: { x: 0, y: 0, width: 0, height: 0 },
+                  ...(activeWorkspaceId === null ? {} : { workspaceId: activeWorkspaceId }),
+                  ...(receiverReady ? { receiverConversationId: connectedConversationId } : {}),
+                  ...(receiverBlockedReason === undefined ? {} : { receiverBlockedReason }),
+                })
+              }
+              className="rounded-full px-3 py-1.5 text-xs"
+              style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse }}
+            >
+              写入 Composer
+            </button>
+          )}
+        </div>
+        {workComposerOpen && composerTarget && (
+          <LcosComposerHost
+            projectId={projectId}
+            {...(activeWorkspaceId === null ? {} : { workspaceId: activeWorkspaceId })}
+            anchor={composerTarget.anchor}
+            open
+            inline
+            onClose={closeComposer}
+          />
+        )}
+        {!workComposerOpen && receiverBlockedReason && (
+          <div data-lcos-work-composer-blocked className="text-[10px]" style={{ color: lcosTokens.color.danger }}>
+            {receiverBlockedReason}
+          </div>
         )}
       </section>
 

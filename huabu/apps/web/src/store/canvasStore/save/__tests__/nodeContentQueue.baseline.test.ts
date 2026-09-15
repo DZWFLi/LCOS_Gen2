@@ -125,6 +125,7 @@ describe('nodeContentQueue baseline lifecycle', () => {
 
     // Must not reject (fire-and-forget autosave path).
     await expect(queue.flushNow('c1', 'n1')).resolves.toBeUndefined();
+    expect(queue.pendingNodeIds()).toEqual(['n1']);
     // User's text is never reverted on a content conflict.
     expect(state._setStateNoAutosave).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalledTimes(1);
@@ -136,6 +137,7 @@ describe('nodeContentQueue baseline lifecycle', () => {
     await queue.flushNow('c1', 'n1');
     expect(putMock).toHaveBeenCalledTimes(1);
     expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(queue.pendingNodeIds()).toEqual(['n1']);
   });
 
   it('adopts contentMissing when Load latest finds a deleted sidecar', async () => {

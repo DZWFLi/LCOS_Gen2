@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 
 import { resolveArtifactUrl, uploadAudio } from '@/api/artifact';
 import { cn } from '@/components/Common/cn';
+import { useResolvedNodeBody } from '@/lcos-seam/nodeBodySlot';
 import useCanvasStore from '@/store/canvasStore.ts';
 
 import { getMissingFileKind, MissingFileBanner } from '../MissingFileBanner';
@@ -316,6 +317,21 @@ export const AudioNode = memo(
     const stopRf = (e: React.SyntheticEvent) => e.stopPropagation();
     const hasAudio = typeof data?.src === 'string' && data.src.length > 0;
     const missingFileKind = getMissingFileKind(data);
+    const resolvedSrc = hasAudio
+      ? resolveArtifactUrl(data.src, canvasId)
+      : '';
+    const presentationData = useMemo<Readonly<Record<string, unknown>>>(
+      () => ({
+        ...(data as Readonly<Record<string, unknown>>),
+        ...(resolvedSrc === '' ? {} : { presentationMediaSrc: resolvedSrc }),
+      }),
+      [data, resolvedSrc],
+    );
+    const BodyOverride = useResolvedNodeBody({
+      nodeId: id,
+      nodeType: 'audio',
+      data: presentationData,
+    });
     const progressRatio =
       durationSec > 0 ? Math.min(1, currentSec / durationSec) : 0;
 
@@ -384,7 +400,7 @@ export const AudioNode = memo(
           </span>
           <audio
             ref={setAudioRef}
-            src={resolveArtifactUrl(data.src, canvasId)}
+            src={resolvedSrc}
             preload="metadata"
             className="hidden"
           >
@@ -457,10 +473,16 @@ export const AudioNode = memo(
         type={'audio'}
         selected={selected}
         minHeight={56}
-        className={missingFileKind ? undefined : 'bg-surface'}
+        className={missingFileKind || BodyOverride ? undefined : 'bg-surface'}
       >
         {missingFileKind ? (
           <MissingFileBanner nodeId={id} />
+        ) : BodyOverride ? (
+          <BodyOverride
+            nodeId={id}
+            nodeType="audio"
+            data={presentationData}
+          />
         ) : (
           <div
             role="presentation"
