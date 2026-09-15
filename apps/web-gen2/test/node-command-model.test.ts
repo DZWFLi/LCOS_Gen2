@@ -10,6 +10,7 @@ import { test } from 'node:test';
 
 import {
   buildLcosNodeCommands,
+  isLcosNodeDeleteAllowed,
   primaryNodeCommands,
   type LcosNodeCommand,
   type LcosNodeCommandInput,
@@ -19,6 +20,16 @@ const base: LcosNodeCommandInput = { nodeType: 'note', capabilities: [], referen
 
 const byId = (commands: readonly LcosNodeCommand[], id: string) => commands.find((c) => c.id === id);
 const idsOf = (commands: readonly LcosNodeCommand[]) => commands.map((c) => String(c.id));
+
+test('Core delete permission uses the same complete-identity rule as the Arc', () => {
+  assert.equal(isLcosNodeDeleteAllowed(undefined), true);
+  assert.equal(isLcosNodeDeleteAllowed({ entityType: 'artifact' }), true);
+  assert.equal(isLcosNodeDeleteAllowed({ entityId: 'a1' }), true);
+  assert.equal(
+    isLcosNodeDeleteAllowed({ entityType: 'artifact', entityId: 'a1' }),
+    false,
+  );
+});
 
 test('R2 命令模型：无任何 "尚未接线（GAP）" 占位，也不再有 "未接线" 分组', () => {
   const commands = buildLcosNodeCommands({
@@ -44,7 +55,7 @@ test('R2 命令模型：无任何 "尚未接线（GAP）" 占位，也不再有 
   }
 });
 
-test('R2 命令模型：note + 已绑定 Core（含 reference 能力）近场给出 打开/引用/自动高度', () => {
+test('R2 命令模型：note + 已绑定 Core 的近场主入口是打开/Composer', () => {
   const commands = buildLcosNodeCommands({
     nodeType: 'note',
     entityType: 'artifact',
@@ -58,11 +69,13 @@ test('R2 命令模型：note + 已绑定 Core（含 reference 能力）近场给
   assert.equal(byId(commands, 'reference')?.disabledReason, undefined);
   assert.equal(byId(commands, 'reference')?.capability, 'reference');
   assert.equal(byId(commands, 'auto-height')?.label, '自动高度');
+  assert.equal(byId(commands, 'compose')?.label, '围绕此对象工作');
+  assert.equal(byId(commands, 'assembly'), undefined, 'Assembly 保持独立项目级入口');
 
   const primary = primaryNodeCommands(commands);
   assert.deepEqual(
     primary.map((c) => c.id),
-    ['open', 'reference', 'auto-height'],
+    ['open', 'compose', 'reference'],
   );
   for (const command of primary) assert.equal(command.disabledReason, undefined);
 
@@ -133,11 +146,12 @@ test('R2 命令模型：canvasRef 无 targetCanvasId 不出现 open，也不出�
 test('R2 命令模型：未绑定 Core 的 note 不出现 open / reference（不适用即不显示）', () => {
   const commands = buildLcosNodeCommands(base);
   assert.equal(byId(commands, 'open'), undefined);
+  assert.equal(byId(commands, 'compose'), undefined);
   assert.equal(byId(commands, 'reference'), undefined);
   // 会话/物件的打开语义仍按 Core 绑定区分
   assert.equal(
     byId(buildLcosNodeCommands({ ...base, entityType: 'conversation', entityId: 'c1' }), 'open')?.label,
-    '打开工作台',
+    '打开会话窗口',
   );
 });
 
@@ -146,6 +160,25 @@ test('R2 命令模型：覆盖关系表之外的类型返回空数组（继续�
     const commands = buildLcosNodeCommands({ nodeType, capabilities: [], referenced: false });
     assert.deepEqual(commands, [], `${String(nodeType)} 不应生成 Arc 命令`);
   }
+});
+
+test('Core-bound text uses the Arc command surface while unbound text stays native', () => {
+  assert.deepEqual(
+    buildLcosNodeCommands({ nodeType: 'text', capabilities: [], referenced: false }),
+    [],
+  );
+  const commands = buildLcosNodeCommands({
+    nodeType: 'text',
+    entityType: 'artifact',
+    entityId: 'a-text',
+    capabilities: [],
+    referenced: false,
+  });
+  assert.equal(byId(commands, 'open')?.label, '在阅读器打开');
+  assert.equal(byId(commands, 'compose')?.label, '围绕此对象工作');
+  assert.equal(byId(commands, 'reference')?.label, '加入引用');
+  assert.equal(byId(commands, 'size')?.label, '尺寸 W/H');
+  assert.equal(byId(commands, 'convert-note'), undefined);
 });
 
 test('R2 命令模型：通用不变量——带 disabledReason 的命令，原因必须是非空字符串', () => {

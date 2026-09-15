@@ -309,7 +309,7 @@ export function LcosActionArc(): React.JSX.Element | null {
       case 'open':
         if (node.type === 'canvasRef') shell.openWindow('portal-preview', `入口 · ${title}`, target, 'canvas');
         else if (ref?.entityType === 'conversation')
-          shell.openWindow('conversation', `工作台 · ${title}`, ref.entityId);
+          shell.openWindow('conversation', `会话窗口 · ${title}`, ref.entityId);
         else if (ref?.entityType === 'artifact')
           shell.openWindow('reader', `阅读 · ${title}`, ref.entityId);
         break;

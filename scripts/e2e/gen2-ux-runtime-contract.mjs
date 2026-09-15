@@ -70,7 +70,14 @@ const result = await runScenario({
       'Assembly 不得创建第二套专业窗口宿主',
     );
     await h.page.locator('[data-lcos-window-icon-button]').click();
-    await h.page.waitForSelector('[data-lcos-professional-stage][data-empty="true"]', { timeout: 10_000 });
+    // The shared host intentionally remains mounted while empty and is hidden
+    // for layout stability. Assert attachment plus the empty marker rather than
+    // visibility; waiting for a visible node makes this contract fail on the
+    // intended closed-window state.
+    await h.page.waitForSelector('[data-lcos-professional-stage][data-empty="true"]', {
+      state: 'attached',
+      timeout: 10_000,
+    });
 
     const target = await h.evaluate(() => {
       const body = document.querySelector('[data-lcos-species-body]');

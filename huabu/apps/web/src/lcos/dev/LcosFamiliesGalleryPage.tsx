@@ -214,7 +214,7 @@ export default function LcosFamiliesGalleryPage(): React.JSX.Element {
                   tabs={[
                     { key: 'reader', label: '阅读 · 创意简报', selected: true },
                     { key: 'assembly', label: 'Assembly' },
-                    { key: 'conversation', label: '工作台' },
+                    { key: 'conversation', label: '会话窗口' },
                   ]}
                   actions={
                     <button type="button" data-lcos-window-icon-button aria-label="更多（样例）">

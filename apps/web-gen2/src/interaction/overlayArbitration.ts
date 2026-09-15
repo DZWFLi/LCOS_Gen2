@@ -89,7 +89,7 @@ export function compactRestingOverlays(
  * 仲裁主函数。互斥思想：
  *   - 拖拽中：只可能保留 drop-preview，其余全部让道（悬停指针下不应出现其他浮层）。
  *   - 缩放中：只有 resize-handles。
- *   - 打开工作台（work-view）：独占，归还整块画布。
+ *   - 打开会话窗口（Conversation Work View）：独占，归还整块画布。
  *   - 打开 composer：呈现 composer（reference badge 与其正交，不抵消）。
  *   - 打开 action-arc：呈现 action-arc（参考 badge 同样正交）。
  *   - 其余：休止态 —— 右上角的 selected handles / hover affordance，绝无工具串。

@@ -220,7 +220,7 @@ export function LcosSpeciesBodyContent({
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <TitleLine text={title} density={density} />
-              {density !== 'mark' && meta('会话 · 双击打开工作台')}
+              {density !== 'mark' && meta('会话 · 双击打开会话窗口')}
             </div>
           </div>
         </div>

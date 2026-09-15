@@ -1,5 +1,5 @@
 // ConversationWorkViewBody — Conversation Work View（Figma Professional Window / Work View 语义）。
-// 同一会话的工作台：identity / reach（真实 Core 投影）+ Run 段（含 WaitingInput）+ 续工段（Recovery）。
+// 同一会话的 Conversation Work View：identity / reach（真实 Core 投影）+ Run 段（含 WaitingInput）+ 续工段（Recovery）。
 // section 可 partial（identity_only 也可打开）；迟到回包由 controller 的 epoch/generation 丢弃。
 
 
@@ -57,7 +57,7 @@ export function ConversationWorkViewBody({
   if (!connectedConversationId) {
     return (
       <div className="flex min-h-[220px] items-center justify-center p-6">
-        <LcosSurfaceFeedback presentation="empty" message="该 Glyth 尚未绑定 Core 会话（无 binding 不打开工作台）" />
+        <LcosSurfaceFeedback presentation="empty" message="该 Glyth 尚未绑定 Core 会话（无 binding 不打开会话窗口）" />
       </div>
     );
   }

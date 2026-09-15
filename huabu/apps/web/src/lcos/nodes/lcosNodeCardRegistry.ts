@@ -37,7 +37,7 @@ export const LCOS_REGISTERED_SPECIES: readonly LcosNodeSpecies[] = [
 export const lcosNodeCardRegistry = createNodeCardRegistry<LcosNodeSpecies, LcosNodeCard>();
 
 for (const species of LCOS_REGISTERED_SPECIES) {
-  // glyth / portal 有各自的交互 body（打开工作台 / 打开入口预览），其余走统一物种 body。
+  // glyth / portal 有各自的交互 body（打开会话窗口 / 打开入口预览），其余走统一物种 body。
   const card: LcosNodeCard =
     species === 'glyth' ? GlythNodeBody : species === 'portal' ? PortalNodeBody : speciesBodyFor(species);
   lcosNodeCardRegistry.registerNodeCard(species, card);

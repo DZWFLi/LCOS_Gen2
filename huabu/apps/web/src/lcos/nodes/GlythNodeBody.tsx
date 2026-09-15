@@ -56,7 +56,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
 
   const openWorkView = (): void => {
     if (!ref || ref.entityType !== 'conversation') return;
-    useLcosShellStore.getState().openWindow('conversation', `工作台 · ${title}`, ref.entityId);
+    useLcosShellStore.getState().openWindow('conversation', `会话窗口 · ${title}`, ref.entityId);
   };
 
   return (
@@ -81,7 +81,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
       }}
       role="button"
       tabIndex={0}
-      aria-label={`${title} · ${pose} · 双击打开会话工作台`}
+      aria-label={`${title} · ${pose} · 双击打开会话窗口`}
       className="relative h-full w-full overflow-visible"
       style={{ background: 'transparent', border: 0, boxShadow: 'none' }}
     >

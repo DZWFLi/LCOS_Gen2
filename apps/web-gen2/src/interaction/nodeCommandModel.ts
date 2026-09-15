@@ -26,6 +26,7 @@ import type { NodeCapability } from '../presentation/rendererRegistry.js';
 export type LcosNodeCommandId =
   // 能力驱动（来自 descriptorFor / 原生节点语义）
   | 'open'
+  | 'compose'
   | 'reference'
   // 画布机械（复用 Huabu 既有命令，不重写 store）
   | 'convert-text'
@@ -66,6 +67,13 @@ export interface LcosNodeCommandInput {
   readonly noteHeightMode?: 'auto' | 'fixed';
 }
 
+/** A complete Core identity marks a projected node as non-deletable locally. */
+export function isLcosNodeDeleteAllowed(
+  input: Pick<LcosNodeCommandInput, 'entityType' | 'entityId'> | undefined,
+): boolean {
+  return input?.entityType === undefined || input.entityId === undefined;
+}
+
 /**
  * 一个节点类型在旧 `NodeFloatingToolbar` 上**真实拥有**的控件。
  * 这是覆盖关系表（不是能力推断）：只有旧壳真有、且 Arc 已接线到真实命令的控件才为 true。
@@ -91,18 +99,21 @@ const ARC_SURFACES: Readonly<Record<string, ArcSurface>> = {
   audio: { typeToggle: false, accent: true, size: true, openLarge: false, move: true, autoHeight: false },
   canvasRef: { typeToggle: false, accent: false, size: false, openLarge: false, move: false, autoHeight: false },
   nodeRef: { typeToggle: false, accent: true, size: true, openLarge: false, move: false, autoHeight: false },
+  // Core-bound text keeps native editing out of the LCOS shell; Arc owns the
+  // shared open/compose/reference and canvas mechanics for that projection.
+  text: { typeToggle: false, accent: true, size: true, openLarge: false, move: true, autoHeight: false },
 };
 
 /**
  * 打开去向：**只有真实存在打开目标时才出现**（否则整条不出现，而不是给个灰按钮）。
- * 只认已接入的真实窗口 body（入口预览 / 会话工作台 / 阅读器）。
+ * 只认已接入的真实窗口 body（入口预览 / 会话窗口 / 阅读器）。
  */
 function openCommand(input: LcosNodeCommandInput): LcosNodeCommand | undefined {
   if (input.nodeType === 'canvasRef' && input.targetCanvasId) {
     return { id: 'open', label: '查看入口目标', group: '进入' };
   }
   if (input.entityType === 'conversation') {
-    return { id: 'open', label: '打开工作台', group: '进入' };
+    return { id: 'open', label: '打开会话窗口', group: '进入' };
   }
   if (input.entityType === 'artifact') {
     return { id: 'open', label: '在阅读器打开', group: '进入' };
@@ -131,16 +142,22 @@ function referenceCommand(input: LcosNodeCommandInput): LcosNodeCommand {
  * 顺序 = 进入 → 关系 → 编辑 → 外观 → 空间；表外类型返回空数组。
  */
 export function buildLcosNodeCommands(input: LcosNodeCommandInput): readonly LcosNodeCommand[] {
-  const surface = input.nodeType === undefined ? undefined : ARC_SURFACES[input.nodeType];
+  const bound = !isLcosNodeDeleteAllowed(input);
+  const surface = input.nodeType === 'text' && !bound
+    ? undefined
+    : input.nodeType === undefined ? undefined : ARC_SURFACES[input.nodeType];
   // 纵深防御：Arc 本身也按类型闸门，这里再挡一层 —— 未覆盖类型继续挂旧壳。
   if (!surface) return [];
 
-  const bound = input.entityType !== undefined && input.entityId !== undefined;
   const commands: LcosNodeCommand[] = [];
 
   // 进入
   const open = openCommand(input);
   if (open) commands.push(open);
+  if (bound) {
+    // Composer 由当前选中对象的近场 Arc 显式呼出；Assembly 保持独立项目级入口。
+    commands.push({ id: 'compose', label: '围绕此对象工作', group: '进入' });
+  }
 
   // 关系
   if (bound) commands.push(referenceCommand(input));
@@ -188,6 +205,7 @@ export function buildLcosNodeCommands(input: LcosNodeCommandInput): readonly Lco
  */
 const PRIMARY_ELIGIBLE: ReadonlySet<LcosNodeCommandId> = new Set([
   'open',
+  'compose',
   'reference',
   'convert-note',
   'auto-height',
