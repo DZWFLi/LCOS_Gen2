@@ -73,7 +73,7 @@ test('family -> native Huabu node type (no lcos/* synonyms)', () => {
   // 未绑定的 Huabu 原生自由文本仍是 text（不在本函数管辖）。
   assert.equal(huabuNodeTypeForFamily('text'), 'note');
   assert.equal(huabuNodeTypeForFamily('web'), 'web');
-  assert.equal(huabuNodeTypeForFamily('audio'), 'audio');
+  assert.equal(huabuNodeTypeForFamily('audio'), 'note');
   assert.equal(huabuNodeTypeForFamily('video'), 'video');
   assert.equal(huabuNodeTypeForFamily('unknown'), 'note');
   const known = new Set(['image', 'note', 'web', 'audio', 'video']);

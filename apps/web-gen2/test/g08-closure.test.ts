@@ -223,3 +223,57 @@ test('ReconciliationRunner.runOnce: prunes orphan artifact node bindings when th
     assert.equal((await bindings.findNode('p1', CANVAS, 'artifact', 'a1'))?.spatialId, 'node-1');
   }
 });
+
+test('ReconciliationRunner: relation lookup keeps same-id artifact and conversation identities separate', async () => {
+  const endpoints: Array<{ from: string; to: string }> = [];
+  const bindings = new ProjectionBindingRegistry(new MemoryBindingStore());
+  const nodeProjector = {
+    projectArtifactsWithReport: async () => ({
+      bindings: [{
+        projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', spatialId: 'node-artifact',
+        entityType: 'artifact', entityId: 'abc',
+      }],
+      failures: [],
+    }),
+    projectBatchWithReport: async () => ({
+      bindings: [{
+        projectId: 'p1', canvasId: CANVAS, spatialKind: 'node', spatialId: 'node-conversation',
+        entityType: 'conversation', entityId: 'abc',
+      }],
+      failures: [],
+    }),
+    removeOrphanNode: async () => undefined,
+  } as never;
+  const relationProjector = {
+    reconcileRelationEdge: async (_relation: unknown, fromNode: string, toNode: string) => {
+      endpoints.push({ from: fromNode, to: toNode });
+    },
+    removeOrphanRelationEdge: async () => undefined,
+  } as never;
+  const runner = new ReconciliationRunner({
+    projectId: 'p1',
+    canvasId: CANVAS,
+    projects: { getProjectGraph: async () => ({ artifacts: [{ id: 'abc' }] }) },
+    relations: {
+      listRelations: async () => [{
+        id: 'rel-1',
+        sourceEntityType: 'artifact',
+        sourceEntityId: 'abc',
+        targetEntityType: 'conversation',
+        targetEntityId: 'abc',
+        kind: 'references',
+      }],
+    },
+    nodeProjector,
+    relationProjector,
+    bindings,
+    conversations: {
+      listConnectedConversations: async () => [{ id: 'abc', conversationRef: 'provider-session-1', label: 'Agent' }],
+    },
+  } as never);
+
+  const result = await runner.runOnce();
+  assert.deepEqual(endpoints, [{ from: 'node-artifact', to: 'node-conversation' }]);
+  assert.equal(result.skippedRelations, 0);
+  assert.equal(result.degraded, false);
+});

@@ -13,6 +13,8 @@
 //   - MIME and artifact kind are the only file signals; a title that contains
 //     'pdf'/'skill'/'run' NEVER changes the family.
 
+import type { AgentCreatableNodeType } from '../spatial/types.js';
+
 export type LcosVisualFamily =
   | 'text'
   | 'document'
@@ -26,6 +28,7 @@ export type LcosVisualFamily =
   | 'output'
   | 'unknown';
 
+
 export interface VisualFamilySource {
   readonly entityType?: 'artifact' | 'conversation' | 'skill' | 'run' | string;
   readonly artifactKind?: 'text' | 'image' | 'pdf' | 'file' | 'presentation' | 'markdown' | string;
@@ -36,7 +39,7 @@ export interface VisualFamilySource {
 }
 
 function normMime(mime?: string): string {
-  return (mime ?? '').toLowerCase().trim();
+  return ((mime ?? '').toLowerCase().split(';', 1)[0] ?? '').trim();
 }
 
 /**
@@ -52,9 +55,12 @@ export function resolveVisualFamily(source: VisualFamilySource): LcosVisualFamil
   const mime = normMime(source.mimeType);
   const kind = source.artifactKind;
 
-  if (kind === 'image' || mime.startsWith('image/')) return 'image';
+  // A selected revision's normalized MIME is the precise content signal.
+  // Artifact kind is the fallback when no FileRecord MIME is available.
+  if (mime.startsWith('image/')) return 'image';
   if (mime.startsWith('audio/')) return 'audio';
   if (mime.startsWith('video/')) return 'video';
+  if (kind === 'image') return 'image';
   if (source.sourceKind === 'url' || source.sourceKind === 'web' || kind === 'link') return 'web';
   if (
     mime === 'application/pdf' ||
@@ -68,7 +74,7 @@ export function resolveVisualFamily(source: VisualFamilySource): LcosVisualFamil
 }
 
 /** Map a visual family to a Huabu NATIVE node type (B00-R4). No lcos/* synonyms. */
-export function huabuNodeTypeForFamily(family: LcosVisualFamily): string {
+export function huabuNodeTypeForFamily(family: LcosVisualFamily): AgentCreatableNodeType {
   switch (family) {
     case 'image': return 'image';
     case 'document':
@@ -84,7 +90,10 @@ export function huabuNodeTypeForFamily(family: LcosVisualFamily): string {
      */
     case 'text': return 'note';
     case 'web': return 'web';
-    case 'audio': return 'audio';
+    // Huabu exposes audio as a canvas node, but does not allow it through the
+    // agent CREATE_NODES contract. Keep the audio morphology while using the
+    // existing neutral note host for Core projections.
+    case 'audio': return 'note';
     case 'video': return 'video';
     case 'conversation':
     case 'skill':

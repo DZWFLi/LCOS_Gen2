@@ -14,6 +14,7 @@ import { HuabuRfsClient } from './huabuRfsClient.js';
 import { ProjectionBinding, ProjectionBindingRegistry, type EntityType } from './projectionBinding.js';
 import type { AgentCreatableNodeType, Point, NodeGeometrySize } from './types.js';
 import { resolveVisualFamily, huabuNodeTypeForFamily, type VisualFamilySource } from '../presentation/visualFamily.js';
+import { resolveLcosInitialGeometryPreset } from '../presentation/nodeHostPresentation.js';
 import {
   PLACEMENT_GAP,
   placeNewNodesIncrementally,
@@ -22,16 +23,25 @@ import {
   type PlacementItem,
 } from './gen1Placement.js';
 
-export type ArtifactKind = 'text' | 'image' | 'pdf' | 'file';
+export type ArtifactKind = 'text' | 'markdown' | 'image' | 'pdf' | 'file' | 'presentation' | 'other';
 
 export interface ArtifactProjectionSource {
   projectId: string;
   artifactId: string;
   kind: ArtifactKind;
   title: string;
+  /** Authoritative FileRecord MIME when available; used only for presentation family resolution. */
+  mimeType?: string;
+  /** FileRecord backing the selected view/current revision. */
+  fileRecordId?: string;
+  currentRevisionId?: string;
+  /** Core managed fact when available. */
+  managed?: boolean;
+  /** Existing Core presentation mode; used only to choose an adopted initial morphology size. */
+  displayMode?: 'card' | 'thumbnail' | 'compact' | string;
   /**
-   * R2：Core 侧的呈现尺寸（来自 `ArtifactView.size` / `displayMode`）。
-   * 有就给 Huabu 作为创建尺寸，让 Main 首屏形成真实主次分组；没有则用机械默认值。
+   * Core 侧已有呈现尺寸（ArtifactView）。新 LCOS 投影若存在 Figma exact preset，
+   * 由 preset 决定初始 footprint；未采用的 family 才回退此尺寸。既有 Huabu geometry 永不改写。
    */
   size?: NodeGeometrySize;
 }
@@ -47,13 +57,27 @@ export interface SpaceEntityProjectionSource {
   sourceKind?: string;
   sourceRunId?: string;
   managed?: boolean;
+  fileRecordId?: string;
+  currentRevisionId?: string;
+  displayMode?: 'card' | 'thumbnail' | 'compact' | string;
   /**
    * 创建时的机械落位（T1-G05：正式落位由 Huabu layout owner 接管；此处只是
    * 避免同一批投影全部叠在 DEFAULT_POSITION）。binding 复用时忽略。
    */
   position?: Point;
-  /** R2：创建尺寸（来自 ArtifactView / displayMode）；缺省用机械默认值。 */
+  /** 创建尺寸 fallback（Figma exact preset 优先；既有 binding 永不改写）。 */
   size?: NodeGeometrySize;
+}
+
+export interface ProjectionItemFailure {
+  readonly entityType: EntityType;
+  readonly entityId: string;
+  readonly message: string;
+}
+
+export interface ProjectionBatchReport {
+  readonly bindings: readonly ProjectionBinding[];
+  readonly failures: readonly ProjectionItemFailure[];
 }
 
 const DEFAULT_POSITION: Point = { x: 0, y: 0 };
@@ -61,14 +85,36 @@ const DEFAULT_SIZE: NodeGeometrySize = { width: 280, height: 220 };
 /** 落位用的确定性尺寸（与 DEFAULT_SIZE 同值；NodeGeometrySize 允许 'auto'，落位需要纯数字）。 */
 const DEFAULT_PLACEMENT_SIZE: PlacementItem = { width: 280, height: 220 };
 
-/** 该投影源请求的落位尺寸（缺省用机械默认值；'auto' 不参与落位）。 */
+function figmaInitialSize(input: SpaceEntityProjectionSource): PlacementItem | undefined {
+  const preset = resolveLcosInitialGeometryPreset({
+    entityType: input.entityType,
+    artifactKind: input.kind,
+    ...(input.mimeType === undefined ? {} : { mimeType: input.mimeType }),
+    ...(input.sourceKind === undefined ? {} : { sourceKind: input.sourceKind }),
+    ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
+    ...(input.managed === undefined ? {} : { managed: input.managed }),
+    ...(input.displayMode === undefined ? {} : { displayMode: input.displayMode }),
+  });
+  return preset ? { width: preset.width, height: preset.height } : undefined;
+}
+
+/**
+ * New-projection size precedence: exact LCOS/Figma family preset > explicit
+ * Core ArtifactView size > mechanical fallback. The current Figma adoption is
+ * the visual contract for a newly projected LCOS species; Core view size remains
+ * a fallback for families that do not yet have an exact adopted geometry.
+ * Existing bindings never call
+ * this creation path, so persisted user geometry is never rewritten.
+ */
 function requestedPlacementSize(input: SpaceEntityProjectionSource): PlacementItem {
   const width = input.size?.width;
   const height = input.size?.height;
-  return {
-    width: typeof width === 'number' && width > 0 ? width : DEFAULT_PLACEMENT_SIZE.width,
-    height: typeof height === 'number' && height > 0 ? height : DEFAULT_PLACEMENT_SIZE.height,
-  };
+  const figma = figmaInitialSize(input);
+  if (figma) return figma;
+  if (typeof width === 'number' && width > 0 && typeof height === 'number' && height > 0) {
+    return { width, height };
+  }
+  return DEFAULT_PLACEMENT_SIZE;
 }
 
 /** 同一 canvas 上的投影批次队列（见 ProjectToSpaceProjection.projectBatch 注释）。 */
@@ -103,7 +149,7 @@ export function huabuNodeTypeForPresentation(
     sourceRunId: source.sourceRunId,
     managed: source.managed,
   });
-  return huabuNodeTypeForFamily(family) as AgentCreatableNodeType;
+  return huabuNodeTypeForFamily(family);
 }
 
 export function huabuNodeTypeFor(kind: ArtifactKind): AgentCreatableNodeType {
@@ -131,13 +177,25 @@ export class ProjectToSpaceProjection {
    * Backwards-compatible convenience over projectEntity('artifact').
    */
   async projectArtifacts(artifacts: ArtifactProjectionSource[]): Promise<ProjectionBinding[]> {
-    return this.projectBatch(
+    const report = await this.projectArtifactsWithReport(artifacts);
+    return [...report.bindings];
+  }
+
+  async projectArtifactsWithReport(
+    artifacts: ArtifactProjectionSource[],
+  ): Promise<ProjectionBatchReport> {
+    return this.projectBatchWithReport(
       artifacts.map((artifact) => ({
         projectId: artifact.projectId,
         entityType: 'artifact' as EntityType,
         entityId: artifact.artifactId,
         kind: artifact.kind,
         title: artifact.title,
+        ...(artifact.mimeType === undefined ? {} : { mimeType: artifact.mimeType }),
+        ...(artifact.fileRecordId === undefined ? {} : { fileRecordId: artifact.fileRecordId }),
+        ...(artifact.currentRevisionId === undefined ? {} : { currentRevisionId: artifact.currentRevisionId }),
+        ...(artifact.managed === undefined ? {} : { managed: artifact.managed }),
+        ...(artifact.displayMode === undefined ? {} : { displayMode: artifact.displayMode }),
         ...(artifact.size === undefined ? {} : { size: artifact.size }),
       })),
     );
@@ -154,6 +212,13 @@ export class ProjectToSpaceProjection {
    * findLiveNode 一定能看到前一批刚写入的 binding，从而复用而不是重建。
    */
   async projectBatch(inputs: SpaceEntityProjectionSource[]): Promise<ProjectionBinding[]> {
+    const report = await this.projectBatchWithReport(inputs);
+    return [...report.bindings];
+  }
+
+  async projectBatchWithReport(
+    inputs: SpaceEntityProjectionSource[],
+  ): Promise<ProjectionBatchReport> {
     return this.enqueueForCanvas(() => this.projectBatchSerial(inputs));
   }
 
@@ -174,7 +239,7 @@ export class ProjectToSpaceProjection {
 
   private async projectBatchSerial(
     inputs: SpaceEntityProjectionSource[],
-  ): Promise<ProjectionBinding[]> {
+  ): Promise<ProjectionBatchReport> {
     // 同一批输入里同一实体只投影一次（防御重复输入；与实体级建节点锁一起保证幂等）。
     const seen = new Set<string>();
     const uniqueInputs = inputs.filter((input) => {
@@ -184,6 +249,7 @@ export class ProjectToSpaceProjection {
       return true;
     });
     const results: (ProjectionBinding | undefined)[] = new Array(uniqueInputs.length).fill(undefined);
+    const failures: ProjectionItemFailure[] = [];
     const newcomers: { index: number; input: SpaceEntityProjectionSource }[] = [];
 
     let index = 0;
@@ -202,37 +268,52 @@ export class ProjectToSpaceProjection {
       const lattice: PlacementItem = {
         width: Math.max(
           DEFAULT_PLACEMENT_SIZE.width,
-          ...newcomers.map((target) =>
-            typeof target.input.size?.width === 'number' ? target.input.size.width : 0,
-          ),
+          ...newcomers.map((target) => requestedPlacementSize(target.input).width),
         ),
         height: Math.max(
           DEFAULT_PLACEMENT_SIZE.height,
-          ...newcomers.map((target) =>
-            typeof target.input.size?.height === 'number' ? target.input.size.height : 0,
-          ),
+          ...newcomers.map((target) => requestedPlacementSize(target.input).height),
         ),
       };
       const placementObstacles: PlacementBounds[] = [...obstacles];
       const origin = placementOriginFor(bbox);
       for (const target of newcomers) {
-        const [point] = placeNewNodesIncrementally(placementObstacles, [lattice], origin, PLACEMENT_GAP);
-        const created = await this.createEntityNodeWithSize({
-          ...target.input,
-          position: point ?? origin,
-        });
-        const placed = point ?? origin;
-        placementObstacles.push({
-          x: placed.x,
-          y: placed.y,
-          width: created.size.width,
-          height: created.size.height,
-        });
-        results[target.index] = created.binding;
+        try {
+          const [point] = placeNewNodesIncrementally(placementObstacles, [lattice], origin, PLACEMENT_GAP);
+          const created = await this.createEntityNodeWithSize({
+            ...target.input,
+            position: point ?? origin,
+          });
+          const placed = point ?? origin;
+          placementObstacles.push({
+            x: placed.x,
+            y: placed.y,
+            width: created.size.width,
+            height: created.size.height,
+          });
+          results[target.index] = created.binding;
+        } catch (error) {
+          // RFS allows partial commits. Keep the successful entities and let
+          // the next reconcile retry only this failed entity through the
+          // binding lookup; one invalid node type must not abort the batch.
+          failures.push({
+            entityType: target.input.entityType,
+            entityId: target.input.entityId,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          console.warn('[lcos] 单项节点投影失败，继续处理其余实体', {
+            entityType: target.input.entityType,
+            entityId: target.input.entityId,
+            error,
+          });
+        }
       }
     }
 
-    return results.filter((binding): binding is ProjectionBinding => binding !== undefined);
+    return {
+      bindings: results.filter((binding): binding is ProjectionBinding => binding !== undefined),
+      failures,
+    };
   }
 
   /** 既有节点只读：作为落位障碍物 + 新内容插入点的参考 bbox。 */
@@ -355,7 +436,7 @@ export class ProjectToSpaceProjection {
             nodeType,
             data: { label: input.title },
             position: input.position === undefined ? { ...DEFAULT_POSITION } : { ...input.position },
-            size: input.size === undefined ? { ...DEFAULT_SIZE } : { ...input.size },
+            size: { ...(figmaInitialSize(input) ?? input.size ?? DEFAULT_SIZE) },
           },
         ],
       },

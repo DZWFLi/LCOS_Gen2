@@ -31,13 +31,19 @@ export { ProjectionBindingRegistry, MemoryBindingStore, FileBindingStore, bindin
 export type { ProjectionBinding, EntityType, SpatialKind, BindingStore, FileSystemLike } from './spatial/projectionBinding.js';
 
 export { ProjectToSpaceProjection, huabuNodeTypeFor } from './spatial/projectToSpaceProjection.js';
-export type { ArtifactProjectionSource, ArtifactKind, SpaceEntityProjectionSource } from './spatial/projectToSpaceProjection.js';
+export type {
+  ArtifactProjectionSource,
+  ArtifactKind,
+  SpaceEntityProjectionSource,
+  ProjectionItemFailure,
+  ProjectionBatchReport,
+} from './spatial/projectToSpaceProjection.js';
 
 export { RelationProjection } from './spatial/relationProjection.js';
 export type { RelationKind, SemanticRelation, CoreRelationWriter, CoreEntityRef, NodeBindingResolver } from './spatial/relationProjection.js';
 
 export { ReconciliationRunner } from './spatial/reconciliationRunner.js';
-export type { ReconciliationResult, ReconciliationDeps } from './spatial/reconciliationRunner.js';
+export type { ReconciliationResult, ReconciliationFailureSummary, ReconciliationDeps } from './spatial/reconciliationRunner.js';
 
 export { HostLifecycleReconciler } from './host/lifecycleReconciler.js';
 export type { HostLifecycleReconcilerOptions, ReconcileTrigger } from './host/lifecycleReconciler.js';

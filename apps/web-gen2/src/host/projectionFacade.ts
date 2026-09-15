@@ -25,6 +25,7 @@ import { SqliteBindingStore } from '../backend/sqliteBindingStore.js';
 import { HuabuRfsClient } from '../spatial/huabuRfsClient.js';
 import { ProjectionBindingRegistry, type EntityType, type ProjectionBinding } from '../spatial/projectionBinding.js';
 import { ProjectToSpaceProjection, type ArtifactProjectionSource } from '../spatial/projectToSpaceProjection.js';
+import { viewPresentationByArtifact } from '../spatial/reconciliationRunner.js';
 import { RelationProjection, type CoreEntityRef, type CoreRelationWriter, type RelationKind } from '../spatial/relationProjection.js';
 import { ReconciliationRunner } from '../spatial/reconciliationRunner.js';
 import { describeProjectedEntity, buildContentPreview } from '../presentation/projectedNodeDescriptor.js';
@@ -240,26 +241,35 @@ export class Gen2Host {
       return map;
     }
 
-    // artifact → 当前 revision 的 FileRecord（正文/字节出口的键）+ FileRecord 本身（mime/size）。
-    const fileRecordIdByArtifact = new Map<string, string>();
+    const targetWorkspace = graph?.workspaces?.find((workspace) => String(workspace.canvasId ?? '') === this.canvasId);
+    const selectedViews = viewPresentationByArtifact(
+      graph?.artifactViews ?? [],
+      {
+        ...(targetWorkspace?.scopeId === undefined ? {} : { scopeId: String(targetWorkspace.scopeId) }),
+        ...(targetWorkspace === undefined ? {} : { focusedViewIds: new Set(targetWorkspace.focusedViewIds.map(String)) }),
+      },
+    );
+    // artifact → selected view revision → current revision fallback → FileRecord.
+    // Never use the first revision in an API array: reversed history must not
+    // change the rendered species or the bytes staged into Huabu.
+    const revisionById = new Map<string, { id?: unknown; fileRecordId?: unknown }>();
     for (const revision of graph?.artifactRevisions ?? []) {
-      const artifactId = String(revision.artifactId ?? '');
-      const fileRecordId = String(revision.fileRecordId ?? '');
-      if (artifactId !== '' && fileRecordId !== '' && !fileRecordIdByArtifact.has(artifactId)) {
-        fileRecordIdByArtifact.set(artifactId, fileRecordId);
-      }
+      const revisionId = String(revision.id ?? '');
+      if (revisionId !== '') revisionById.set(revisionId, revision);
     }
     const fileRecordById = new Map<string, { mimeType: string; size: number }>();
     for (const record of graph?.fileRecords ?? []) {
       fileRecordById.set(String(record.id), {
-        mimeType: String(record.mimeType ?? ''),
+        mimeType: (String(record.mimeType ?? '').toLowerCase().split(';', 1)[0] ?? '').trim(),
         size: Number(record.size ?? 0),
       });
     }
 
     for (const artifact of graph?.artifacts ?? []) {
       const entityId = String(artifact.id);
-      const fileRecordId = fileRecordIdByArtifact.get(entityId);
+      const selectedRevisionId = selectedViews.get(entityId)?.revisionId ?? String(artifact.currentRevisionId ?? '');
+      const selectedRevision = revisionById.get(selectedRevisionId);
+      const fileRecordId = selectedRevision === undefined ? undefined : String(selectedRevision.fileRecordId ?? '');
       const preview = await this.readPreview(
         String(artifact.kind),
         fileRecordId,
@@ -315,10 +325,11 @@ export class Gen2Host {
     fileRecordById: ReadonlyMap<string, { mimeType: string; size: number }>,
   ): Promise<string | undefined> {
     if (fileRecordId === undefined) return undefined;
-    if (!TEXT_PREVIEW_KINDS.has(kind)) return undefined;
+    const record = fileRecordById.get(fileRecordId);
+    const textLike = TEXT_PREVIEW_KINDS.has(kind) || record?.mimeType.startsWith('text/') === true;
+    if (!textLike) return undefined;
     const cached = this.previewCache.get(fileRecordId);
     if (cached !== undefined) return cached === '' ? undefined : cached;
-    const record = fileRecordById.get(fileRecordId);
     if (record !== undefined && record.size > MAX_PREVIEW_BYTES) return undefined;
     try {
       const preview = buildContentPreview(

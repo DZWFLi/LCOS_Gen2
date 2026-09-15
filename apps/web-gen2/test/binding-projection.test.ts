@@ -327,11 +327,15 @@ test('project: 并发投影同一实体只创建一个节点（StrictMode 双挂
   assert.equal(second[0]?.spatialId, 'only-one');
 });
 
-test('project: CREATE_NODES with no returned nodeId throws', async () => {
+test('project: CREATE_NODES with no returned nodeId is reported as degraded', async () => {
   const reg = new ProjectionBindingRegistry(new MemoryBindingStore());
   const { client } = makeRfs(() => jsonResponse(createdResponse([])));
   const proj = new ProjectToSpaceProjection(client, reg);
-  await assert.rejects(() => proj.projectArtifacts([{ projectId: 'p1', artifactId: 'a1', kind: 'text', title: 'Doc' }]));
+  const report = await proj.projectArtifactsWithReport([{ projectId: 'p1', artifactId: 'a1', kind: 'text', title: 'Doc' }]);
+  assert.deepEqual(report.bindings, []);
+  assert.equal(report.failures.length, 1);
+  assert.equal(report.failures[0]?.entityId, 'a1');
+  assert.match(report.failures[0]?.message ?? '', /CREATE_NODES did not return/);
 });
 
 // ---- RelationProjection: Core canonical -> Edge, real edgeId, delete order ----

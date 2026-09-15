@@ -25,6 +25,15 @@ export interface ReconciliationResult {
   removedOrphanEdges: number;
   removedOrphanNodes: number;
   skippedRelations: number;
+  failures: ReconciliationFailureSummary;
+  degraded: boolean;
+}
+
+export interface ReconciliationFailureSummary {
+  artifactProjection: number;
+  conversationProjection: number;
+  relationProjection: number;
+  orphanCleanup: number;
 }
 
 export interface ReconciliationDeps {
@@ -49,11 +58,13 @@ function projectionArtifactKind(kind: unknown): ArtifactProjectionSource['kind']
     case 'pdf':
       return 'pdf';
     case 'presentation':
-      return 'file';
+      return 'presentation';
     case 'markdown':
-      return 'text';
+      return 'markdown';
+    case 'other':
+      return 'other';
     default:
-      return 'text'; // 'other' / unknown -> text (safe default)
+      return 'other';
   }
 }
 
@@ -61,12 +72,22 @@ function artifactSource(
   projectId: string,
   value: unknown,
   viewSize?: { width: number; height: number },
+  mimeType?: string,
+  displayMode?: string,
+  fileRecordId?: string,
+  currentRevisionId?: string,
 ): ArtifactProjectionSource | undefined {
   if (typeof value === 'string') {
     return value ? { projectId, artifactId: value, kind: 'text', title: value } : undefined;
   }
   if (typeof value === 'object' && value !== null) {
-    const artifact = value as { id?: unknown; artifactId?: unknown; title?: unknown; kind?: unknown };
+    const artifact = value as {
+      id?: unknown;
+      artifactId?: unknown;
+      title?: unknown;
+      kind?: unknown;
+      managed?: unknown;
+    };
     const artifactId = String(artifact.id ?? artifact.artifactId ?? '');
     if (!artifactId) return undefined;
     const title = typeof artifact.title === 'string' && artifact.title.trim() !== '' ? artifact.title : artifactId;
@@ -75,6 +96,11 @@ function artifactSource(
       artifactId,
       kind: projectionArtifactKind(artifact.kind),
       title,
+      ...(mimeType === undefined || mimeType === '' ? {} : { mimeType }),
+      ...(fileRecordId === undefined || fileRecordId === '' ? {} : { fileRecordId }),
+      ...(currentRevisionId === undefined || currentRevisionId === '' ? {} : { currentRevisionId }),
+      ...(typeof artifact.managed === 'boolean' ? { managed: artifact.managed } : {}),
+      ...(displayMode === undefined || displayMode === '' ? {} : { displayMode }),
       // R2：带上 Core 侧呈现尺寸（ArtifactView.size），让 Main 首屏有真实主次分组。
       ...(viewSize === undefined ? {} : { size: viewSize }),
     };
@@ -83,22 +109,95 @@ function artifactSource(
 }
 
 /**
- * R2：artifact → Core 呈现尺寸。取该 artifact 的第一个 ArtifactView 的 size
- * （Core 是 view 几何的 owner；这里只读，不发明尺寸）。
+ * Select the ArtifactView for the active Huabu canvas. Workspace scope and
+ * focused view ids are explicit when available; the fallback is deterministic
+ * (primary first, then view id), never API array order.
  */
-function viewSizeByArtifact(
-  views: readonly { artifactId?: unknown; size?: { width?: unknown; height?: unknown } }[],
-): ReadonlyMap<string, { width: number; height: number }> {
-  const map = new Map<string, { width: number; height: number }>();
+export function viewPresentationByArtifact(
+  views: readonly {
+    id?: unknown;
+    artifactId?: unknown;
+    scopeId?: unknown;
+    referenceKind?: unknown;
+    revisionId?: unknown;
+    size?: { width?: unknown; height?: unknown };
+    displayMode?: unknown;
+  }[],
+  target: { scopeId?: string; focusedViewIds?: ReadonlySet<string> } = {},
+): ReadonlyMap<string, {
+  viewId: string;
+  revisionId?: string;
+  fileRecordId?: string;
+  size: { width: number; height: number };
+  displayMode?: string;
+}> {
+  const candidatesByArtifact = new Map<string, typeof views[number][]>();
   for (const view of views) {
     const artifactId = String(view.artifactId ?? '');
+    const viewId = String(view.id ?? '');
     const width = Number(view.size?.width);
     const height = Number(view.size?.height);
-    if (artifactId === '' || !Number.isFinite(width) || !Number.isFinite(height)) continue;
-    if (width <= 0 || height <= 0) continue;
-    if (!map.has(artifactId)) map.set(artifactId, { width, height });
+    if (artifactId === '' || viewId === '' || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue;
+    if (target.scopeId !== undefined && String(view.scopeId ?? '') !== target.scopeId) continue;
+    const bucket = candidatesByArtifact.get(artifactId) ?? [];
+    bucket.push(view);
+    candidatesByArtifact.set(artifactId, bucket);
+  }
+  const map = new Map<string, { viewId: string; revisionId?: string; size: { width: number; height: number }; displayMode?: string }>();
+  for (const [artifactId, candidates] of candidatesByArtifact) {
+    candidates.sort((left, right) => {
+      const leftId = String(left.id ?? '');
+      const rightId = String(right.id ?? '');
+      const leftFocused = target.focusedViewIds?.has(leftId) ? 0 : 1;
+      const rightFocused = target.focusedViewIds?.has(rightId) ? 0 : 1;
+      if (leftFocused !== rightFocused) return leftFocused - rightFocused;
+      const leftPrimary = left.referenceKind === 'primary' ? 0 : 1;
+      const rightPrimary = right.referenceKind === 'primary' ? 0 : 1;
+      if (leftPrimary !== rightPrimary) return leftPrimary - rightPrimary;
+      return leftId.localeCompare(rightId);
+    });
+    const view = candidates[0];
+    if (view === undefined) continue;
+    const revisionId = String(view.revisionId ?? '');
+    const displayMode = String(view.displayMode ?? '');
+    map.set(artifactId, {
+      viewId: String(view.id),
+      ...(revisionId === '' ? {} : { revisionId }),
+      size: { width: Number(view.size?.width), height: Number(view.size?.height) },
+      ...(displayMode === '' ? {} : { displayMode }),
+    });
   }
   return map;
+}
+
+export function mimeTypeByArtifact(graph: {
+  artifacts?: readonly { id?: unknown; artifactId?: unknown; currentRevisionId?: unknown }[];
+  artifactRevisions?: readonly { id?: unknown; artifactId?: unknown; fileRecordId?: unknown }[];
+  fileRecords?: readonly { id?: unknown; mimeType?: unknown }[];
+}, selectedViews: ReadonlyMap<string, { revisionId?: string }> = new Map()): ReadonlyMap<string, { mimeType: string; fileRecordId?: string; revisionId?: string }> {
+  const recordMime = new Map<string, string>();
+  for (const record of graph.fileRecords ?? []) {
+    const id = String(record.id ?? '');
+    const mime = String(record.mimeType ?? '').toLowerCase().split(';', 1)[0]?.trim() ?? '';
+    if (id !== '' && mime !== '') recordMime.set(id, mime);
+  }
+  const revisionById = new Map<string, NonNullable<typeof graph.artifactRevisions>[number]>();
+  for (const revision of graph.artifactRevisions ?? []) {
+    const revisionId = String(revision.id ?? '');
+    if (revisionId !== '') revisionById.set(revisionId, revision);
+  }
+  const out = new Map<string, { mimeType: string; fileRecordId?: string; revisionId?: string }>();
+  for (const artifact of graph.artifacts ?? []) {
+    const artifactId = String(artifact.id ?? artifact.artifactId ?? '');
+    if (artifactId === '') continue;
+    const selectedRevisionId = selectedViews.get(artifactId)?.revisionId ?? String(artifact.currentRevisionId ?? '');
+    const revision = revisionById.get(selectedRevisionId);
+    if (revision === undefined) continue;
+    const fileRecordId = String(revision.fileRecordId ?? '');
+    const mime = recordMime.get(fileRecordId);
+    if (mime !== undefined) out.set(artifactId, { mimeType: mime, fileRecordId, revisionId: selectedRevisionId });
+  }
+  return out;
 }
 
 function toSemanticRelation(relation: {
@@ -130,24 +229,56 @@ export class ReconciliationRunner {
     const { projectId, canvasId } = this.deps;
     const graph = await this.deps.projects.getProjectGraph(projectId);
     const rawArtifacts = Array.isArray(graph?.artifacts) ? (graph.artifacts as unknown[]) : [];
-    const viewSizes = viewSizeByArtifact(
+    const targetWorkspace = graph?.workspaces?.find((workspace) => String(workspace.canvasId ?? '') === canvasId);
+    const viewPresentation = viewPresentationByArtifact(
       (Array.isArray(graph?.artifactViews) ? graph.artifactViews : []) as readonly {
+        id?: unknown;
         artifactId?: unknown;
+        scopeId?: unknown;
+        referenceKind?: unknown;
+        revisionId?: unknown;
         size?: { width?: unknown; height?: unknown };
+        displayMode?: unknown;
       }[],
+      {
+        ...(targetWorkspace?.scopeId === undefined ? {} : { scopeId: String(targetWorkspace.scopeId) }),
+        ...(targetWorkspace === undefined ? {} : { focusedViewIds: new Set(targetWorkspace.focusedViewIds.map(String)) }),
+      },
     );
+    const mimeTypes = mimeTypeByArtifact({
+      ...(graph?.artifacts === undefined ? {} : { artifacts: graph.artifacts }),
+      ...(graph?.artifactRevisions === undefined ? {} : { artifactRevisions: graph.artifactRevisions }),
+      ...(graph?.fileRecords === undefined ? {} : { fileRecords: graph.fileRecords }),
+    }, viewPresentation);
 
     const sources = rawArtifacts
       .map((a) => {
         const artifactId = String((a as { id?: unknown; artifactId?: unknown }).id ?? (a as { artifactId?: unknown }).artifactId ?? '');
-        return artifactSource(projectId, a, viewSizes.get(artifactId));
+        const view = viewPresentation.get(artifactId);
+        return artifactSource(
+          projectId,
+          a,
+          view?.size,
+          mimeTypes.get(artifactId)?.mimeType,
+          view?.displayMode,
+          mimeTypes.get(artifactId)?.fileRecordId,
+          mimeTypes.get(artifactId)?.revisionId,
+        );
       })
       .filter((s): s is ArtifactProjectionSource => s !== undefined);
-    const artifactBindings = await this.deps.nodeProjector.projectArtifacts(sources);
+    const artifactReport = await this.deps.nodeProjector.projectArtifactsWithReport(sources);
+    const artifactBindings = [...artifactReport.bindings];
+    const failures: ReconciliationFailureSummary = {
+      artifactProjection: artifactReport.failures.length,
+      conversationProjection: 0,
+      relationProjection: 0,
+      orphanCleanup: 0,
+    };
 
-    const nodeIdByArtifact = new Map<string, string>();
+    const entityKey = (entityType: string, entityId: string): string => `${entityType}:${entityId}`;
+    const nodeIdByEntity = new Map<string, string>();
     for (const binding of artifactBindings) {
-      if (binding.entityType === 'artifact') nodeIdByArtifact.set(binding.entityId, binding.spatialId);
+      nodeIdByEntity.set(entityKey(String(binding.entityType), binding.entityId), binding.spatialId);
     }
 
     // 承接会话 → Glyth 节点：与 artifact 走同一条投影/落位/绑定路径（没有第二套 projector）。
@@ -164,7 +295,7 @@ export class ReconciliationRunner {
         );
         conversationsScanned = conversations.length;
         conversationIds = new Set(confirmed.map((conversation) => String(conversation.id)));
-        const conversationBindings = await this.deps.nodeProjector.projectBatch(
+        const conversationReport = await this.deps.nodeProjector.projectBatchWithReport(
           confirmed.map((conversation) => ({
             projectId,
             entityType: 'conversation' as const,
@@ -173,9 +304,13 @@ export class ReconciliationRunner {
             title: String(conversation.label ?? conversation.id),
           })),
         );
-        conversationsProjected = conversationBindings.length;
-        for (const binding of conversationBindings) nodeIdByArtifact.set(binding.entityId, binding.spatialId);
+        conversationsProjected = conversationReport.bindings.length;
+        failures.conversationProjection += conversationReport.failures.length;
+        for (const binding of conversationReport.bindings) {
+          nodeIdByEntity.set(entityKey(String(binding.entityType), binding.entityId), binding.spatialId);
+        }
       } catch (error) {
+        failures.conversationProjection += 1;
         console.warn('[lcos] 承接会话投影失败（Glyth 本次缺席，不伪造）', error);
       }
     }
@@ -184,14 +319,22 @@ export class ReconciliationRunner {
     let reconciledEdges = 0;
     let skippedRelations = 0;
     for (const rel of relations) {
-      const fromNode = nodeIdByArtifact.get(String(rel.sourceEntityId));
-      const toNode = nodeIdByArtifact.get(String(rel.targetEntityId));
+      const fromNode = nodeIdByEntity.get(entityKey(String(rel.sourceEntityType), String(rel.sourceEntityId)));
+      const toNode = nodeIdByEntity.get(entityKey(String(rel.targetEntityType), String(rel.targetEntityId)));
       if (fromNode === undefined || toNode === undefined) {
         skippedRelations += 1;
+        failures.relationProjection += 1;
         continue;
       }
-      await this.deps.relationProjector.reconcileRelationEdge(toSemanticRelation(rel), fromNode, toNode);
-      reconciledEdges += 1;
+      try {
+        await this.deps.relationProjector.reconcileRelationEdge(toSemanticRelation(rel), fromNode, toNode);
+        reconciledEdges += 1;
+      } catch (error) {
+        failures.relationProjection += 1;
+        // A malformed or conflicting relation must not discard valid node
+        // projections or the remaining relations in this reconciliation pass.
+        console.warn('[lcos] 单项关系投影失败，继续处理其余关系', { relationId: String(rel.id), error });
+      }
     }
 
     // Prune orphan edges: bound for this project/canvas but the Core relation is gone.
@@ -201,8 +344,13 @@ export class ReconciliationRunner {
     for (const binding of bindings) {
       if (binding.projectId === projectId && binding.canvasId === canvasId && binding.spatialKind === 'edge' && binding.entityType === 'relation') {
         if (!coreRelationIds.has(binding.entityId)) {
-          await this.deps.relationProjector.removeOrphanRelationEdge(binding.entityId);
-          removedOrphanEdges += 1;
+          try {
+            await this.deps.relationProjector.removeOrphanRelationEdge(binding.entityId);
+            removedOrphanEdges += 1;
+          } catch (error) {
+            failures.orphanCleanup += 1;
+            console.warn('[lcos] 清理单项孤儿关系失败，继续处理', { relationId: binding.entityId, error });
+          }
         }
       }
     }
@@ -223,8 +371,13 @@ export class ReconciliationRunner {
         binding.entityType === 'artifact' &&
         !coreArtifactIds.has(binding.entityId)
       ) {
-        await this.deps.nodeProjector.removeOrphanNode(binding);
-        removedOrphanNodes += 1;
+        try {
+          await this.deps.nodeProjector.removeOrphanNode(binding);
+          removedOrphanNodes += 1;
+        } catch (error) {
+          failures.orphanCleanup += 1;
+          console.warn('[lcos] 清理单项孤儿节点失败，继续处理', { entityId: binding.entityId, error });
+        }
       }
     }
 
@@ -239,8 +392,13 @@ export class ReconciliationRunner {
           binding.entityType === 'conversation' &&
           !knownConversationIds.has(binding.entityId)
         ) {
-          await this.deps.nodeProjector.removeOrphanNode(binding);
-          removedOrphanNodes += 1;
+          try {
+            await this.deps.nodeProjector.removeOrphanNode(binding);
+            removedOrphanNodes += 1;
+          } catch (error) {
+            failures.orphanCleanup += 1;
+            console.warn('[lcos] 清理单项孤儿会话失败，继续处理', { entityId: binding.entityId, error });
+          }
         }
       }
     }
@@ -257,6 +415,12 @@ export class ReconciliationRunner {
       removedOrphanEdges,
       removedOrphanNodes,
       skippedRelations,
+      failures,
+      degraded:
+        failures.artifactProjection > 0 ||
+        failures.conversationProjection > 0 ||
+        failures.relationProjection > 0 ||
+        failures.orphanCleanup > 0,
     };
   }
 }

@@ -72,7 +72,7 @@ test('HostLifecycleReconciler: cooldown throttles immediate re-runs', async (t) 
   t.after(() => mock.timers.reset());
 
   let runs = 0;
-  const rec = new HostLifecycleReconciler({ runOnce: async () => { runs += 1; } }, 'p1', { cooldownMs: 100, debounceMs: 50 });
+  const rec = new HostLifecycleReconciler({ runOnce: async () => { runs += 1; return { degraded: false }; } }, 'p1', { cooldownMs: 100, debounceMs: 50 });
 
   rec.onProjectOpen();
   assert.equal(runs, 1, 'project-open runs');
@@ -88,7 +88,7 @@ test('HostLifecycleReconciler: mutation debounces and coalesces a burst', async 
   t.after(() => mock.timers.reset());
 
   let runs = 0;
-  const rec = new HostLifecycleReconciler({ runOnce: async () => { runs += 1; } }, 'p1', { cooldownMs: 0, debounceMs: 50 });
+  const rec = new HostLifecycleReconciler({ runOnce: async () => { runs += 1; return { degraded: false }; } }, 'p1', { cooldownMs: 0, debounceMs: 50 });
 
   rec.onMutationSuccess();
   assert.equal(runs, 0, 'not run before debounce');
@@ -108,7 +108,7 @@ test('HostLifecycleReconciler: reconnect runs immediately; periodic is fallback'
   t.after(() => mock.timers.reset());
 
   let runs = 0;
-  const rec = new HostLifecycleReconciler({ runOnce: async () => { runs += 1; } }, 'p1', { cooldownMs: 100 });
+  const rec = new HostLifecycleReconciler({ runOnce: async () => { runs += 1; return { degraded: false }; } }, 'p1', { cooldownMs: 100 });
 
   rec.onConnectionRestored();
   assert.equal(runs, 1, 'reconnect runs immediately');
@@ -116,6 +116,48 @@ test('HostLifecycleReconciler: reconnect runs immediately; periodic is fallback'
   rec.startPeriodic(50);
   await mock.timers.tick(200);
   assert.ok(runs >= 1 && runs <= 3, `periodic is throttled by cooldown (runs=${runs})`);
+  rec.dispose();
+});
+
+test('HostLifecycleReconciler: degraded run schedules exactly one retry', async (t) => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 0 });
+  t.after(() => mock.timers.reset());
+
+  let runs = 0;
+  const rec = new HostLifecycleReconciler(
+    { runOnce: async () => { runs += 1; return { degraded: runs === 1 }; } },
+    'p1',
+    { cooldownMs: 100 },
+  );
+
+  rec.onProjectOpen();
+  assert.equal(runs, 1);
+  // runOnce is async; let its continuation schedule the bounded retry
+  // before advancing the fake clock.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await mock.timers.tick(100);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(runs, 2, 'one degraded pass gets one retry');
+  rec.dispose();
+});
+
+test('HostLifecycleReconciler: degraded retry does not recursively schedule itself', async (t) => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 0 });
+  t.after(() => mock.timers.reset());
+
+  let runs = 0;
+  const rec = new HostLifecycleReconciler(
+    { runOnce: async () => { runs += 1; return { degraded: true }; } },
+    'p1',
+    { cooldownMs: 100 },
+  );
+
+  rec.onProjectOpen();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await mock.timers.tick(100);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await mock.timers.tick(1000);
+  assert.equal(runs, 2, 'retry remains a single bounded follow-up');
   rec.dispose();
 });
 

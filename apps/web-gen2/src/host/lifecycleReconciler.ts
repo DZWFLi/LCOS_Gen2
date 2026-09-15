@@ -3,7 +3,7 @@
 // fallback as the LAST resort (NOT the primary). Cooldown prevents duplicate runs;
 // mutation triggers are debounced so a burst of mutations coalesces into one sweep.
 
-export type ReconcileTrigger = 'project-open' | 'mutation' | 'reconnect' | 'periodic';
+export type ReconcileTrigger = 'project-open' | 'mutation' | 'reconnect' | 'periodic' | 'retry';
 
 export interface HostLifecycleReconcilerOptions {
   /** Minimum gap (ms) between actual runs; bursts/periodic are skipped inside this window. */
@@ -15,7 +15,7 @@ export interface HostLifecycleReconcilerOptions {
 }
 
 export interface RunnerLike {
-  runOnce(): Promise<unknown>;
+  runOnce(): Promise<{ readonly degraded?: boolean }>;
 }
 
 export type ReconcileObserver = (trigger: ReconcileTrigger) => void;
@@ -28,6 +28,7 @@ export class HostLifecycleReconciler {
   private inFlight = false;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly observer: ReconcileObserver | undefined;
 
   constructor(runner: RunnerLike, private readonly projectId: string, options: HostLifecycleReconcilerOptions = {}, observer?: ReconcileObserver) {
@@ -51,11 +52,21 @@ export class HostLifecycleReconciler {
     this.lastRunAt = now;
     this.observer?.(trigger);
     try {
-      await this.runner.runOnce();
+      const result = await this.runner.runOnce();
+      if (result.degraded === true && trigger !== 'retry') this.scheduleOneRetry();
       return true;
     } finally {
       this.inFlight = false;
     }
+  }
+
+  private scheduleOneRetry(): void {
+    if (this.retryTimer !== null) return;
+    const waitMs = Math.max(0, this.cooldownMs - (Date.now() - this.lastRunAt));
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      void this.runNow('retry');
+    }, waitMs);
   }
 
   /** Project opened: immediate reconcile (respects cooldown). */
@@ -96,6 +107,10 @@ export class HostLifecycleReconciler {
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
+    }
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
     }
   }
 }
