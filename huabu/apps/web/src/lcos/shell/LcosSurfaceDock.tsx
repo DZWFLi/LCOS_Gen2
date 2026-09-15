@@ -9,6 +9,7 @@ import {
   useLcosShellStore,
   type LcosSurfaceKey,
 } from './lcosShellStore';
+import { lcosHudEdgeOffsets } from './lcosHudPlacement';
 import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { lcosTokens } from '../ui/lcosTokens';
 
@@ -38,6 +39,7 @@ export function LcosSurfaceDock({
   ensureCanvas,
 }: LcosSurfaceDockProps): React.JSX.Element {
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
+  const windowEnvironment = useLcosShellStore((s) => s.windowEnvironment);
   const { busySurface, transitionError, switchWorksite } = useLcosWorksiteNav({
     projectId,
     canvasBySurface,
@@ -46,6 +48,10 @@ export function LcosSurfaceDock({
   const handleSwitch = (surface: LcosSurfaceKey): void => {
     void switchWorksite(surface);
   };
+  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 
   return (
     <div
@@ -53,7 +59,7 @@ export function LcosSurfaceDock({
       className="pointer-events-auto fixed z-40 rounded-full px-2 py-1.5"
       style={{
         left: '50%',
-        bottom: 24,
+        bottom: edgeOffsets.bottom,
         transform: 'translateX(-50%)',
         maxWidth: 'calc(100vw - 24px)',
         background: 'rgba(252,252,252,0.86)',

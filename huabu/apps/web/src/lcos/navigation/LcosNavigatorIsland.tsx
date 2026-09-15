@@ -16,6 +16,7 @@ import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useLcosShellStore, type LcosSurfaceKey } from '../shell/lcosShellStore';
+import { lcosHudEdgeOffsets } from '../shell/lcosHudPlacement';
 import { LcosNavigatorIslandView } from '../ui/families';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
@@ -41,6 +42,7 @@ type IslandState = '静息' | '搜索' | 'loading' | 'error' | 'empty';
 export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Element {
   const { projectId, pins = [] } = _props;
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
+  const windowEnvironment = useLcosShellStore((s) => s.windowEnvironment);
   const requestLocate = useLcosShellStore((s) => s.requestLocate);
   const [focus, setFocus] = useState(false);
   const [query, setQuery] = useState('');
@@ -192,12 +194,16 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
   // 输入是否展开由用户意图决定；异步读取/空结果不能卸载正在输入的文本框。
   const viewState: LcosNavigatorIslandState =
     focus ? '搜索' : pins.length > 0 ? '彩色标' : '静息';
+  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 
   return (
     <div
       data-lcos-navigator-island
       className="pointer-events-auto fixed left-1/2 top-6 z-40 -translate-x-1/2"
-      style={{ maxWidth: '90vw' }}
+      style={{ maxWidth: '90vw', top: edgeOffsets.top }}
     >
       <LcosNavigatorIslandView
         state={viewState}

@@ -11,6 +11,7 @@ import { FolderOpen, Layers, ListTree, PanelsTopLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
+import { lcosHudEdgeOffsets, lcosHudSafeCenterY } from './lcosHudPlacement';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useLcosDropStore } from '../lcosDropState';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
@@ -52,6 +53,7 @@ export function LcosRailway({
 }: LcosRailwayProps): React.JSX.Element {
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
   const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
+  const windowEnvironment = useLcosShellStore((s) => s.windowEnvironment);
   const registerTarget = useLcosDropStore((s) => s.registerTarget);
   const unregisterTarget = useLcosDropStore((s) => s.unregisterTarget);
   const [destinations, setDestinations] = useState<
@@ -156,10 +158,17 @@ export function LcosRailway({
   // on screen: the rail appears only after the user has durable destinations.
   if (items.length === 0 && error === undefined) return <></>;
 
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, viewport);
+
   return (
     <div
       data-lcos-railway
       className="pointer-events-auto fixed top-1/2 left-6 z-40 flex -translate-y-1/2 flex-col items-center gap-2"
+      style={{
+        left: edgeOffsets.left,
+        top: lcosHudSafeCenterY(windowEnvironment, viewport.height),
+      }}
     >
       <LcosRailwayView
         items={items}

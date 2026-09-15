@@ -15,6 +15,7 @@ import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { SURFACE_LABEL, useLcosShellStore, type LcosSurfaceKey } from '../shell/lcosShellStore';
+import { lcosHudEdgeOffsets } from '../shell/lcosHudPlacement';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
 
@@ -39,6 +40,7 @@ interface OccurrenceRow {
 
 export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
+  const windowEnvironment = useLcosShellStore((s) => s.windowEnvironment);
   const requestLocate = useLcosShellStore((s) => s.requestLocate);
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<readonly OccurrenceRow[]>([]);
@@ -198,12 +200,17 @@ export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
 
   if (!open) return <div data-lcos-focus-where data-open="false" className="hidden" aria-hidden />;
 
+  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
   return (
     <div
       data-lcos-focus-where
       data-open="true"
       className="pointer-events-auto fixed left-1/2 top-24 z-40 w-[380px] -translate-x-1/2 rounded-xl p-3"
-      style={{ ...lcosGlassStyle, maxWidth: '88vw' }}
+      style={{ ...lcosGlassStyle, maxWidth: '88vw', top: edgeOffsets.top + 72 }}
       role="dialog"
       aria-label="对象位置（在哪）"
     >
