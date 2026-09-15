@@ -24,6 +24,7 @@ import { nodeIdAtScreenPoint } from '@/handler/canvasNodeAtPoint';
 import { useLcosDropStore } from './lcosDropState';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { markReferencePickCompleted } from './referenceClickSuppressor';
+import { resolveDropIntent } from './drop/dropIntentResolver';
 
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
 import type { PointerRecognizer } from '@/handler/pointerRouter';
@@ -147,26 +148,64 @@ export function createDropRecognizer(): PointerRecognizer<
         activePointerId = event.pointerId;
       },
       onMove: (event, ctx) => {
+        // Native drag sources can acquire the payload just after pointerdown;
+        // accept the first subsequent move for the in-flight gesture instead
+        // of silently missing the whole drop.
+        if (activePointerId === null) {
+          if (useLcosDropStore.getState().state.status === 'idle') return;
+          activePointerId = event.pointerId;
+        }
         if (event.pointerId !== activePointerId) return;
         const rect = ctx.wrapper.getBoundingClientRect();
-        useLcosDropStore.getState().setBounds({
+        const store = useLcosDropStore.getState();
+        store.setBounds({
           left: rect.left,
           right: rect.right,
           top: rect.top,
           bottom: rect.bottom,
         });
-        useLcosDropStore.getState().advance(
+        const pointer = { x: event.clientX, y: event.clientY };
+        const target = store.targetAt(pointer);
+        const destination = target === undefined
+          ? undefined
+          : {
+              targetId: target.targetId,
+              previewPoint: {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top,
+              },
+            };
+        const state = store.state;
+        const resolution = target !== undefined && 'payload' in state
+          ? resolveDropIntent(state.payload, target)
+          : undefined;
+        const placementPoint = target?.kind === 'canvas'
+          ? ctx.instance.screenToFlowPosition({
+              x: event.clientX,
+              y: event.clientY,
+            })
+          : undefined;
+        store.advance(
           { x: event.clientX - rect.left, y: event.clientY - rect.top },
-          false,
+          target !== undefined,
           Date.now(),
+          destination,
+          resolution,
+          placementPoint,
         );
       },
       onUp: (event) => {
         if (event.pointerId !== activePointerId) return;
         activePointerId = null;
-        const status = useLcosDropStore.getState().state.status;
+        const store = useLcosDropStore.getState();
+        const status = store.state.status;
+        if (status === 'preview' && store.resolution?.status === 'ready') {
+          const id = globalThis.crypto?.randomUUID?.() ?? `drop-${Date.now()}`;
+          store.commitAt(id);
+          return;
+        }
         if (status === 'tracking' || status === 'dwell' || status === 'preview') {
-          useLcosDropStore.getState().cancel();
+          store.cancel();
         }
       },
       onCancel: (event) => {

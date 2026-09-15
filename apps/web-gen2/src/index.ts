@@ -90,6 +90,7 @@ export type {
   SemanticDropState,
   DropPayload,
   DropDestination,
+  DropIntentSnapshot,
   DropBounds,
   SurfacePoint,
 } from './interaction/semanticDropMachine.js';

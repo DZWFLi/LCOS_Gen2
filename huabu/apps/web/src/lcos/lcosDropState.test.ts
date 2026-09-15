@@ -4,8 +4,19 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useLcosDropStore } from './lcosDropState';
 
+import type { DropResolution } from './drop/dropTypes';
+
 const BOUNDS = { left: 0, right: 1200, top: 0, bottom: 800 };
 const PAYLOAD = { kind: 'object', entityType: 'artifact', entityId: 'a1' } as const;
+const CANVAS_RESOLUTION: DropResolution = {
+  status: 'ready',
+  intent: {
+    kind: 'assembly-apply',
+    targetId: 'canvas:main',
+    targetRef: { kind: 'main' },
+    sourceRefs: [{ kind: 'artifactView', id: 'a1' }],
+  },
+};
 
 const act = () => useLcosDropStore.getState();
 const state = () => useLcosDropStore.getState().state;
@@ -26,7 +37,7 @@ describe('LcosDropStore (A06)', () => {
     expect(state().status).toBe('tracking');
   });
 
-  it('held at the bottom band: dwell -> preview after the dwell window', () => {
+  it('held at an edge band stays dwell until a live target is supplied', () => {
     act().begin(PAYLOAD);
     act().setBounds(BOUNDS);
     act().advance({ x: 400, y: 795 }, false, 1000);
@@ -34,22 +45,65 @@ describe('LcosDropStore (A06)', () => {
     // still within the dwell window (1000 -> 1420)
     act().advance({ x: 400, y: 795 }, false, 1300);
     expect(state().status).toBe('dwell');
-    // dwell window elapsed -> concrete preview on the bottom dock
+    // An edge band alone is not a business destination.
     act().advance({ x: 400, y: 795 }, false, 1500);
+    expect(state().status).toBe('dwell');
+  });
+
+  it('creates a preview only from the supplied registered target', () => {
+    act().begin(PAYLOAD);
+    act().setBounds(BOUNDS);
+    act().advance({ x: 400, y: 795 }, false, 1000);
+    act().advance(
+      { x: 400, y: 795 },
+      true,
+      1500,
+      { targetId: 'canvas:main', previewPoint: { x: 400, y: 795 } },
+      CANVAS_RESOLUTION,
+    );
     expect(state().status).toBe('preview');
     const st = state();
     if (st.status !== 'preview') throw new Error('expected preview');
-    expect(st.destination.anchor).toBe('bottom');
-    expect(st.destination.surface).toBe('surface:bottom-dock');
+    expect(st.destination.targetId).toBe('canvas:main');
   });
 
   it('commitAt turns a preview into committing', () => {
     act().begin(PAYLOAD);
     act().setBounds(BOUNDS);
     act().advance({ x: 400, y: 795 }, false, 1000);
-    act().advance({ x: 400, y: 795 }, false, 1500);
+    act().advance(
+      { x: 400, y: 795 },
+      true,
+      1500,
+      { targetId: 'canvas:main', previewPoint: { x: 400, y: 795 } },
+      CANVAS_RESOLUTION,
+    );
     act().commitAt('tx-1');
-    expect(state()).toEqual({ status: 'committing', transactionId: 'tx-1' });
+    expect(state()).toEqual({
+      status: 'committing',
+      payload: PAYLOAD,
+      destination: { targetId: 'canvas:main', previewPoint: { x: 400, y: 795 } },
+      carryAnchor: 'bottom',
+      intent: { kind: 'assembly-apply', targetId: 'canvas:main' },
+      transactionId: 'tx-1',
+    });
+  });
+
+  it('a target disappearing invalidates the preview and cannot commit', () => {
+    act().begin(PAYLOAD);
+    act().setBounds(BOUNDS);
+    act().advance({ x: 400, y: 795 }, false, 1000);
+    act().advance(
+      { x: 400, y: 795 },
+      true,
+      1500,
+      { targetId: 'canvas:main', previewPoint: { x: 400, y: 795 } },
+      CANVAS_RESOLUTION,
+    );
+    act().advance({ x: 400, y: 795 }, false, 1600);
+    expect(state().status).toBe('tracking');
+    act().commitAt('tx-gone');
+    expect(state().status).toBe('tracking');
   });
 
   it('cancel aborts an uncommitted drop back to idle', () => {

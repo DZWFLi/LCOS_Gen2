@@ -20,10 +20,10 @@ import { childSurfaceForItem, workspaceTargetsForItem } from '../navigation/work
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
+import { assemblySourceRefOf } from './assemblySourceRef';
 
 import type {
   AssemblyApplyResultV1,
-  AssemblySourceRefV1,
   AssemblyTargetRefV1,
   WarehouseItemV1,
   WarehouseEntityKindV1,
@@ -103,23 +103,7 @@ export function previewUrlOf(item: WarehouseItemV1): string | undefined {
   return /^(?:https?:\/\/|blob:|data:image\/)/i.test(value) ? value : undefined;
 }
 
-export function assemblySourceRefOf(item: WarehouseItemV1): AssemblySourceRefV1 {
-  switch (item.kind) {
-    case 'artifact':
-      return {
-        kind: 'artifactView',
-        id: item.entityRef.viewId ?? item.entityRef.id,
-      };
-    case 'note':
-    case 'resource':
-    case 'conversation':
-    case 'context':
-    case 'workflow':
-    case 'scene':
-    case 'collection':
-      return { kind: item.kind, id: item.entityRef.id };
-  }
-}
+export { assemblySourceRefOf } from './assemblySourceRef';
 
 function targetLabel(target: AssemblyTargetRefV1): string {
   switch (target.kind) {

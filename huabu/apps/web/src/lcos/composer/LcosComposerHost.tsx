@@ -6,7 +6,7 @@
 
 import { CoreRunClient, HttpError } from '@local-creative-os/web-gen2';
 import { ArrowUp, Paperclip, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   CanvasFloatingPopover,
@@ -16,11 +16,14 @@ import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 
 import { buildComposerRunInput, canSubmitComposerTarget } from './composerSubmission';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { rectFromDomRect } from '../drop/dropTargetRegistry';
 import { useLcosReferenceStore } from '../lcosReferenceState';
+import { useLcosDropStore } from '../lcosDropState';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
 import type { CoreEntityRefLike } from '../referenceBridge';
+import type { DropTargetRegistration } from '../drop/dropTypes';
 
 const ENTITY_LABEL: Readonly<Record<string, string>> = {
   artifact: '材料',
@@ -77,8 +80,44 @@ export function LcosComposerHost({
   const [receipt, setReceipt] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const registerTarget = useLcosDropStore((s) => s.registerTarget);
+  const unregisterTarget = useLcosDropStore((s) => s.unregisterTarget);
 
   useCloseOnEscape(open, onClose);
+
+  // Register only the actual prompt editor as a Composer reference target.
+  // The registry is live gesture geometry; the draft and Run remain owned by
+  // their existing stores/clients.
+  useEffect(() => {
+    if (!open || projectId.length === 0 || composerTarget === null || textareaRef.current === null) return;
+    const targetId = `composer:${projectId}:${composerTarget.nodeId}`;
+    const target: Omit<DropTargetRegistration, 'rect'> = {
+      targetId,
+      kind: 'composer-reference',
+      label: 'Composer 引用区',
+      priority: 30,
+      enabled: true,
+      semantic: { kind: 'composer-reference' },
+    };
+    const publish = (): void => {
+      const editor = textareaRef.current;
+      if (editor === null) return;
+      registerTarget({ ...target, rect: rectFromDomRect(editor.getBoundingClientRect()) });
+    };
+    publish();
+    const observer = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(publish)
+      : null;
+    observer?.observe(textareaRef.current);
+    window.addEventListener('resize', publish);
+    window.addEventListener('scroll', publish, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publish);
+      window.removeEventListener('scroll', publish, true);
+      unregisterTarget(targetId);
+    };
+  }, [composerTarget, open, projectId, registerTarget, unregisterTarget]);
 
   if (!open || (!inline && anchor === null) || projectId.length === 0) return null;
 

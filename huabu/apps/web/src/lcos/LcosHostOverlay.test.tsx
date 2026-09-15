@@ -44,11 +44,10 @@ const previewState: SemanticDropState = {
   status: 'preview',
   payload: { kind: 'object', entityType: 'artifact', entityId: 'a1' },
   destination: {
-    kind: 'slot',
-    anchor: 'bottom',
-    surface: 'surface:bottom-dock',
-    place: { x: 400, y: 700 },
+    targetId: 'canvas:main',
+    previewPoint: { x: 400, y: 700 },
   },
+  carryAnchor: 'bottom',
 };
 
 describe('LcosHostOverlay (A07)', () => {

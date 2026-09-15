@@ -12,11 +12,15 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { useLcosDropStore } from '../lcosDropState';
+import { rectFromDomRect } from '../drop/dropTargetRegistry';
 import {
   projectRailwayDestinations,
   type RailwayDestinationProjection,
 } from '../navigation/railwayProjection';
 import { LcosRailwayView, type LcosRailwayViewItem } from '../ui/families';
+
+import type { DropTargetRegistration } from '../drop/dropTypes';
 
 export interface LcosRailwayProps {
   readonly projectId: string;
@@ -48,6 +52,8 @@ export function LcosRailway({
 }: LcosRailwayProps): React.JSX.Element {
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
   const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
+  const registerTarget = useLcosDropStore((s) => s.registerTarget);
+  const unregisterTarget = useLcosDropStore((s) => s.unregisterTarget);
   const [destinations, setDestinations] = useState<
     readonly RailwayDestinationProjection[]
   >([]);
@@ -115,6 +121,34 @@ export function LcosRailway({
           ? destination.workspaceId === activeWorkspaceId
           : destination.surface === activeSurface),
       disabled: !destination.available || activatingKey !== undefined,
+      onElement: (element) => {
+        const targetId = `railway:${projectId}:${destination.key}`;
+        if (
+          element === null ||
+          !destination.available ||
+          destination.workspaceId === undefined
+        ) {
+          unregisterTarget(targetId);
+          return;
+        }
+        const target: DropTargetRegistration = {
+          targetId,
+          kind: 'railway-receive',
+          label: destination.label,
+          rect: rectFromDomRect(element.getBoundingClientRect()),
+          priority: 20,
+          enabled: true,
+          semantic: {
+            kind: 'railway-receive',
+            targetRef: { kind: 'workspace', id: destination.workspaceId },
+            destinationRef: {
+              kind: destination.kind,
+              viewId: destination.viewId,
+            },
+          },
+        };
+        registerTarget(target);
+      },
     }),
   );
 

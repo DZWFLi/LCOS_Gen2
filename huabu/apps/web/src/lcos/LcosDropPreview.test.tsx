@@ -42,11 +42,10 @@ const previewState: SemanticDropState = {
   status: 'preview',
   payload: { kind: 'object', entityType: 'artifact', entityId: 'a1' },
   destination: {
-    kind: 'slot',
-    anchor: 'bottom',
-    surface: 'surface:bottom-dock',
-    place: { x: 400, y: 700 },
+    targetId: 'railway:context-a',
+    previewPoint: { x: 400, y: 700 },
   },
+  carryAnchor: 'bottom',
 };
 
 describe('LcosDropPreview (A06)', () => {
@@ -55,13 +54,13 @@ describe('LcosDropPreview (A06)', () => {
     expect(container.querySelector('[data-lcos-drop-preview]')).toBeNull();
   });
 
-  it('paints a hint describing the pending action + surface once a preview exists', () => {
+  it('paints a hint describing the pending action + stable target once a preview exists', () => {
     useLcosDropStore.setState({ state: previewState });
     const container = render(<LcosDropPreview />);
     const el = container.querySelector('[data-lcos-drop-preview]');
     expect(el).not.toBeNull();
     expect(el?.textContent).toContain('放置 artifact·a1');
-    expect(el?.textContent).toContain('底部停靠区');
+    expect(el?.textContent).toContain('目标 railway:context-a');
   });
 
   it('unmounts the hint when the drop is cancelled', () => {

@@ -59,7 +59,7 @@ test('dwell completes to preview only after the dwell period', () => {
   assert.equal(p.status, 'preview');
   if (p.status !== 'preview') return;
   assert.deepEqual(p.payload, PAYLOAD);
-  assert.equal(p.destination.surface, 'c1');
+  assert.equal(p.destination.targetId, 'canvas:c1');
 });
 
 test('once in preview, hysteresis keeps it until leaving the carry zone', () => {
@@ -76,11 +76,33 @@ test('once in preview, hysteresis keeps it until leaving the carry zone', () => 
   assert.equal(left.status, 'tracking');
 });
 
+test('a different live target invalidates the old preview before commit', () => {
+  const dwell = trackToDwell();
+  const preview = completeDropDwell(dwell, slotDest(), now() + DROP_INTENT_TOKENS.dwellMs);
+  if (preview.status !== 'preview') throw new Error('expected preview');
+  const next = advanceDropIntent(
+    preview,
+    { x: 400, y: 795 },
+    BOUNDS,
+    now() + 1000,
+    true,
+    { targetId: 'railway:scene-1', previewPoint: { x: 20, y: 20 } },
+  );
+  assert.deepEqual(next, { status: 'tracking', payload: PAYLOAD });
+});
+
 test('confirm commits with a transaction id; fail reports recoverable', () => {
   const dwell = trackToDwell();
   const preview = completeDropDwell(dwell, slotDest(), now() + DROP_INTENT_TOKENS.dwellMs);
   if (preview.status !== 'preview') throw new Error('expected preview');
-  assert.deepEqual(confirmDrop(preview, 'tx1'), { status: 'committing', transactionId: 'tx1' });
+  assert.deepEqual(confirmDrop(preview, 'tx1', { kind: 'assembly-apply', targetId: 'canvas:c1' }), {
+    status: 'committing',
+    payload: PAYLOAD,
+    destination: slotDest(),
+    carryAnchor: 'bottom',
+    intent: { kind: 'assembly-apply', targetId: 'canvas:c1' },
+    transactionId: 'tx1',
+  });
   assert.deepEqual(failDrop(preview, 'core unreachable', true), { status: 'failed', reason: 'core unreachable', recoverable: true });
 });
 
@@ -88,7 +110,7 @@ function trackToDwell(): ReturnType<typeof advanceDropIntent> {
   return advanceDropIntent(trackingState() as never, { x: 400, y: 795 }, BOUNDS, now());
 }
 function slotDest(): DropDestination {
-  return { kind: 'slot', anchor: 'bottom', surface: 'c1', place: { x: 400, y: 760 } };
+  return { targetId: 'canvas:c1', previewPoint: { x: 400, y: 760 } };
 }
 
 test('anchoringAt and carry zone agree on the bottom band', () => {

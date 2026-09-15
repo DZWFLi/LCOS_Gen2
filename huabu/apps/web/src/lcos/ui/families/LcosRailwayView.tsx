@@ -11,6 +11,8 @@ export interface LcosRailwayViewItem {
   readonly icon: ComponentType<{ className?: string }>;
   readonly selected?: boolean;
   readonly disabled?: boolean;
+  /** Container-owned ref used to publish live receive geometry. */
+  readonly onElement?: (element: HTMLButtonElement | null) => void;
 }
 
 export interface LcosRailwayViewProps {
@@ -44,6 +46,7 @@ export function LcosRailwayView({ items, onSelect, footer }: LcosRailwayViewProp
           return (
             <button
               key={item.key}
+              ref={item.onElement}
               type="button"
               data-lcos-railway-item={item.key}
               data-lcos-variant={variant}
