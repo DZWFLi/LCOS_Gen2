@@ -90,6 +90,7 @@ describe('executeRecoveryAction（intent → T6 service → T7 adapter → recei
     const fresh = await service.executeRecoveryAction(projectId, 'op-fork-nosrc', 'recover_external', adapter)
     expect(fresh.steps.external_create).toBe('confirmed')
     expect(fresh.externalEvidence?.externalSessionId).toBeTruthy()
+    expect(fresh.errorEvidence).toMatch(/source unavailable.*degraded to create/)
   })
 
   it('duplicate submit（同一 operationId）→ 幂等返回，绝不产生第二次 create intent', async () => {
@@ -101,8 +102,36 @@ describe('executeRecoveryAction（intent → T6 service → T7 adapter → recei
     expect(second.projection.operationId).toBe('op-dup')
   })
 
+  it('同一 operationId 复用不同 payload → 拒绝 idempotency conflict', async () => {
+    const { service, projectId, conversationId } = await setup()
+    service.submit(submitInput(projectId, conversationId, 'op-conflict'))
+    expect(() => service.submit({ ...submitInput(projectId, conversationId, 'op-conflict'), mode: 'blank_new' }))
+      .toThrow(/Idempotency conflict/)
+  })
+
+  it('reconcile lookup miss 保持 outcome_unknown，不重新开放 create', async () => {
+    const { service, projectId, adapter } = await setup()
+    service.submit({ schemaVersion: 1, operationId: 'op-reconcile-miss', projectId, mode: 'blank_new', contextInheritance: 'none', checkout: 'shared', provider: 'codex' })
+    service.advanceStep(projectId, 'op-reconcile-miss', { step: 'external_create', outcome: 'outcome_unknown' })
+    const fresh = await service.executeRecoveryAction(projectId, 'op-reconcile-miss', 'reconcile', adapter)
+    expect(fresh.steps.external_create).toBe('outcome_unknown')
+    expect(fresh.allowedActions.map((a) => a.action)).toEqual(['reconcile', 'cancel_request'])
+  })
+
+  it('并发 recover_external 只允许一个 SQLite pending claim 调 provider create', async () => {
+    const { service, projectId, adapter, transport } = await setup()
+    service.submit({ ...submitInput(projectId, 'missing-target', 'op-concurrent'), connectedConversationId: undefined })
+    const results = await Promise.allSettled([
+      service.executeRecoveryAction(projectId, 'op-concurrent', 'recover_external', adapter),
+      service.executeRecoveryAction(projectId, 'op-concurrent', 'recover_external', adapter),
+    ])
+    expect(transport.spawnCalls).toBe(1)
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+  })
+
   it('recover_bind：外部已确认 + bind 失败 → adapter continueExisting resumed → core_bind confirmed', async () => {
-    const { service, projectId, conversationId, adapter } = await setup()
+    const { service, projectId, conversationId, adapter, metadata } = await setup()
     service.submit(submitInput(projectId, conversationId, 'op-3'))
     const external = await service.executeRecoveryAction(projectId, 'op-3', 'recover_external', adapter)
     expect(external.steps.external_create).toBe('confirmed')
@@ -110,6 +139,55 @@ describe('executeRecoveryAction（intent → T6 service → T7 adapter → recei
     const fresh = await service.executeRecoveryAction(projectId, 'op-3', 'recover_bind', adapter)
     expect(fresh.steps.core_bind).toBe('confirmed')
     expect(fresh.status).toBe('attaching')
+    expect(metadata.getConnectedConversation(projectId, conversationId)?.conversationRef)
+      .toBe(external.externalEvidence?.externalSessionId)
+  })
+
+  it('blank/new bind writes the canonical id back to the journal in the same transaction', async () => {
+    const { service, projectId, adapter, metadata } = await setup()
+    service.submit({
+      schemaVersion: 1,
+      operationId: 'op-blank-bind',
+      projectId,
+      mode: 'blank_new',
+      contextInheritance: 'none',
+      checkout: 'shared',
+      provider: 'codex',
+    })
+    const external = await service.executeRecoveryAction(projectId, 'op-blank-bind', 'recover_external', adapter)
+    const fresh = await service.executeRecoveryAction(projectId, 'op-blank-bind', 'recover_bind', adapter)
+    expect(fresh.steps.core_bind).toBe('confirmed')
+    expect(fresh.connectedConversationId).toBeTruthy()
+    expect(metadata.getContinuationOperationJournal(projectId, 'op-blank-bind')?.connectedConversationId)
+      .toBe(fresh.connectedConversationId)
+    expect(metadata.getConnectedConversationByRef(projectId, external.externalEvidence!.externalSessionId)?.id)
+      .toBe(fresh.connectedConversationId)
+  })
+
+  it('core_bind CAS conflict rolls back the connected conversation insert', async () => {
+    const { service, projectId, adapter, metadata } = await setup()
+    service.submit({
+      schemaVersion: 1,
+      operationId: 'op-atomic-bind',
+      projectId,
+      mode: 'blank_new',
+      contextInheritance: 'none',
+      checkout: 'shared',
+      provider: 'codex',
+    })
+    const external = await service.executeRecoveryAction(projectId, 'op-atomic-bind', 'recover_external', adapter)
+    const before = metadata.getContinuationOperationJournal(projectId, 'op-atomic-bind')!
+    const claimed = metadata.claimContinuationOperationStep(projectId, 'op-atomic-bind', 'core_bind', before.revision)
+    expect(claimed?.steps.core_bind).toBe('pending')
+    expect(() => metadata.confirmContinuationCoreBind({
+      projectId,
+      operationId: 'op-atomic-bind',
+      expectedRevision: claimed!.revision - 1,
+      externalSessionId: external.externalEvidence!.externalSessionId,
+      fallbackConnectedConversationId: 'connected-conversation-atomic-rollback',
+    })).toThrow(/revision mismatch/)
+    expect(metadata.getConnectedConversationByRef(projectId, external.externalEvidence!.externalSessionId)).toBeUndefined()
+    expect(metadata.getContinuationOperationJournal(projectId, 'op-atomic-bind')?.steps.core_bind).toBe('pending')
   })
 
   it('retry_projection：T1 未接线 → RecoveryActionUnsupportedError（前端禁用按钮）', async () => {

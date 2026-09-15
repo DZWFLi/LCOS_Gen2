@@ -92,6 +92,9 @@ describe('migration v53 continuation_operation_journal', () => {
     metadata.saveContinuationOperationJournal({ ...row, revision: 1, updatedAt: '2026-09-12T01:00:00.000Z' })
     expect(metadata.getContinuationOperationJournal(projectId, 'op-migrate')?.revision).toBe(1)
 
+    expect(() => metadata.saveContinuationOperationJournal({ ...row, projectId: 'another-project' }))
+      .toThrow(/already owned by another project/)
+
     // 跨项目隔离
     expect(metadata.getContinuationOperationJournal('project-unknown', 'op-migrate')).toBeUndefined()
   })
@@ -369,5 +372,12 @@ describe('HTTP route reaches the service', () => {
       }),
     })
     expect(invalidMode.status).toBe(400)
+
+    const malformedEvidence = await fetch(`${baseUrl}/projects/${httpProjectId}/conversation-continuations/op-http-1/steps`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        input: { step: 'core_bind', outcome: 'confirmed', externalEvidence: { provider: 'codex' } },
+      }),
+    })
+    expect(malformedEvidence.status).toBe(400)
   })
 })

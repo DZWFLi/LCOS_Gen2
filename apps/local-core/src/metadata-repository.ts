@@ -75,6 +75,7 @@ import type {
   ResourceDescriptorV0,
   ImportBatchRefV1,
   RetryRunResult,
+  ContinuationExternalEvidenceV1,
   ContinuationOperationJournalRowV1,
 } from '@local-creative-os/contracts'
 
@@ -206,6 +207,32 @@ export interface ProjectionBindingRecord {
   readonly spatialId: string
   readonly entityType: string
   readonly entityId: string
+}
+
+/**
+ * The repository owns the continuation core-bind transaction.  The service
+ * converts this into its public ContinuationStaleRevisionError so a CAS race
+ * cannot be mis-recorded as a provider bind failure.
+ */
+export class ContinuationCoreBindStaleRevisionError extends Error {
+  constructor(readonly expected: number, readonly actual: number) {
+    super(`Continuation core_bind revision mismatch: expected ${expected}, actual ${actual}.`)
+    this.name = 'ContinuationCoreBindStaleRevisionError'
+  }
+}
+
+export interface ConfirmContinuationCoreBindInput {
+  readonly projectId: string
+  readonly operationId: string
+  readonly expectedRevision: number
+  readonly externalSessionId: string
+  readonly externalEvidence?: ContinuationExternalEvidenceV1
+  readonly fallbackConnectedConversationId: string
+}
+
+export interface ConfirmContinuationCoreBindResult {
+  readonly journal: ContinuationOperationJournalRowV1
+  readonly connectedConversation: ConnectedConversationV1
 }
 
 export class SqliteMetadataRepository {
@@ -6108,6 +6135,10 @@ export class SqliteMetadataRepository {
   // status/allowedActions 由 contracts 纯投影推导，不在此持久化第二结论。
   saveContinuationOperationJournal(row: ContinuationOperationJournalRowV1): void {
     if (row.schemaVersion !== 1) throw new Error('ContinuationOperationJournalRow schemaVersion must be 1.')
+    const existing = this.getContinuationOperationJournalByOperationId(row.operationId)
+    if (existing !== undefined && existing.projectId !== row.projectId) {
+      throw new Error('Continuation operationId is already owned by another project.')
+    }
     const now = new Date().toISOString()
     this.#database.prepare(`
       INSERT INTO continuation_operation_journal(operation_id, project_id, journal_json, created_at, updated_at)
@@ -6116,9 +6147,206 @@ export class SqliteMetadataRepository {
     `).run(row.operationId, row.projectId, JSON.stringify(row), row.createdAt, now)
   }
 
+  /** Writes a journal completion only if the claimed revision is still current. */
+  saveContinuationOperationJournalIfRevision(row: ContinuationOperationJournalRowV1, expectedRevision: number): boolean {
+    if (row.schemaVersion !== 1) throw new Error('ContinuationOperationJournalRow schemaVersion must be 1.')
+    const now = new Date().toISOString()
+    const result = this.#database.prepare(`
+      UPDATE continuation_operation_journal
+      SET journal_json = ?, updated_at = ?
+      WHERE project_id = ? AND operation_id = ?
+        AND json_extract(journal_json, '$.revision') = ?
+    `).run(JSON.stringify(row), now, row.projectId, row.operationId, expectedRevision)
+    return Number(result.changes) === 1
+  }
+
+  /**
+   * Atomically binds a provider session to the canonical ConnectedConversation
+   * and confirms the journal's core_bind step.  The service must not perform
+   * these as two independent writes: a crash between them would leave Core
+   * pointing at a session while the journal still says that binding is pending.
+   */
+  confirmContinuationCoreBind(input: ConfirmContinuationCoreBindInput): ConfirmContinuationCoreBindResult {
+    if (input.externalSessionId.trim() === '') throw new Error('External session id is required.')
+    if (input.fallbackConnectedConversationId.trim() === '') throw new Error('Fallback connected conversation id is required.')
+    if (input.externalEvidence !== undefined) {
+      if (input.externalEvidence.provider.trim() === ''
+        || input.externalEvidence.provider !== input.externalEvidence.provider.trim()
+        || input.externalEvidence.externalSessionId !== input.externalSessionId) {
+        throw new Error('External evidence does not match the core bind session.')
+      }
+    }
+
+    let inTransaction = false
+    this.#database.exec('BEGIN IMMEDIATE')
+    inTransaction = true
+    try {
+      const journalRow = this.#database.prepare(
+        'SELECT journal_json FROM continuation_operation_journal WHERE project_id = ? AND operation_id = ?',
+      ).get(input.projectId, input.operationId) as Row | undefined
+      if (journalRow === undefined) throw new Error('Continuation operation not found.')
+      const current = json<ContinuationOperationJournalRowV1>(journalRow.journal_json as SQLInputValue)
+      if (current.revision !== input.expectedRevision) {
+        throw new ContinuationCoreBindStaleRevisionError(input.expectedRevision, current.revision)
+      }
+      if (current.steps.core_bind !== 'pending') {
+        throw new Error(`Continuation core_bind is not pending (${current.steps.core_bind}).`)
+      }
+
+      if (input.externalEvidence !== undefined
+        && (input.externalEvidence.schemaVersion !== 1 || input.externalEvidence.provider !== current.provider)) {
+        throw new Error('External evidence provider does not match continuation provider.')
+      }
+
+      if (current.provider !== 'codex' && current.provider !== 'workbuddy') {
+        throw new Error(`Provider ${current.provider} cannot be bound to ConnectedConversation.`)
+      }
+
+      // Resolve the requested canonical id first.  The id is global, so an
+      // accidental cross-project reuse must fail before any write.
+      const requestedIdRow = this.#database.prepare(
+        'SELECT * FROM connected_conversations WHERE id = ?',
+      ).get(input.fallbackConnectedConversationId) as Row | undefined
+      if (requestedIdRow !== undefined && String(requestedIdRow.project_id) !== input.projectId) {
+        throw new Error('Connected conversation id is already owned by another project.')
+      }
+
+      const byRefRow = this.#database.prepare(
+        'SELECT * FROM connected_conversations WHERE project_id = ? AND conversation_ref = ?',
+      ).get(input.projectId, input.externalSessionId) as Row | undefined
+      if (byRefRow !== undefined && String(byRefRow.provider) !== current.provider) {
+        throw new Error('Connected conversation provider does not match bound provider.')
+      }
+
+      let connected: ConnectedConversationV1
+      const now = new Date().toISOString()
+      if (byRefRow !== undefined) {
+        // The same provider reference is already canonical.  Reuse its stable
+        // Core id and make the journal point at that actual id.
+        connected = connectedConversationFromRow(byRefRow)
+      } else if (requestedIdRow !== undefined) {
+        if (String(requestedIdRow.provider) !== current.provider) {
+          throw new Error('Connected conversation provider does not match bound provider.')
+        }
+        const result = this.#database.prepare(
+          'UPDATE connected_conversations SET conversation_ref = ?, updated_at = ? WHERE id = ? AND project_id = ?',
+        ).run(input.externalSessionId, now, input.fallbackConnectedConversationId, input.projectId)
+        if (Number(result.changes) !== 1) throw new Error('Connected conversation rebind failed.')
+        const rebound = this.#database.prepare(
+          'SELECT * FROM connected_conversations WHERE project_id = ? AND id = ?',
+        ).get(input.projectId, input.fallbackConnectedConversationId) as Row | undefined
+        if (rebound === undefined) throw new Error('Connected conversation rebind disappeared.')
+        connected = connectedConversationFromRow(rebound)
+      } else {
+        this.#database.prepare(`
+          INSERT INTO connected_conversations(
+            id, project_id, provider, executor_id, conversation_ref, label,
+            is_running, waiting_reason, last_active_at, workspace_ref, branch_ref,
+            created_at, updated_at
+          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          input.fallbackConnectedConversationId,
+          input.projectId,
+          current.provider,
+          '',
+          input.externalSessionId,
+          `续工恢复 · ${current.provider}`,
+          0,
+          null,
+          now,
+          null,
+          null,
+          now,
+          now,
+        )
+        const created = this.#database.prepare(
+          'SELECT * FROM connected_conversations WHERE project_id = ? AND id = ?',
+        ).get(input.projectId, input.fallbackConnectedConversationId) as Row | undefined
+        if (created === undefined) throw new Error('Connected conversation create failed.')
+        connected = connectedConversationFromRow(created)
+      }
+
+      const next: ContinuationOperationJournalRowV1 = {
+        ...current,
+        connectedConversationId: connected.id,
+        steps: { ...current.steps, core_bind: 'confirmed' },
+        ...(input.externalEvidence === undefined ? {} : { externalEvidence: input.externalEvidence }),
+        revision: current.revision + 1,
+        updatedAt: now,
+      }
+      const update = this.#database.prepare(`
+        UPDATE continuation_operation_journal
+        SET journal_json = ?, updated_at = ?
+        WHERE project_id = ? AND operation_id = ?
+          AND json_extract(journal_json, '$.revision') = ?
+      `).run(JSON.stringify(next), now, input.projectId, input.operationId, input.expectedRevision)
+      if (Number(update.changes) !== 1) {
+        const freshRow = this.#database.prepare(
+          'SELECT journal_json FROM continuation_operation_journal WHERE project_id = ? AND operation_id = ?',
+        ).get(input.projectId, input.operationId) as Row | undefined
+        const actual = freshRow === undefined
+          ? -1
+          : json<ContinuationOperationJournalRowV1>(freshRow.journal_json as SQLInputValue).revision
+        throw new ContinuationCoreBindStaleRevisionError(input.expectedRevision, actual)
+      }
+      this.#database.exec('COMMIT')
+      inTransaction = false
+      return { journal: next, connectedConversation: connected }
+    } catch (error) {
+      if (inTransaction) this.#database.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   getContinuationOperationJournal(projectId: string, operationId: string): ContinuationOperationJournalRowV1 | undefined {
     const row = this.#database.prepare(`SELECT journal_json FROM continuation_operation_journal WHERE project_id = ? AND operation_id = ?`).get(projectId, operationId) as Row | undefined
     return row === undefined ? undefined : json<ContinuationOperationJournalRowV1>(row.journal_json as SQLInputValue)
+  }
+
+  getContinuationOperationJournalByOperationId(operationId: string): ContinuationOperationJournalRowV1 | undefined {
+    const row = this.#database.prepare(`SELECT journal_json FROM continuation_operation_journal WHERE operation_id = ?`).get(operationId) as Row | undefined
+    return row === undefined ? undefined : json<ContinuationOperationJournalRowV1>(row.journal_json as SQLInputValue)
+  }
+
+  /** Atomically claims a side-effect step before calling an external provider. */
+  claimContinuationOperationStep(
+    projectId: string,
+    operationId: string,
+    step: 'external_create' | 'core_bind' | 'attach',
+    expectedRevision: number,
+  ): ContinuationOperationJournalRowV1 | undefined {
+    const current = this.getContinuationOperationJournal(projectId, operationId)
+    if (current === undefined || current.revision !== expectedRevision) return undefined
+    const currentState = current.steps[step]
+    if (currentState !== 'not_started' && currentState !== 'failed') return undefined
+    const next: ContinuationOperationJournalRowV1 = {
+      ...current,
+      steps: { ...current.steps, [step]: 'pending' },
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+    }
+    const result = this.#database.prepare(`
+      UPDATE continuation_operation_journal
+      SET journal_json = ?, updated_at = ?
+      WHERE project_id = ? AND operation_id = ?
+        AND json_extract(journal_json, '$.revision') = ?
+        AND json_extract(journal_json, '$.steps.${step}') = ?
+    `).run(JSON.stringify(next), next.updatedAt, projectId, operationId, expectedRevision, currentState)
+    return Number(result.changes) === 1 ? this.getContinuationOperationJournal(projectId, operationId) : undefined
+  }
+
+  /** Atomically records the local cancel intent before calling provider stop. */
+  claimContinuationCancel(projectId: string, operationId: string, expectedRevision: number): ContinuationOperationJournalRowV1 | undefined {
+    const now = new Date().toISOString()
+    const result = this.#database.prepare(`
+      UPDATE continuation_operation_journal
+      SET journal_json = json_set(journal_json, '$.cancel', 'requested', '$.revision', json_extract(journal_json, '$.revision') + 1,
+        '$.updatedAt', ?), updated_at = ?
+      WHERE project_id = ? AND operation_id = ?
+        AND json_extract(journal_json, '$.revision') = ?
+        AND json_extract(journal_json, '$.cancel') = 'none'
+    `).run(now, now, projectId, operationId, expectedRevision)
+    return Number(result.changes) === 1 ? this.getContinuationOperationJournal(projectId, operationId) : undefined
   }
 
   listContinuationOperationJournals(projectId: string): readonly ContinuationOperationJournalRowV1[] {
@@ -6404,6 +6632,16 @@ export class SqliteMetadataRepository {
     const persisted = this.getConnectedConversationByRef(value.projectId, value.conversationRef)
     if (persisted === undefined) throw new Error('Connected conversation upsert failed.')
     return persisted
+  }
+
+  /** Rebind an existing connected conversation to a provider session, preserving its stable Core id. */
+  rebindConnectedConversationRef(projectId: string, connectedConversationId: string, conversationRef: string): ConnectedConversationV1 | undefined {
+    const existing = this.getConnectedConversationByRef(projectId, conversationRef)
+    if (existing !== undefined && existing.id !== connectedConversationId) throw new Error('Connected conversation ref is already bound to another conversation.')
+    const result = this.#database.prepare(
+      'UPDATE connected_conversations SET conversation_ref = ?, updated_at = ? WHERE project_id = ? AND id = ?',
+    ).run(conversationRef, new Date().toISOString(), projectId, connectedConversationId)
+    return Number(result.changes) === 1 ? this.getConnectedConversation(projectId, connectedConversationId) : undefined
   }
 
   deleteConnectedConversation(projectId: string, id: string): boolean {

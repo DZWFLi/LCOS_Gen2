@@ -17,7 +17,7 @@ import type {
   ProviderContinuationOperationResultV1,
 } from '@local-creative-os/contracts'
 import { continuationExternalEvidenceFromReceiptV1, projectContinuationRecoveryV1 } from '@local-creative-os/contracts'
-import type { SqliteMetadataRepository } from './metadata-repository.js'
+import { ContinuationCoreBindStaleRevisionError, type SqliteMetadataRepository } from './metadata-repository.js'
 import type { ProjectEventHub } from './project-events/project-event-hub.js'
 
 export interface ContinuationSubmitResultV1 {
@@ -60,12 +60,22 @@ export class ConversationContinuationService {
   /** 提交续工：journal 存在则幂等返回（绝不产生第二次 create intent）。 */
   submit(input: ContinuationSubmitRequestV1, origin?: ProjectEventOrigin): ContinuationSubmitResultV1 {
     if (this.metadata.getProject(input.projectId) === undefined) throw new Error('Project not found.')
-    if (input.connectedConversationId !== undefined
-      && this.metadata.getConnectedConversation(input.projectId, input.connectedConversationId) === undefined) {
+    const globalExisting = this.metadata.getContinuationOperationJournalByOperationId(input.operationId)
+    if (globalExisting !== undefined && globalExisting.projectId !== input.projectId) {
+      throw new Error('Continuation operationId is already used by another project.')
+    }
+    const connected = input.connectedConversationId === undefined
+      ? undefined
+      : this.metadata.getConnectedConversation(input.projectId, input.connectedConversationId)
+    if (input.connectedConversationId !== undefined && connected === undefined) {
       throw new Error('Connected conversation not found in project.')
+    }
+    if (connected !== undefined && connected.provider !== input.provider) {
+      throw new Error('Connected conversation provider does not match continuation provider.')
     }
     const existing = this.metadata.getContinuationOperationJournal(input.projectId, input.operationId)
     if (existing !== undefined) {
+      if (!sameContinuationSubmit(existing, input)) throw new Error('Continuation operationIdempotency conflict.')
       this.events.publish(input.projectId, {
         channel: 'continuity',
         type: 'continuity.changed',
@@ -129,6 +139,7 @@ export class ConversationContinuationService {
     const row = this.metadata.getContinuationOperationJournal(projectId, operationId)
     if (row === undefined) throw new Error('Continuation operation not found.')
     this.assertStale(row, input.expectedRevision)
+    if (input.externalEvidence !== undefined) assertExternalEvidence(input.externalEvidence, row.provider)
     const current = row.steps[input.step]
     if (current === 'confirmed' || current === 'not_applicable') {
       throw new Error(`Continuation step ${input.step} is already settled (${current}).`)
@@ -138,7 +149,6 @@ export class ConversationContinuationService {
     if (input.step === 'external_create' && input.outcome === 'confirmed' && input.externalEvidence === undefined) {
       throw new Error('Confirmed external create requires externalEvidence.')
     }
-
     // computed key 在 strict 下无法用展开直接收窄，先构建可变副本再按守卫过的字面量赋值。
     const nextSteps = { ...row.steps } as { [K in ContinuationStepKindV1]: ContinuationStepStateV1 }
     nextSteps[input.step] = input.outcome
@@ -150,7 +160,13 @@ export class ConversationContinuationService {
       revision: row.revision + 1,
       updatedAt: new Date().toISOString(),
     }
-    this.metadata.saveContinuationOperationJournal(next)
+    const persisted = input.expectedRevision === undefined
+      ? (this.metadata.saveContinuationOperationJournal(next), true)
+      : this.metadata.saveContinuationOperationJournalIfRevision(next, input.expectedRevision)
+    if (!persisted) {
+      const fresh = this.metadata.getContinuationOperationJournal(projectId, operationId)
+      throw new ContinuationStaleRevisionError(operationId, input.expectedRevision ?? row.revision, fresh?.revision ?? row.revision)
+    }
     this.events.publish(projectId, {
       channel: 'continuity',
       type: 'continuity.changed',
@@ -167,13 +183,12 @@ export class ConversationContinuationService {
     if (row === undefined) throw new Error('Continuation operation not found.')
     this.assertStale(row, expectedRevision)
     if (row.cancel !== 'none') throw new Error(`Cancel is already ${row.cancel}.`)
-    const next: ContinuationOperationJournalRowV1 = {
-      ...row,
-      cancel: 'requested',
-      revision: row.revision + 1,
-      updatedAt: new Date().toISOString(),
+    const next = this.metadata.claimContinuationCancel(projectId, operationId, row.revision)
+    if (next === undefined) {
+      const fresh = this.metadata.getContinuationOperationJournal(projectId, operationId)
+      if (fresh !== undefined && fresh.revision !== row.revision) throw new ContinuationStaleRevisionError(operationId, row.revision, fresh.revision)
+      throw new Error(`Cancel is already ${fresh?.cancel ?? 'unavailable'}.`)
     }
-    this.metadata.saveContinuationOperationJournal(next)
     this.events.publish(projectId, {
       channel: 'continuity',
       type: 'continuity.changed',
@@ -197,6 +212,7 @@ export class ConversationContinuationService {
     const row = this.metadata.getContinuationOperationJournal(projectId, operationId)
     if (row === undefined) throw new Error('Continuation operation not found.')
     this.assertStale(row, input.expectedRevision)
+    if (input.externalEvidence !== undefined) assertExternalEvidence(input.externalEvidence, row.provider)
 
     const hasUnknown = Object.values(row.steps).includes('outcome_unknown') || row.cancel === 'outcome_unknown'
     if (!hasUnknown) return projectContinuationRecoveryV1(row, CONTINUATION_CAPABILITIES)
@@ -300,11 +316,11 @@ export class ConversationContinuationService {
     }
     switch (action) {
       case 'recover_external':
-        return this.#recoverExternal(projectId, operationId, row, adapter)
+        return this.#recoverExternal(projectId, operationId, this.#claimSideEffect(projectId, operationId, row, 'external_create'), adapter)
       case 'recover_bind':
-        return this.#recoverBind(projectId, operationId, row, adapter)
+        return this.#recoverBind(projectId, operationId, this.#claimSideEffect(projectId, operationId, row, 'core_bind'), adapter)
       case 'retry_attach':
-        return this.#retryAttach(projectId, operationId, row, adapter)
+        return this.#retryAttach(projectId, operationId, this.#claimSideEffect(projectId, operationId, row, 'attach'), adapter)
       case 'retry_projection':
         throw new RecoveryActionUnsupportedError(action, 'projection retry 需要 T1 projection service（未接线）。')
       case 'reconcile':
@@ -335,7 +351,11 @@ export class ConversationContinuationService {
           bundle: continuationBundleForRowV1(row),
         })
         if (forkReceipt.outcome === 'external_created' && forkReceipt.nativeFork) {
-          return this.#applyCreateReceipt(projectId, operationId, forkReceipt)
+          return this.#applyCreateReceipt(projectId, operationId, forkReceipt, row.revision)
+        }
+        if (forkReceipt.outcome === 'external_created') {
+          return this.#applyCreateReceipt(projectId, operationId, forkReceipt, row.revision,
+            'provider returned a session without native fork proof; treated as degraded create')
         }
         if (forkReceipt.outcome === 'unsupported' && forkReceipt.degradedFromNativeFork) {
           const createReceipt = await adapter.createSession({
@@ -353,11 +373,13 @@ export class ConversationContinuationService {
               outcome: 'confirmed',
               externalEvidence: evidence,
               errorEvidence: `native fork unsupported by provider; degraded to create + continuity attach bundle (${forkReceipt.error?.code ?? 'native_fork_unsupported'})`,
+              expectedRevision: row.revision,
             })
           }
-          return this.#applyCreateReceipt(projectId, operationId, createReceipt)
+          return this.#applyCreateReceipt(projectId, operationId, createReceipt, row.revision,
+            'native fork unsupported by provider; attempted create + continuity attach bundle')
         }
-        return this.#applyCreateReceipt(projectId, operationId, forkReceipt)
+        return this.#applyCreateReceipt(projectId, operationId, forkReceipt, row.revision)
       }
       // 无 fork 源（connectedConversation 无 external ref）：直接 create（degrade 语义同上，不冒充 fork）。
     }
@@ -368,14 +390,16 @@ export class ConversationContinuationService {
       createVariant: row.mode === 'blank_new' ? 'blank' : 'long_lived',
       bundle: continuationBundleForRowV1(row),
     })
-    return this.#applyCreateReceipt(projectId, operationId, receipt)
+    return this.#applyCreateReceipt(projectId, operationId, receipt, row.revision,
+      row.mode === 'native_full_fork' ? 'native fork source unavailable; degraded to create + continuity attach bundle' : undefined)
   }
 
   /** native_full_fork 的 fork 源 = connectedConversation 的 conversationRef（外部 session 稳定引用）。 */
   #sourceExternalSessionIdForFork(projectId: string, row: ContinuationOperationJournalRowV1): string | undefined {
     if (row.connectedConversationId === null) return undefined
     const connected = this.metadata.getConnectedConversation(projectId, row.connectedConversationId)
-    if (connected === undefined) return undefined
+    if (connected === undefined || connected.provider !== row.provider) return undefined
+    if (connected.conversationRef.startsWith('pending-')) return undefined
     return connected.conversationRef
   }
 
@@ -383,16 +407,22 @@ export class ConversationContinuationService {
     projectId: string,
     operationId: string,
     receipt: ProviderContinuationOperationResultV1,
+    expectedRevision: number,
+    degradationEvidence?: string,
   ): ContinuationRecoveryProjectionV1 {
     if (receipt.outcome === 'external_created') {
       const evidence = continuationExternalEvidenceFromReceiptV1(receipt)
       if (evidence === undefined) throw new Error('External created receipt missing provider-native session identity.')
-      return this.advanceStep(projectId, operationId, { step: 'external_create', outcome: 'confirmed', externalEvidence: evidence })
+      return this.advanceStep(projectId, operationId, {
+        step: 'external_create', outcome: 'confirmed', externalEvidence: evidence,
+        expectedRevision,
+        ...(degradationEvidence === undefined ? {} : { errorEvidence: degradationEvidence }),
+      })
     }
     if (receipt.outcome === 'outcome_unknown') {
-      return this.advanceStep(projectId, operationId, { step: 'external_create', outcome: 'outcome_unknown', ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
+      return this.advanceStep(projectId, operationId, { step: 'external_create', outcome: 'outcome_unknown', expectedRevision, ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
     }
-    return this.advanceStep(projectId, operationId, { step: 'external_create', outcome: 'failed', ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
+    return this.advanceStep(projectId, operationId, { step: 'external_create', outcome: 'failed', expectedRevision, ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
   }
 
   async #recoverBind(
@@ -411,56 +441,44 @@ export class ConversationContinuationService {
       bundle: continuationBundleForRowV1(row),
     })
     if (receipt.outcome === 'resumed') {
-      // 外部会话已恢复 ≠ Core 绑定完成：必须先写 canonical ConnectedConversation 绑定，
-      // 绑定写入成功才推进 core_bind=confirmed；写入失败按 failed 记账（不冒充成功）。
+      // 外部会话已恢复 ≠ Core 绑定完成：Repository 在一个 SQLite
+      // BEGIN IMMEDIATE 内同时写 canonical ConnectedConversation 与 journal。
       try {
-        this.#writeCoreBind(projectId, row, receipt.externalSessionId ?? externalSessionId)
-        return this.advanceStep(projectId, operationId, { step: 'core_bind', outcome: 'confirmed' })
+        const boundExternalSessionId = receipt.externalSessionId ?? externalSessionId
+        const evidence = continuationExternalEvidenceFromReceiptV1(receipt)
+        const bound = this.metadata.confirmContinuationCoreBind({
+          projectId,
+          operationId,
+          expectedRevision: row.revision,
+          externalSessionId: boundExternalSessionId,
+          ...(evidence === undefined || evidence.externalSessionId === row.externalEvidence?.externalSessionId ? {} : { externalEvidence: evidence }),
+          fallbackConnectedConversationId: row.connectedConversationId ?? `connected-conversation-${randomUUID()}`,
+        })
+        this.events.publish(projectId, {
+          channel: 'continuity',
+          type: 'continuity.changed',
+          entityRefs: [operationId, bound.connectedConversation.id],
+          payload: { kind: 'continuation.core_bind_confirmed', operationId, revision: bound.journal.revision, connectedConversationId: bound.connectedConversation.id },
+        })
+        return projectContinuationRecoveryV1(bound.journal, CONTINUATION_CAPABILITIES)
       } catch (error: unknown) {
+        // A CAS race is a stale client/worker view, not a provider bind
+        // failure. Preserve it as a conflict so callers must re-read.
+        if (error instanceof ContinuationCoreBindStaleRevisionError) {
+          throw new ContinuationStaleRevisionError(operationId, error.expected, error.actual)
+        }
         return this.advanceStep(projectId, operationId, {
           step: 'core_bind',
           outcome: 'failed',
+          expectedRevision: row.revision,
           errorEvidence: error instanceof Error ? error.message : String(error),
         })
       }
     }
     if (receipt.outcome === 'outcome_unknown') {
-      return this.advanceStep(projectId, operationId, { step: 'core_bind', outcome: 'outcome_unknown', ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
+      return this.advanceStep(projectId, operationId, { step: 'core_bind', outcome: 'outcome_unknown', expectedRevision: row.revision, ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
     }
-    return this.advanceStep(projectId, operationId, { step: 'core_bind', outcome: 'failed', ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
-  }
-
-  /**
-   * canonical 绑定写（P2 修复）：以 ConnectedConversation 承接层为准——
-   * conversation_ref = 外部 session 稳定引用（与 Run 链 runtime_bindings.external_session_id
-   * 同构）。优先级：journal 指定且存在 → 按 ref 命中既有 → upsert 新建（ref 幂等）。
-   * 返回绑定后的 connected conversation id；写失败抛错（调用方记 failed，不冒充成功）。
-   */
-  #writeCoreBind(projectId: string, row: ContinuationOperationJournalRowV1, externalSessionId: string): string {
-    if (row.connectedConversationId !== null) {
-      const existing = this.metadata.getConnectedConversation(projectId, row.connectedConversationId)
-      if (existing !== undefined) return row.connectedConversationId
-    }
-    const byRef = this.metadata.getConnectedConversationByRef(projectId, externalSessionId)
-    if (byRef !== undefined) return String(byRef.id)
-    const now = new Date().toISOString()
-    const created = this.metadata.upsertConnectedConversation({
-      schemaVersion: 1,
-      id: row.connectedConversationId ?? `connected-conversation-${randomUUID()}`,
-      projectId,
-      provider: row.provider === 'workbuddy' ? 'workbuddy' : 'codex',
-      executorId: '',
-      conversationRef: externalSessionId,
-      label: `续工恢复 · ${row.provider}`,
-      isRunning: false,
-      waitingReason: null,
-      lastActiveAt: now,
-      workspaceRef: null,
-      branchRef: null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    return created.id
+    return this.advanceStep(projectId, operationId, { step: 'core_bind', outcome: 'failed', expectedRevision: row.revision, ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
   }
 
   async #retryAttach(
@@ -480,12 +498,12 @@ export class ConversationContinuationService {
     })
     // provider 无 attach RPC → unsupported → attach 标记 not_applicable（first-send degrade 由 request 明示）。
     if (receipt.outcome === 'unsupported') {
-      return this.advanceStep(projectId, operationId, { step: 'attach', outcome: 'not_applicable', ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
+      return this.advanceStep(projectId, operationId, { step: 'attach', outcome: 'not_applicable', expectedRevision: row.revision, ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
     }
     if (receipt.outcome === 'outcome_unknown') {
-      return this.advanceStep(projectId, operationId, { step: 'attach', outcome: 'outcome_unknown', ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
+      return this.advanceStep(projectId, operationId, { step: 'attach', outcome: 'outcome_unknown', expectedRevision: row.revision, ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
     }
-    return this.advanceStep(projectId, operationId, { step: 'attach', outcome: 'failed', ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
+    return this.advanceStep(projectId, operationId, { step: 'attach', outcome: 'failed', expectedRevision: row.revision, ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }) })
   }
 
   async #reconcileWithAdapter(
@@ -509,10 +527,17 @@ export class ConversationContinuationService {
       })
     }
     if (receipt.outcome === 'unresolved' || receipt.outcome === 'outcome_unknown') {
-      return this.reconcile(projectId, operationId, {
-        externalConfirmed: false,
-        ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }),
-      })
+      // A lookup miss or transport ambiguity is not proof that the external session is gone.
+      // Preserve unknown so recovery cannot silently reopen create.
+      const current = this.metadata.getContinuationOperationJournal(projectId, operationId)
+      if (current?.steps.external_create === 'outcome_unknown') {
+        return this.advanceStep(projectId, operationId, {
+          step: 'external_create',
+          outcome: 'outcome_unknown',
+          ...(receipt.error === undefined ? {} : { errorEvidence: receipt.error.message }),
+        })
+      }
+      return this.reconcile(projectId, operationId, {})
     }
     return this.reconcile(projectId, operationId, {})
   }
@@ -526,7 +551,7 @@ export class ConversationContinuationService {
   ): Promise<ContinuationRecoveryProjectionV1> {
     // 本地意图记账（requested）→ 外部 stop → 三态收敛
     const requested = this.requestCancel(projectId, operationId, expectedRevision)
-    const externalSessionId = row.externalEvidence?.externalSessionId
+    const externalSessionId = requested.externalEvidence?.externalSessionId
     if (externalSessionId === undefined) return requested
     const receipt = await adapter.cancel({ operationId, correlationId: operationId, provider: row.provider, externalSessionId })
     if (receipt.outcome === 'accepted') return requested
@@ -541,6 +566,39 @@ export class ConversationContinuationService {
     if (expectedRevision !== undefined && expectedRevision !== row.revision) {
       throw new ContinuationStaleRevisionError(row.operationId, expectedRevision, row.revision)
     }
+  }
+
+  #claimSideEffect(
+    projectId: string,
+    operationId: string,
+    row: ContinuationOperationJournalRowV1,
+    step: 'external_create' | 'core_bind' | 'attach',
+  ): ContinuationOperationJournalRowV1 {
+    const claimed = this.metadata.claimContinuationOperationStep(projectId, operationId, step, row.revision)
+    if (claimed !== undefined) return claimed
+    const fresh = this.metadata.getContinuationOperationJournal(projectId, operationId)
+    if (fresh !== undefined && fresh.revision !== row.revision) throw new ContinuationStaleRevisionError(operationId, row.revision, fresh.revision)
+    throw new Error(`Continuation action for ${step} is already claimed or no longer allowed.`)
+  }
+}
+
+function sameContinuationSubmit(existing: ContinuationOperationJournalRowV1, input: ContinuationSubmitRequestV1): boolean {
+  return existing.projectId === input.projectId
+    && existing.connectedConversationId === (input.connectedConversationId ?? null)
+    && existing.mode === input.mode
+    && existing.contextInheritance === input.contextInheritance
+    && existing.checkout === input.checkout
+    && existing.provider === input.provider
+    && JSON.stringify(existing.orderedReferences ?? []) === JSON.stringify(input.orderedReferences ?? [])
+}
+
+function assertExternalEvidence(evidence: ContinuationExternalEvidenceV1, provider: string): void {
+  if (evidence.schemaVersion !== 1
+    || evidence.provider !== provider
+    || typeof evidence.externalSessionId !== 'string' || evidence.externalSessionId.trim() === ''
+    || typeof evidence.correlationId !== 'string' || evidence.correlationId.trim() === ''
+    || typeof evidence.createdAt !== 'string' || evidence.createdAt.trim() === '') {
+    throw new Error('External evidence is invalid or does not match the continuation provider.')
   }
 }
 
