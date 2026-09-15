@@ -26,6 +26,7 @@ import { useLcosShellStore } from './shell/lcosShellStore';
 import { rectFromDomRect } from './drop/dropTargetRegistry';
 import { DropCommitRouter } from './drop/dropCommitRouter';
 import { useLcosReferenceStore } from './lcosReferenceState';
+import { advanceDropAtScreenPoint } from './lcosRecognizers';
 
 import type {
   DropAssemblyApplyIntent,
@@ -59,12 +60,32 @@ export const LcosHostOverlay: React.FC = () => {
   const closeComposer = useLcosShellStore((state) => state.closeComposer);
   const canvasId = useCanvasStore((state) => state.canvasId);
   const canvasWrapper = useCanvasStore((state) => state.canvasWrapper);
+  const rfInstance = useCanvasStore((state) => state.rfInstance);
   const session = useMemo(() => createLcosCoreSession(), []);
   const assembly = useMemo(() => new CoreAssemblyClient(session.http), [session]);
   const commitRouterRef = useRef<DropCommitRouter | null>(null);
   if (commitRouterRef.current === null) {
     commitRouterRef.current = new DropCommitRouter();
   }
+
+  // Native HTML5 drag sources emit dragover rather than pointermove while the
+  // payload is held. Feed that event into the same resolver path as the
+  // pointer-router observer and prevent the browser's default file-drop page
+  // navigation only while an LCOS payload is active.
+  useEffect(() => {
+    const onDragOver = (event: DragEvent): void => {
+      const status = useLcosDropStore.getState().state.status;
+      if (
+        (status !== 'tracking' && status !== 'dwell' && status !== 'preview') ||
+        canvasWrapper === null ||
+        rfInstance === null
+      ) return;
+      event.preventDefault();
+      advanceDropAtScreenPoint(event, { wrapper: canvasWrapper, instance: rfInstance });
+    };
+    window.addEventListener('dragover', onDragOver);
+    return () => window.removeEventListener('dragover', onDragOver);
+  }, [canvasWrapper, rfInstance]);
 
   // Canvas is a live target, not a hard-coded edge destination. Its semantic
   // target is derived from the active Core/Huabu identity; its rect is only
@@ -142,13 +163,14 @@ export const LcosHostOverlay: React.FC = () => {
     if (router === null) return;
     const owners = {
       applyAssembly: async (assemblyIntent: DropAssemblyApplyIntent, signal?: AbortSignal): Promise<unknown> => {
-        const placementBySource = assemblyIntent.placementPoint === undefined
+        const point = assemblyIntent.placementPoint;
+        const placementBySource = point === undefined
           ? undefined
           : assemblyIntent.sourceRefs.reduce<Record<string, { readonly x: number; readonly y: number }>>(
               (placements, sourceRef) => {
                 placements[sourceRef.id] = {
-                  x: assemblyIntent.placementPoint?.x ?? 0,
-                  y: assemblyIntent.placementPoint?.y ?? 0,
+                  x: point.x,
+                  y: point.y,
                 };
                 return placements;
               },
