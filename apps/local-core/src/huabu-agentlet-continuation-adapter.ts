@@ -219,32 +219,27 @@ export class HuabuAgentletContinuationAdapterV1 implements ContinuationProviderA
   }
 
   async send(input: SendInputV1): Promise<ProviderContinuationOperationResultV1> {
-    try {
-      await this.transport.sendResource({
-        agentletId: this.agentletId,
-        sessionId: input.externalSessionId,
-        ...(input.payload.text === undefined ? {} : { text: input.payload.text }),
-        ...(input.payload.resourceRef === undefined ? {} : { resourceRef: input.payload.resourceRef }),
-      })
-      return {
-        schemaVersion: 1,
-        operationId: input.operationId,
-        correlationId: input.correlationId,
-        provider: input.provider,
-        adapterId: this.adapterId,
-        action: 'send',
-        outcome: 'sent',
-        externalSessionId: input.externalSessionId,
-        agentletId: this.agentletId,
-        contextAttached: false,
-        nativeFork: false,
-        degradedFromNativeFork: false,
-        retryAction: 'none',
-        observedAt: new Date().toISOString(),
-      }
-    } catch (error: unknown) {
-      const classified = classifyHuabuTransportErrorV1(error)
-      return this.#failure('send', input.operationId, input.correlationId, input.provider, classified, input.externalSessionId)
+    return {
+      schemaVersion: 1,
+      operationId: input.operationId,
+      correlationId: input.correlationId,
+      provider: input.provider,
+      adapterId: this.adapterId,
+      action: 'send',
+      outcome: 'unsupported',
+      externalSessionId: input.externalSessionId,
+      agentletId: this.agentletId,
+      contextAttached: false,
+      nativeFork: false,
+      degradedFromNativeFork: false,
+      retryAction: 'none',
+      error: {
+        code: 'prompt_transport_not_wired',
+        message: 'Huabu host prompt transport is not wired through the ACP session owner.',
+        retryable: false,
+        outcomeUnknown: false,
+      },
+      observedAt: new Date().toISOString(),
     }
   }
 

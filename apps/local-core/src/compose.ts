@@ -47,7 +47,7 @@ import { ConversationIdentityService } from './conversation-identity-service.js'
 import { ConversationWorkViewProjectionService } from './conversation-work-view-projection-service.js'
 import { HuabuAgentletContinuationAdapterV1 } from './huabu-agentlet-continuation-adapter.js'
 import { DevFakeAgentletTransportV1 } from './dev-fake-agentlet-transport.js'
-import { HuabuAgentletGatewayTransportV1 } from './huabu-agentlet-gateway-transport.js'
+import { HuabuAgentletHostTransportV1 } from './huabu-agentlet-host-transport.js'
 import { WarehouseService } from './warehouse-service.js'
 import { AssemblyApplyService } from './assembly-apply-service.js'
 import { ProjectSummaryService } from './project-summary-service.js'
@@ -225,21 +225,27 @@ export function composeLocalCoreServices(options: LocalCoreServerOptions = {}): 
   const workView = metadata === undefined || conversationIdentity === undefined
     ? undefined
     : new ConversationWorkViewProjectionService(metadata, conversationIdentity, conversationContinuation)
-  // T7 recovery adapter：优先真实 Huabu Agentlet Gateway transport（组 1 接线）；
+  // T7 recovery adapter：通过 Huabu Host HTTP facade 访问真实 Agentlet Gateway；
   // 仅当显式 `LCOS_RECOVERY_TRANSPORT=fake`（dev/测试）强制注入 MOCK transport；
-  // 未配置 gateway URL 且非 fake 时 adapter 未配置 → recovery 动作 503 UNAVAILABLE。
+  // 未配置 Host URL 且非 fake 时 adapter 未配置 → recovery 动作 503 UNAVAILABLE。
   let recoveryAdapter: HuabuAgentletContinuationAdapterV1 | undefined = undefined
-  const transportMode = process.env.LCOS_RECOVERY_TRANSPORT ?? (process.env.HUABU_AGENTLET_GATEWAY_URL === undefined ? 'none' : 'real')
+  const transportMode = process.env.LCOS_RECOVERY_TRANSPORT ?? (process.env.HUABU_HOST_URL === undefined ? 'none' : 'real')
+  const huabuHostToken = process.env.HUABU_HOST_TOKEN ?? process.env.HUABU_CONNECTION_TOKEN
   if (transportMode === 'fake') {
     recoveryAdapter = new HuabuAgentletContinuationAdapterV1(new DevFakeAgentletTransportV1(), { adapterId: 'dev-fake' })
-  } else if (transportMode === 'real' && process.env.HUABU_AGENTLET_GATEWAY_URL !== undefined) {
+  } else if (transportMode === 'real' && process.env.HUABU_HOST_URL !== undefined) {
     recoveryAdapter = new HuabuAgentletContinuationAdapterV1(
-      new HuabuAgentletGatewayTransportV1({
-        gatewayUrl: process.env.HUABU_AGENTLET_GATEWAY_URL,
+      new HuabuAgentletHostTransportV1({
+        hostBaseUrl: process.env.HUABU_HOST_URL,
+        ...(process.env.HUABU_AGENTLET_ID === undefined ? {} : { agentletId: process.env.HUABU_AGENTLET_ID }),
+        ...(huabuHostToken === undefined ? {} : { authToken: huabuHostToken }),
         ...(process.env.HUABU_AGENTLET_SPAWN_COMMAND === undefined ? {} : { spawnCommand: process.env.HUABU_AGENTLET_SPAWN_COMMAND }),
         ...(process.env.HUABU_AGENTLET_SPAWN_CWD === undefined ? {} : { spawnCwd: process.env.HUABU_AGENTLET_SPAWN_CWD }),
       }),
-      { adapterId: 'huabu-agentlet-gateway' },
+      {
+        adapterId: 'huabu-agentlet-host',
+        ...(process.env.HUABU_AGENTLET_ID === undefined ? {} : { agentletId: process.env.HUABU_AGENTLET_ID }),
+      },
     )
   }
   if (options.runtimeApplicationService !== undefined && sessionLifecycle !== undefined) {

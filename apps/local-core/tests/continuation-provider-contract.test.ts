@@ -181,14 +181,12 @@ describe('adapter create / continue / send / status / cancel / recover（unknown
     expect(attach.contextAttached).toBe(false)
   })
 
-  it('send success → sent; disconnect → outcome_unknown, never sent', async () => {
+  it('send is honest unsupported until the Huabu ACP session owner is exposed', async () => {
     const adapter = new HuabuAgentletContinuationAdapterV1(new FakeHuabuTransport(), { adapterId: 'adapter-a' })
-    const ok = await adapter.send({ operationId: 'op-5', correlationId: 'corr-5', provider: 'codex', externalSessionId: 'ext-1', payload: { kind: 'prompt', text: '继续' } })
-    expect(ok.outcome).toBe('sent')
-
-    const broken = new HuabuAgentletContinuationAdapterV1(new FakeHuabuTransport({ sendError: new Error('socket disconnected') }), { adapterId: 'adapter-a' })
-    const bad = await broken.send({ operationId: 'op-5', correlationId: 'corr-5', provider: 'codex', externalSessionId: 'ext-1', payload: { kind: 'prompt', text: '继续' } })
-    expect(bad.outcome).toBe('outcome_unknown')
+    const receipt = await adapter.send({ operationId: 'op-5', correlationId: 'corr-5', provider: 'codex', externalSessionId: 'ext-1', payload: { kind: 'prompt', text: '继续' } })
+    expect(receipt.outcome).toBe('unsupported')
+    expect(receipt.error?.code).toBe('prompt_transport_not_wired')
+    expect(receipt.error?.outcomeUnknown).toBe(false)
   })
 
   it('status lookup miss is unresolved (not proof of termination); query error is outcome_unknown', async () => {
