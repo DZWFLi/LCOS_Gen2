@@ -5,6 +5,7 @@
 import type { LcosSurfaceKey } from '../shell/lcosShellStore';
 import type {
   ProjectViewRailKindV0,
+  ProjectViewRailOrderV0,
   ProjectViewRailRefV0,
 } from '@local-creative-os/contracts';
 
@@ -24,6 +25,10 @@ export interface RailwayDestinationProjection {
   readonly key: string;
   readonly kind: ProjectViewRailKindV0;
   readonly viewId: string;
+  /** Exact raw Core identity used by reorder/manage; never rebuild from labels. */
+  readonly sourceRef: ProjectViewRailRefV0;
+  /** Index in the complete Core order, including hidden compatibility rows. */
+  readonly sourceIndex: number;
   readonly label: string;
   readonly available: boolean;
   readonly reason?: string;
@@ -40,15 +45,24 @@ export interface RailwayProjectionInput {
   readonly surfaceByWorkspace: ReadonlyMap<string, LcosSurfaceKey>;
 }
 
+export interface RailwayUiSnapshot {
+  /** The complete Core order, including refs hidden from the visible projection. */
+  readonly order: ProjectViewRailOrderV0;
+  readonly destinations: readonly RailwayDestinationProjection[];
+}
+
 function unavailable(
   ref: ProjectViewRailRefV0,
   label: string,
   reason: string,
+  sourceIndex: number,
 ): RailwayDestinationProjection {
   return {
     key: `${ref.kind}:${ref.viewId}`,
     kind: ref.kind,
     viewId: ref.viewId,
+    sourceRef: ref,
+    sourceIndex,
     label,
     available: false,
     reason,
@@ -60,11 +74,14 @@ function available(
   label: string,
   workspaceId: string,
   surface: LcosSurfaceKey,
+  sourceIndex: number,
 ): RailwayDestinationProjection {
   return {
     key: `${ref.kind}:${ref.viewId}`,
     kind: ref.kind,
     viewId: ref.viewId,
+    sourceRef: ref,
+    sourceIndex,
     label,
     available: true,
     workspaceId,
@@ -94,7 +111,7 @@ export function projectRailwayDestinations(
   const scopesById = new Map(input.scopes.map((scope) => [scope.id, scope]));
 
   return input.orderedRefs
-    .filter((ref) => {
+    .flatMap((ref, sourceIndex) => {
       // Older dev data seeded Main / Context / Workflow root workspaces into
       // Railway. Those rows are a second SurfaceDock, not durable destinations.
       // Keep them in Core for rollback compatibility, but never project them.
@@ -104,64 +121,68 @@ export function projectRailwayDestinations(
       const rootScope = rootWorkspace
         ? scopesById.get(rootWorkspace.scopeId)
         : undefined;
-      return !(
+      return (
         rootWorkspace &&
         rootScope?.kind === 'root' &&
         input.surfaceByWorkspace.has(rootWorkspace.id)
-      );
+      ) ? [] : [{ ref, sourceIndex }];
     })
-    .map((ref) => {
-    const workspace = workspacesById.get(ref.viewId);
+    .map(({ ref, sourceIndex }) => {
+      const workspace = workspacesById.get(ref.viewId);
 
-    if (ref.kind === 'scene') {
-      if (!workspace)
-        return unavailable(ref, ref.viewId, '工作现场不存在或已归档');
-      const surface = input.surfaceByWorkspace.get(workspace.id);
-      if (!surface)
-        return unavailable(ref, workspace.name, '工作现场尚未绑定可用 Surface');
-      return available(ref, workspace.name, workspace.id, surface);
-    }
+      if (ref.kind === 'scene') {
+        if (!workspace)
+          return unavailable(ref, ref.viewId, '工作现场不存在或已归档', sourceIndex);
+        const surface = input.surfaceByWorkspace.get(workspace.id);
+        if (!surface)
+          return unavailable(ref, workspace.name, '工作现场尚未绑定可用 Surface', sourceIndex);
+        return available(ref, workspace.name, workspace.id, surface, sourceIndex);
+      }
 
     // Context/Workflow refs may point to a scope or to its one durable workspace.
     // Only an unambiguous existing Surface root is activatable; this avoids
     // silently treating a collection or arbitrary scope as a root Surface.
-    if (ref.kind === 'context' || ref.kind === 'workflow') {
-      const scope = scopesById.get(ref.viewId);
-      const mappedWorkspace = scope
-        ? workspaceForScope(
-            scope.id,
-            input.workspaces,
-            input.surfaceByWorkspace,
-          )
-        : workspace;
-      if (!mappedWorkspace) {
-        return unavailable(
-          ref,
-          scope?.name ?? workspace?.name ?? ref.viewId,
-          '未解析到唯一可恢复的工作现场',
-        );
-      }
-      const surface = input.surfaceByWorkspace.get(mappedWorkspace.id);
-      return surface
-        ? available(
+      if (ref.kind === 'context' || ref.kind === 'workflow') {
+        const scope = scopesById.get(ref.viewId);
+        const mappedWorkspace = scope
+          ? workspaceForScope(
+              scope.id,
+              input.workspaces,
+              input.surfaceByWorkspace,
+            )
+          : workspace;
+        if (!mappedWorkspace) {
+          return unavailable(
             ref,
-            scope?.name ?? mappedWorkspace.name,
-            mappedWorkspace.id,
-            surface,
-          )
-        : unavailable(
-            ref,
-            scope?.name ?? mappedWorkspace.name,
-            '工作现场尚未绑定可用 Surface',
+            scope?.name ?? workspace?.name ?? ref.viewId,
+            '未解析到唯一可恢复的工作现场',
+            sourceIndex,
           );
-    }
+        }
+        const surface = input.surfaceByWorkspace.get(mappedWorkspace.id);
+        return surface
+          ? available(
+              ref,
+              scope?.name ?? mappedWorkspace.name,
+              mappedWorkspace.id,
+              surface,
+              sourceIndex,
+            )
+          : unavailable(
+              ref,
+              scope?.name ?? mappedWorkspace.name,
+              '工作现场尚未绑定可用 Surface',
+              sourceIndex,
+            );
+      }
 
-    // The blueprint explicitly forbids auto-promoting a collection to a Worksite.
-    const scope = scopesById.get(ref.viewId);
-    return unavailable(
-      ref,
-      scope?.name ?? ref.viewId,
-      '集合目的地暂不可达（等待既有 Portal / Receiver 能力）',
-    );
+      // The blueprint explicitly forbids auto-promoting a collection to a Worksite.
+      const scope = scopesById.get(ref.viewId);
+      return unavailable(
+        ref,
+        scope?.name ?? ref.viewId,
+        '集合目的地暂不可达（等待既有 Portal / Receiver 能力）',
+        sourceIndex,
+      );
     });
 }

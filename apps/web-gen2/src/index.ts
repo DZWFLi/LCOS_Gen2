@@ -178,6 +178,8 @@ export { CoreConversationClient } from './backend/conversations.js';
 export { CoreAssemblyClient } from './backend/assembly.js';
 export { CoreRailwayClient } from './backend/railway.js';
 export type { RailwayOrderWriteInputV1 } from './backend/railway.js';
+export { railwayRefKeyV1, reorderRailwayRefV1, removeRailwayRefV1 } from './navigation/railwayOrder.js';
+export type { RailwayReorderPlacementV1 } from './navigation/railwayOrder.js';
 export { CoreContinuationClient } from './backend/continuation.js';
 export { CoreRunClient } from './backend/runs.js';
 export type { CreateRunInputV1 } from './backend/runs.js';
