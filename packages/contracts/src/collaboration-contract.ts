@@ -235,6 +235,7 @@ export type CollaborationCommandKindV1 =
   | 'handoff'
   | 'answerInput'
   | 'approve'
+  | 'retry'
   | 'cancel'
   | 'recover'
 
@@ -278,6 +279,12 @@ export interface CollaborationApproveInputV1 {
   readonly note?: string
 }
 
+export interface CollaborationRetryInputV1 {
+  readonly returnId: string
+  /** 基于同一 Draft 再跑一次时的可选新指令。 */
+  readonly instruction?: string
+}
+
 export interface CollaborationCancelInputV1 {
   readonly runId: string
 }
@@ -298,6 +305,7 @@ export type CollaborationCommandInputV1 =
   | { readonly kind: 'handoff'; readonly input: CollaborationHandoffInputV1 }
   | { readonly kind: 'answerInput'; readonly input: CollaborationAnswerInputV1 }
   | { readonly kind: 'approve'; readonly input: CollaborationApproveInputV1 }
+  | { readonly kind: 'retry'; readonly input: CollaborationRetryInputV1 }
   | { readonly kind: 'cancel'; readonly input: CollaborationCancelInputV1 }
   | { readonly kind: 'recover'; readonly input: CollaborationRecoverInputV1 }
 
@@ -352,4 +360,43 @@ export interface CollaborationSessionEventV1 {
   readonly projectId: string
   readonly conversationId: string
   readonly occurredAt: string
+}
+// ---------------------------------------------------------------------------
+// B2 产品读投影（Batch B）：Attention / Review / Diagnostics
+// 由 Core Projection + facade 内部 raw 封装组合；UI 只消费产品投影。
+// ---------------------------------------------------------------------------
+
+/** Waiting Input 产品投影：同 pendingInputId 绑定一条 run 的问题。 */
+export interface CollaborationPendingInputV1 {
+  readonly schemaVersion: 1
+  readonly pendingInputId: string
+  readonly runId: string
+  readonly question: string
+  readonly options: readonly string[]
+  readonly allowFreeText: boolean
+}
+
+/** Artifact Review 产品投影：一条 return 的复核信息 + 决定能力。 */
+export interface CollaborationReviewV1 {
+  readonly schemaVersion: 1
+  readonly returnId: string
+  readonly artifactId?: string
+  readonly title: string
+  readonly status: 'pending_review' | 'adopted' | 'rejected'
+  readonly baseRevisionId: string
+  readonly capabilities: {
+    readonly accept: { readonly enabled: boolean; readonly reason?: string }
+    readonly reject: { readonly enabled: boolean; readonly reason?: string }
+    readonly retry: { readonly enabled: boolean; readonly reason?: string }
+  }
+}
+
+/** Diagnostics 只读 seam（工程层原样透出；产品错误/状态不进这里）。 */
+export interface CollaborationDiagnosticsV1 {
+  readonly schemaVersion: 1
+  readonly conversationId: string
+  readonly connected: boolean
+  readonly identity?: unknown
+  readonly reach?: unknown
+  readonly operations: readonly import('./conversation-continuation.js').ContinuationRecoveryProjectionV1[]
 }

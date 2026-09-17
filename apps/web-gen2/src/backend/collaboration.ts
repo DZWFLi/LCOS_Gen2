@@ -17,9 +17,13 @@ import type {
   CollaborationCommandResultV1,
   CollaborationForkInputV1,
   CollaborationHandoffInputV1,
+  CollaborationDiagnosticsV1,
+  CollaborationPendingInputV1,
   CollaborationProductErrorV1,
   CollaborationReceiptV1,
   CollaborationRecoverInputV1,
+  CollaborationRetryInputV1,
+  CollaborationReviewV1,
   CollaborationResumeInputV1,
   CollaborationSendInputV1,
   CollaborationSessionEventV1,
@@ -97,9 +101,10 @@ export interface CollaborationSubscribeOptions {
 }
 
 export class CoreCollaborationClient {
-  readonly conversations: CoreConversationClient;
-  readonly runs: CoreRunClient;
-  readonly continuations: CoreContinuationClient;
+  // B1（Batch B）：raw clients 只留在 facade 内部，Collaboration UX 域 UI 不得访问。
+  private readonly conversations: CoreConversationClient;
+  private readonly runs: CoreRunClient;
+  private readonly continuations: CoreContinuationClient;
 
   constructor(private readonly http: HttpClient) {
     this.conversations = new CoreConversationClient(http);
@@ -144,6 +149,110 @@ export class CoreCollaborationClient {
       `/projects/${encodeURIComponent(projectId)}/connected-conversations/${encodeURIComponent(conversationId)}/collaboration-timeline${query}`,
       { signal: options.signal },
     );
+  }
+
+  // ------------------------------------------------------------------
+  // B2 产品读投影（Batch B）：UI 只消费产品投影，不触 raw clients。
+  // ------------------------------------------------------------------
+
+  /**
+   * Attention / Waiting Input 产品投影。
+   * 从 Session projection 定位 pendingInputId + activeRunId，内部经 raw runs 读题，
+   * UI 不接触 runs client。
+   */
+  async readPendingInput(
+    projectId: string,
+    conversationId: string,
+    signal?: AbortSignal,
+  ): Promise<CollaborationPendingInputV1 | undefined> {
+    const session = await this.readSession(projectId, conversationId, signal);
+    if (session === undefined) return undefined;
+    const pendingInputId = session.activity.pendingInputId;
+    const activeRunId = session.activity.activeRunId;
+    if (pendingInputId === undefined || activeRunId === undefined) return undefined;
+    let request;
+    try {
+      request = await this.runs.getPendingInputRequest(activeRunId, signal);
+    } catch {
+      return undefined;
+    }
+    if (request === undefined || request.status !== 'pending') return undefined;
+    return {
+      schemaVersion: 1,
+      pendingInputId,
+      runId: activeRunId,
+      question: request.question,
+      options: request.options,
+      allowFreeText: request.allowFreeText,
+    };
+  }
+
+  /**
+   * Artifact Review 产品投影：该项目当前会话关联 Run 的 returns 复核面。
+   * 内部经 conversations.getWorkView 取 runIds + runs.listRunReviews 聚合；
+   * UI 只消费产品 review 行（含 accept/reject/retry capability + reason）。
+   */
+  async readReviews(
+    projectId: string,
+    conversationId: string,
+    signal?: AbortSignal,
+  ): Promise<readonly CollaborationReviewV1[]> {
+    const reviews: CollaborationReviewV1[] = [];
+    try {
+      const workView = await this.conversations.getWorkView(projectId, conversationId, signal);
+      const runIds = workView?.runs.map((run) => run.runId) ?? [];
+      if (runIds.length === 0) return reviews;
+      const all = await this.runs.listRunReviews(projectId, signal);
+      for (const review of all) {
+        if (!runIds.includes(String(review.run.id))) continue;
+        for (const row of review.returns) {
+          const returnId = String(row.id);
+          reviews.push({
+            schemaVersion: 1,
+            returnId,
+            ...(row.targetArtifactId === undefined ? {} : { artifactId: String(row.targetArtifactId) }),
+            title: review.run.instruction.split('\n')[0]?.trim() ?? '未命名产出',
+            status: row.status,
+            baseRevisionId: String(row.baseRevisionId),
+            capabilities: {
+              accept: { enabled: review.capabilities.accept.enabled, ...(review.capabilities.accept.reason === undefined ? {} : { reason: review.capabilities.accept.reason }) },
+              reject: { enabled: review.capabilities.reject.enabled, ...(review.capabilities.reject.reason === undefined ? {} : { reason: review.capabilities.reject.reason }) },
+              retry: { enabled: review.capabilities.retry.enabled, ...(review.capabilities.retry.reason === undefined ? {} : { reason: review.capabilities.retry.reason }) },
+            },
+          });
+        }
+      }
+    } catch {
+      // 读取失败 = 无可用复核面（UI 显示空态，不伪造）。
+    }
+    return reviews;
+  }
+
+  /**
+   * Diagnostics 只读 seam：identity / reach / operations 工程层原样透出。
+   * Work View 不再自己拼 T6 世界观；Diagnostics 段只消费本方法。
+   */
+  async readDiagnostics(
+    projectId: string,
+    conversationId: string,
+    signal?: AbortSignal,
+  ): Promise<CollaborationDiagnosticsV1 | undefined> {
+    try {
+      const workView = await this.conversations.getWorkView(projectId, conversationId, signal);
+      if (workView === undefined) return undefined;
+      const operations = (await this.continuations.list(projectId, signal))
+        .filter((op) => op.connectedConversationId === conversationId);
+      return {
+        schemaVersion: 1,
+        conversationId,
+        connected: true,
+        ...(workView.identity === undefined ? {} : { identity: workView.identity }),
+        ...(workView.reach === undefined ? {} : { reach: workView.reach }),
+        operations,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -267,6 +376,21 @@ export class CoreCollaborationClient {
     } catch (error: unknown) {
       if (error instanceof TypeError) throw error;
       return toProductError(error, '复核操作失败');
+    }
+  }
+
+  /** 基于同一 Draft 再跑一次（不新建 Run）；语义裁决：真实 product command（Review 决定族）。 */
+  async retry(
+    projectId: string,
+    input: CollaborationRetryInputV1,
+    signal?: AbortSignal,
+  ): Promise<CollaborationCommandResultV1> {
+    void projectId;
+    try {
+      await this.runs.retryArtifactReturn(input.returnId, input.instruction === undefined ? undefined : { instruction: input.instruction }, signal);
+      return receipt('retry', { returnId: input.returnId });
+    } catch (error: unknown) {
+      return toProductError(error, '重试失败');
     }
   }
 

@@ -163,6 +163,7 @@ describe('CollaborationCommandInputV1', () => {
       { kind: 'handoff', input: { conversationId: 'c-1' } },
       { kind: 'answerInput', input: { pendingInputId: 'pi-1', answer: '是' } },
       { kind: 'approve', input: { returnId: 'r-1', decision: 'accept' } },
+      { kind: 'retry', input: { returnId: 'r-1' } },
       { kind: 'cancel', input: { runId: 'run-1' } },
       { kind: 'recover', input: { continuationOperationId: 'op-1', action: 'reconcile' } },
     ]
@@ -174,6 +175,7 @@ describe('CollaborationCommandInputV1', () => {
       'handoff',
       'answerInput',
       'approve',
+      'retry',
       'cancel',
       'recover',
     ])
