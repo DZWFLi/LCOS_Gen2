@@ -95,7 +95,7 @@ export interface CollaborationReturnSummaryV1 {
   readonly returnId: string
   readonly artifactId?: string
   readonly title: string
-  readonly status: 'pending_review' | 'accepted' | 'rejected'
+  readonly status: 'pending_review' | 'adopted' | 'rejected'
   readonly returnedAt: string
 }
 
