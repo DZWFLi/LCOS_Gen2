@@ -3,7 +3,6 @@
 // 前端不推断；点击 → CoreContinuationClient.executeRecoveryAction（T6 service → T7 adapter → receipt），
 // 成功后用返回的 fresh projection 更新（重复 retry 不重复 create 由 Core journal/幂等保证）。
 
-import { HttpError } from '@local-creative-os/web-gen2';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -11,7 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { ContinuationActionV1, ContinuationRecoveryProjectionV1 } from '@local-creative-os/contracts';
-import type { CoreContinuationClient} from '@local-creative-os/web-gen2';
+import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 
 
 const ACTION_LABEL: Readonly<Record<string, string>> = {
@@ -24,13 +23,13 @@ const ACTION_LABEL: Readonly<Record<string, string>> = {
 };
 
 export interface RecoverySectionProps {
-  readonly client: CoreContinuationClient;
+  readonly collaboration: CoreCollaborationClient;
   readonly projectId: string;
   readonly operations: readonly ContinuationRecoveryProjectionV1[];
   readonly onRefreshed: (projection: ContinuationRecoveryProjectionV1) => void;
 }
 
-export function RecoverySection({ client, projectId, operations, onRefreshed }: RecoverySectionProps): React.JSX.Element | null {
+export function RecoverySection({ collaboration, projectId, operations, onRefreshed }: RecoverySectionProps): React.JSX.Element | null {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
   const [receipt, setReceipt] = useState<string | null>(null);
@@ -41,18 +40,25 @@ export function RecoverySection({ client, projectId, operations, onRefreshed }: 
       setBusyKey(key);
       setErrorDetail(undefined);
       setReceipt(null);
-      void client
-        .executeRecoveryAction(projectId, operation.operationId, action, operation.revision)
-        .then((fresh) => {
-          setReceipt(`已执行 · ${operation.operationId.slice(0, 8)} → ${fresh.status}`);
-          onRefreshed(fresh);
+      void collaboration
+        .recover(projectId, {
+          continuationOperationId: operation.operationId,
+          action,
+          expectedRevision: operation.revision,
+        })
+        .then((result) => {
+          if (!result.ok) throw new Error(result.error.userMessage);
+          setReceipt(`已执行 · ${operation.operationId.slice(0, 8)}`);
+          // 恢复动作后重取 diagnostics projection（会话 store 走既有 SSE/手动 refresh）。
+          void collaboration.readDiagnostics(projectId, operation.connectedConversationId ?? '');
+          onRefreshed(operation);
         })
         .catch((error: unknown) => {
-          setErrorDetail(error instanceof HttpError ? `${error.message} (${error.status})` : String(error));
+          setErrorDetail(error instanceof Error ? error.message : String(error));
         })
         .finally(() => setBusyKey(null));
     },
-    [client, projectId, onRefreshed],
+    [collaboration, projectId, onRefreshed],
   );
 
   useEffect(() => {

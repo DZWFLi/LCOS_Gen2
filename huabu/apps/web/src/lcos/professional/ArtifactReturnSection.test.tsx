@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArtifactReturnSection } from './ArtifactReturnSection';
 
 import type { RunReview } from '@local-creative-os/contracts';
-import type { CoreCollaborationClient, CoreRunClient } from '@local-creative-os/web-gen2';
+import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,11 +42,22 @@ function review(overrides: Partial<RunReview> & { capabilities?: RunReview['capa
 
 function fakeRuns(value: readonly RunReview[]): { collaboration: CoreCollaborationClient; approve: ReturnType<typeof vi.fn> } {
   const approve = vi.fn(async () => ({ ok: true as const, receipt: { schemaVersion: 1 as const, command: 'approve' as const, acceptedAt: '2026-09-17T00:00:00.000Z', returnId: 'ret-1' } }));
-  const runs = {
-    listRunReviews: async () => value,
-    retryArtifactReturn: vi.fn(async () => ({})),
-  } as unknown as CoreRunClient;
-  const collaboration = { runs, approve } as unknown as CoreCollaborationClient;
+  const reviews = value.flatMap((review) =>
+    review.returns.map((row) => ({
+      schemaVersion: 1 as const,
+      returnId: String(row.id),
+      ...(row.targetArtifactId === undefined ? {} : { artifactId: String(row.targetArtifactId) }),
+      title: String(review.run.instruction ?? '未命名产出') || '未命名产出',
+      status: row.status,
+      baseRevisionId: String(row.baseRevisionId),
+      capabilities: review.capabilities,
+    })),
+  );
+  const collaboration = {
+    readReviews: async () => reviews,
+    approve,
+    retry: vi.fn(async () => ({ ok: true as const, receipt: { schemaVersion: 1 as const, command: 'retry' as const, acceptedAt: '2026-09-17T00:00:00.000Z', returnId: 'ret-1' } })),
+  } as unknown as CoreCollaborationClient;
   return { collaboration, approve };
 }
 
@@ -63,19 +74,39 @@ async function render(element: React.JSX.Element): Promise<HTMLElement> {
 }
 
 describe('ArtifactReturnSection', () => {
-  it('capabilities 全关时显示真实 reason，且不渲染任何决定按钮（不假装可用）', async () => {
-    const { collaboration } = fakeRuns([review({})]);
+  it('capabilities 全关时将 pending 行的决定按钮禁用并显示 reason（不假装可用）', async () => {
+    const { collaboration } = fakeRuns([
+      review({
+        returns: [
+          {
+            id: 'ret-x',
+            targetArtifactId: 'artifact-x',
+            baseRevisionId: 'revision-base-x',
+            action: 'update',
+            status: 'pending_review',
+          },
+        ],
+        capabilities: {
+          schemaVersion: 1,
+          accept: { enabled: false, reason: 'no_pending_artifact_return' },
+          reject: { enabled: false, reason: 'no_pending_artifact_return' },
+          retry: { enabled: false, reason: 'no_pending_artifact_return' },
+        },
+      } as unknown as Partial<RunReview>),
+    ]);
     const container = await render(
-      <ArtifactReturnSection collaboration={collaboration} projectId="p1" runIds={['run-1']} />,
+      <ArtifactReturnSection collaboration={collaboration} projectId="p1" conversationId="c-1" />,
     );
-    const caps = Array.from(container.querySelectorAll('[data-lcos-review-capability]')).map(
-      (el) => el.textContent,
-    );
-    expect(caps.length).toBe(3);
-    expect(caps.every((text) => text?.includes('no_pending_artifact_return'))).toBe(true);
-    expect(container.querySelector('[data-lcos-return-accept]')).toBeNull();
-    expect(container.querySelector('[data-lcos-return-reject]')).toBeNull();
-    expect(container.querySelector('[data-lcos-return-retry]')).toBeNull();
+    const accept = container.querySelector<HTMLButtonElement>('[data-lcos-return-accept]');
+    const reject = container.querySelector<HTMLButtonElement>('[data-lcos-return-reject]');
+    const retry = container.querySelector<HTMLButtonElement>('[data-lcos-return-retry]');
+    expect(accept).not.toBeNull();
+    expect(reject).not.toBeNull();
+    expect(retry).not.toBeNull();
+    expect(accept?.disabled).toBe(true);
+    expect(reject?.disabled).toBe(true);
+    expect(retry?.disabled).toBe(true);
+    expect(accept?.title).toContain('no_pending_artifact_return');
   });
 
   it('存在待复核 returns 且 capability 可用时，采纳带 expectedBaseRevisionId 走真实通道', async () => {
@@ -99,7 +130,7 @@ describe('ArtifactReturnSection', () => {
       } as unknown as Partial<RunReview>),
     ]);
     const container = await render(
-      <ArtifactReturnSection collaboration={collaboration} projectId="p1" runIds={['run-1']} />,
+      <ArtifactReturnSection collaboration={collaboration} projectId="p1" conversationId="c-1" />,
     );
     const acceptButton = container.querySelector('[data-lcos-return-accept]');
     expect(acceptButton).not.toBeNull();
@@ -113,7 +144,7 @@ describe('ArtifactReturnSection', () => {
   it('无关联 Run 时不渲染（不占位、不伪造空态）', async () => {
     const { collaboration } = fakeRuns([review({})]);
     const container = await render(
-      <ArtifactReturnSection collaboration={collaboration} projectId="p1" runIds={[]} />,
+      <ArtifactReturnSection collaboration={collaboration} projectId="p1" conversationId="c-1" />,
     );
     expect(container.querySelector('[data-lcos-artifact-return]')).toBeNull();
   });

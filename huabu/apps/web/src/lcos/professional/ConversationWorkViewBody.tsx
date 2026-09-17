@@ -1,20 +1,20 @@
-// ConversationWorkViewBody — Conversation Work View（Gate 4 conversation-first 重构）。
+// ConversationWorkViewBody — Conversation Work View（Gate 4 conversation-first 结构）。
 //
-// 信息架构（收敛方案 V1 §13）：
-//   Header（projection 身份 + 6 用户态 + capability 动作）
-//   → Timeline / Work Events（真实投影，不伪造消息）
-//   → inline WaitingInput / Review（needs_user 时才出现，动作走 command seam）
-//   → Composer（canonical target = 当前 Conversation，不二次选 Session）
+// 信息架构（收敛方案 V1 §13 + Batch B）：
+//   Header（projection 身份 + 6 用户态 + capability）
+//   → Timeline / Work Events（真实投影）
+//   → inline WaitingInput / Review（needs_user 时才出现；B2 全部走产品 read）
+//   → Composer（B3：Delegate 语义明确，send≠delegate；canSend=false 如实提示）
 //   → Context View（relation 只读预览）
-//   → Diagnostics（collapsed：T6 Recovery / identity / reach 工程细节）
+//   → Diagnostics（collapsed；identity/reach/operations 经 readDiagnostics seam，
+//     不再由 controller / raw domain 各自拼）
 //
 // 状态唯一来源：Collaboration read projection（readSession/readTimeline + SSE invalidation）。
-// 不常驻 provider / operation / revision / journal 工程字段（全部下沉 Diagnostics）。
+// B1：本组件不再访问 collaboration.conversations / .runs / .continuations。
 
 import { CoreCollaborationClient } from '@local-creative-os/web-gen2';
-import { ConversationWorkViewController } from '@local-creative-os/web-gen2';
 import { CheckCheck, ChevronDown, ChevronRight, CircleHelp, Info, Loader, Play, User, XCircle } from 'lucide-react';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ArtifactReturnSection } from './ArtifactReturnSection';
 import { RecoverySection } from './RecoverySection';
@@ -26,8 +26,7 @@ import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
 
-import type { ContinuationRecoveryProjectionV1 } from '@local-creative-os/contracts';
-import type { CollaborationTimelineItemV1, CollaborationUserStateV1 } from '@local-creative-os/contracts';
+import type { CollaborationDiagnosticsV1, CollaborationTimelineItemV1, CollaborationUserStateV1 } from '@local-creative-os/contracts';
 
 export interface ConversationWorkViewBodyProps {
   readonly projectId: string;
@@ -63,11 +62,8 @@ export function ConversationWorkViewBody({
 }: ConversationWorkViewBodyProps): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const collaboration = useMemo(() => new CoreCollaborationClient(session.http), [session]);
-  const controller = useMemo(
-    () => new ConversationWorkViewController(collaboration.conversations),
-    [collaboration],
-  );
-  const [localOperations, setLocalOperations] = useState<readonly ContinuationRecoveryProjectionV1[] | null>(null);
+  const [diagnostics, setDiagnostics] = useState<CollaborationDiagnosticsV1 | undefined>(undefined);
+  const [diagnosticsState, setDiagnosticsState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const composerOpen = useLcosShellStore((s) => s.composerOpen);
   const composerTarget = useLcosShellStore((s) => s.composerTarget);
@@ -80,18 +76,22 @@ export function ConversationWorkViewBody({
   const projection = entry?.status === 'ready' ? entry.projection : undefined;
   const timeline = entry?.status === 'ready' ? entry.timeline ?? [] : [];
 
-  // 工程细节（Diagnostics）保留既有 controller 聚合。
-  useEffect(() => {
+  // B2：工程细节（Diagnostics）只经 readDiagnostics seam 读取，不再由 controller 拼装。
+  const loadDiagnostics = useCallback((): void => {
     if (!connectedConversationId) return;
-    controller.open(projectId, connectedConversationId);
-    return () => controller.dispose();
-  }, [controller, projectId, connectedConversationId]);
+    setDiagnosticsState('loading');
+    void collaboration
+      .readDiagnostics(projectId, connectedConversationId)
+      .then((value) => {
+        setDiagnostics(value);
+        setDiagnosticsState('ready');
+      })
+      .catch(() => setDiagnosticsState('error'));
+  }, [collaboration, projectId, connectedConversationId]);
 
-  const state = useSyncExternalStore(
-    (listener) => controller.subscribe(listener),
-    () => controller.read(),
-    () => controller.read(),
-  );
+  useEffect(() => {
+    loadDiagnostics();
+  }, [loadDiagnostics]);
 
   if (!connectedConversationId) {
     return (
@@ -101,24 +101,16 @@ export function ConversationWorkViewBody({
     );
   }
 
-  const identity = state?.sections.identity;
-  const operations = localOperations ?? state?.operations ?? [];
-  const runIds = (state?.runs ?? []).map((run) => run.runId);
-  const receiverReady =
-    identity?.status === 'loaded' &&
-    identity.identity?.connectedConversation.id === connectedConversationId;
-  const receiverBlockedReason = receiverReady
-    ? undefined
-    : identity?.status === 'error'
-      ? '接收者身份读取失败，暂不可发送'
-      : '正在确认该会话的真实接收者，确认前暂不可发送';
   const workComposerOpen =
     composerOpen && composerTarget?.receiverConversationId === connectedConversationId;
 
   const userState = projection?.userState;
-  const pendingInputId = projection?.activity.pendingInputId;
-  const activeRunId = projection?.activity.activeRunId;
+  const hasPendingInput = projection?.activity.pendingInputId !== undefined;
   const hasPendingReview = projection?.recentReturns.some((row) => row.status === 'pending_review') ?? false;
+  // B3：send 与 delegate 心智必须分开。当前 send fail-closed（无真实 transport）→
+  // 不提供「继续这个会话（追加消息）」；Composer 明确是「交给它做（委托新任务）」。
+  const canSend = projection?.capabilities.canSend === true;
+  const sendReason = projection?.capabilityReasons?.canSend;
 
   return (
     <div data-lcos-conversation-work-view className="flex flex-col gap-4 p-4">
@@ -159,9 +151,9 @@ export function ConversationWorkViewBody({
             {projection.recovery.userMessage ?? '需要恢复'}
           </div>
         )}
-        {projection !== undefined && projection.capabilities.canSend === false && (
-          <div className="text-[10px]" style={{ color: lcosTokens.color.muted }}>
-            {projection.capabilityReasons?.canSend ?? '「发送」暂不可用'}
+        {projection !== undefined && !canSend && (
+          <div data-lcos-send-unavailable className="text-[10px]" style={{ color: lcosTokens.color.muted }}>
+            {sendReason ?? '当前协作方式暂不支持直接追加消息'}
           </div>
         )}
       </section>
@@ -172,7 +164,7 @@ export function ConversationWorkViewBody({
           <LcosSurfaceFeedback presentation="loading" message="读取会话进展…" />
         ) : timeline.length === 0 ? (
           <div className="rounded-xl px-3 py-2 text-xs" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}`, color: lcosTokens.color.muted }}>
-            还没有工作记录——从下方 Composer 开始
+            还没有工作记录——委托一个新任务开始
           </div>
         ) : (
           timeline.map((item) => {
@@ -202,17 +194,18 @@ export function ConversationWorkViewBody({
         )}
       </section>
 
-      {/* inline WaitingInput：needs_user 时才出现（不再常驻） */}
-      {pendingInputId !== undefined && activeRunId !== undefined && (
-        <WaitingInputSection collaboration={collaboration} projectId={projectId} runId={activeRunId} runStatus="waiting_input" />
+      {/* inline WaitingInput：needs_user / pendingInput 存在时才出现 */}
+      {hasPendingInput && (
+        <WaitingInputSection collaboration={collaboration} projectId={projectId} conversationId={connectedConversationId} />
       )}
 
       {/* inline Review：有待复核产出时才出现 */}
-      {hasPendingReview && runIds.length > 0 && (
-        <ArtifactReturnSection collaboration={collaboration} projectId={projectId} runIds={runIds} />
+      {hasPendingReview && (
+        <ArtifactReturnSection collaboration={collaboration} projectId={projectId} conversationId={connectedConversationId} />
       )}
 
-      {/* Composer：target 直接绑定 canonical Conversation（不二次选 Session） */}
+      {/* Composer（B3）：明确 Delegate 语义——「交给它做」创建 canonical Run，
+          绝不伪装成原会话 continuation（send 未接通时 fail-closed）。 */}
       <section
         data-lcos-conversation-composer
         className="flex flex-col gap-2 rounded-xl p-3"
@@ -220,9 +213,9 @@ export function ConversationWorkViewBody({
       >
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h4 className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>继续这个会话</h4>
+            <h4 className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>交给它做（委托新任务）</h4>
             <p className="mt-1 text-[10px]" style={{ color: lcosTokens.color.muted }}>
-              使用同一个 Composer 草稿、引用和提交入口
+              以当前会话为上下文，创建 Run 交给执行器；与「直接追加消息」不同
             </p>
           </div>
           {!workComposerOpen && (
@@ -235,14 +228,13 @@ export function ConversationWorkViewBody({
                   title: projection?.identity.title ?? '当前会话',
                   anchor: { x: 0, y: 0, width: 0, height: 0 },
                   ...(activeWorkspaceId === null ? {} : { workspaceId: activeWorkspaceId }),
-                  ...(receiverReady ? { receiverConversationId: connectedConversationId } : {}),
-                  ...(receiverBlockedReason === undefined ? {} : { receiverBlockedReason }),
+                  receiverConversationId: connectedConversationId,
                 })
               }
               className="rounded-full px-3 py-1.5 text-xs"
               style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse }}
             >
-              写入 Composer
+              委托新任务
             </button>
           )}
         </div>
@@ -255,11 +247,6 @@ export function ConversationWorkViewBody({
             inline
             onClose={closeComposer}
           />
-        )}
-        {!workComposerOpen && receiverBlockedReason && (
-          <div data-lcos-work-composer-blocked className="text-[10px]" style={{ color: lcosTokens.color.danger }}>
-            {receiverBlockedReason}
-          </div>
         )}
       </section>
 
@@ -281,7 +268,7 @@ export function ConversationWorkViewBody({
         </section>
       )}
 
-      {/* Diagnostics：T6 Recovery / identity / reach 工程细节（collapsed 默认） */}
+      {/* Diagnostics：工程细节经 readDiagnostics seam（collapsed 默认） */}
       <section
         className="flex flex-col gap-2 rounded-xl p-3"
         style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}
@@ -298,22 +285,32 @@ export function ConversationWorkViewBody({
         </button>
         {diagnosticsOpen && (
           <div data-lcos-diagnostics className="flex flex-col gap-2 pt-1">
-            <div className="text-[10px]" style={{ color: lcosTokens.color.muted }}>
-              {identity?.status === 'loaded' ? '身份链已读' : identity?.status === 'error' ? `身份读取失败（${identity.errorCode ?? ''}）` : '读取身份…'}
-              {state?.sections.reach?.status === 'loaded' && state.sections.reach.reach ? ` · 可达项 ${state.sections.reach.reach.items.length}` : ''}
-              {' · '}{identity?.identity?.conversationArtifactId ? '已链接导入会话' : '仅承接关系'}
-            </div>
-            <RecoverySection
-              client={collaboration.continuations}
-              projectId={projectId}
-              operations={operations}
-              onRefreshed={(fresh) =>
-                setLocalOperations((prev) => {
-                  const base = prev ?? state?.operations ?? [];
-                  return base.map((op) => (op.operationId === fresh.operationId ? fresh : op));
-                })
-              }
-            />
+            {diagnosticsState === 'loading' && (
+              <span className="text-[10px]" style={{ color: lcosTokens.color.muted }}>读取工程状态…</span>
+            )}
+            {diagnosticsState === 'error' && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px]" style={{ color: lcosTokens.color.danger }}>工程状态读取失败</span>
+                <button type="button" onClick={loadDiagnostics} className="rounded-full px-2 py-1 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>
+                  重试
+                </button>
+              </div>
+            )}
+            {diagnosticsState === 'ready' && diagnostics !== undefined && (
+              <>
+                <div className="text-[10px]" style={{ color: lcosTokens.color.muted }}>
+                  会话已连接
+                  {diagnostics.identity !== undefined ? ' · 身份链已读' : ''}
+                  {diagnostics.reach !== undefined && 'connected' in (diagnostics.reach as object) ? ' · 可达已读' : ''}
+                </div>
+                <RecoverySection
+                  collaboration={collaboration}
+                  projectId={projectId}
+                  operations={diagnostics.operations}
+                  onRefreshed={() => loadDiagnostics()}
+                />
+              </>
+            )}
           </div>
         )}
       </section>
