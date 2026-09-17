@@ -10,7 +10,7 @@ import {
   reorderRailwayRefV1,
 } from '@local-creative-os/web-gen2';
 import { FolderOpen, Layers, ListTree, PanelsTopLeft } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 
 import { useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
 import { lcosHudEdgeOffsets, lcosHudSafeCenterY } from './lcosHudPlacement';
@@ -18,7 +18,7 @@ import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useLcosDropStore } from '../lcosDropState';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
 import {
-  projectRailwayDestinations,
+  projectRailwaySnapshot,
   type RailwayUiSnapshot,
   type RailwayDestinationProjection,
 } from '../navigation/railwayProjection';
@@ -73,6 +73,7 @@ export function LcosRailway({
   const windowEnvironment = useLcosShellStore((s) => s.windowEnvironment);
   const registerTarget = useLcosDropStore((s) => s.registerTarget);
   const unregisterTarget = useLcosDropStore((s) => s.unregisterTarget);
+  const receiveTargetElements = useRef(new Map<string, HTMLButtonElement>());
   const [snapshot, setSnapshot] = useState<RailwayUiSnapshot | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [activatingKey, setActivatingKey] = useState<string | undefined>(undefined);
@@ -100,23 +101,19 @@ export function LcosRailway({
           setError(undefined);
           return;
         }
-        setSnapshot({
-          order,
-          destinations: projectRailwayDestinations({
-            orderedRefs: order.orderedRefs,
-            workspaces: graph.workspaces.map((workspace) => ({
-              id: String(workspace.id),
-              name: workspace.name,
-              scopeId: String(workspace.scopeId),
-            })),
-            scopes: graph.scopes.map((scope) => ({
-              id: String(scope.id),
-              name: scope.name,
-              kind: scope.kind,
-            })),
-            surfaceByWorkspace,
-          }),
-        });
+        setSnapshot(projectRailwaySnapshot(order, {
+          workspaces: graph.workspaces.map((workspace) => ({
+            id: String(workspace.id),
+            name: workspace.name,
+            scopeId: String(workspace.scopeId),
+          })),
+          scopes: graph.scopes.map((scope) => ({
+            id: String(scope.id),
+            name: scope.name,
+            kind: scope.kind,
+          })),
+          surfaceByWorkspace,
+        }));
         setError(undefined);
       })
       .catch((cause: unknown) => {
@@ -133,19 +130,95 @@ export function LcosRailway({
 
   const destinations: readonly RailwayDestinationProjection[] = snapshot?.destinations ?? [];
 
+  const publishReceiveTarget = useCallback((
+    destination: RailwayDestinationProjection,
+    element: HTMLButtonElement | undefined,
+  ): void => {
+    const targetId = `railway:${projectId}:${destination.key}`;
+    if (
+      element === undefined ||
+      !destination.available ||
+      destination.workspaceId === undefined
+    ) {
+      unregisterTarget(targetId);
+      return;
+    }
+    const target: DropTargetRegistration = {
+      targetId,
+      kind: 'railway-receive',
+      label: destination.label,
+      rect: rectFromDomRect(element.getBoundingClientRect()),
+      priority: 20,
+      enabled: true,
+      semantic: {
+        kind: 'railway-receive',
+        targetRef: { kind: 'workspace', id: destination.workspaceId },
+        destinationRef: destination.sourceRef,
+      },
+    };
+    registerTarget(target);
+  }, [projectId, registerTarget, unregisterTarget]);
+
+  // Railway is itself scrollable. A ref callback gives us the first rect, but
+  // internal scroll / viewport resize can move a button without remounting it.
+  // Keep the registry as live screen-space geometry just like Composer does.
+  useEffect(() => {
+    const publishAll = (): void => {
+      for (const destination of destinations) {
+        publishReceiveTarget(destination, receiveTargetElements.current.get(destination.key));
+      }
+    };
+    publishAll();
+    const observer = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(publishAll)
+      : undefined;
+    for (const destination of destinations) {
+      const element = receiveTargetElements.current.get(destination.key);
+      if (element !== undefined) observer?.observe(element);
+    }
+    window.addEventListener('resize', publishAll);
+    // capture=true also observes scroll events from the Railway overflow island.
+    window.addEventListener('scroll', publishAll, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publishAll);
+      window.removeEventListener('scroll', publishAll, true);
+      for (const destination of destinations) {
+        unregisterTarget(`railway:${projectId}:${destination.key}`);
+      }
+    };
+  }, [destinations, projectId, publishReceiveTarget, unregisterTarget]);
+
   const refreshAfterConflict = useCallback(async (previous: RailwayUiSnapshot): Promise<void> => {
     try {
-      const fresh = await railway.read(projectId);
-      if (fresh !== undefined) {
-        setSnapshot({
-          order: fresh,
-          destinations: destinationsForOrder(fresh, previous.destinations),
-        });
+      const [fresh, graph] = await Promise.all([
+        railway.read(projectId),
+        projects.getProjectGraph(projectId),
+      ]);
+      if (fresh === undefined || graph === undefined) {
+        setSnapshot(previous);
+        setError('Railway 已在别处更新，但最新顺序暂时读取失败');
+        return;
       }
+      setSnapshot(projectRailwaySnapshot(fresh, {
+        workspaces: graph.workspaces.map((workspace) => ({
+          id: String(workspace.id),
+          name: workspace.name,
+          scopeId: String(workspace.scopeId),
+        })),
+        scopes: graph.scopes.map((scope) => ({
+          id: String(scope.id),
+          name: scope.name,
+          kind: scope.kind,
+        })),
+        surfaceByWorkspace,
+      }));
+      setError('Railway 已在别处更新，已回读最新顺序');
     } catch {
-      setSnapshot(undefined);
+      setSnapshot(previous);
+      setError('Railway 已在别处更新，但最新顺序暂时读取失败');
     }
-  }, [projectId, railway]);
+  }, [projectId, projects, railway, surfaceByWorkspace]);
 
   const reorder = useCallback((movedKey: string, targetKey: string, placement: 'before' | 'after'): void => {
     const previous = snapshot;
@@ -167,12 +240,12 @@ export function LcosRailway({
         setError(undefined);
       })
       .catch((cause: unknown) => {
-        setError(
-          (cause as { status?: number }).status === 409
-            ? 'Railway 已在别处更新，已回读最新顺序'
-            : cause instanceof Error ? cause.message : 'Railway 顺序保存失败',
-        );
-        void refreshAfterConflict(previous);
+        setSnapshot(previous);
+        if ((cause as { status?: number }).status === 409) {
+          void refreshAfterConflict(previous);
+          return;
+        }
+        setError(cause instanceof Error ? cause.message : 'Railway 顺序保存失败');
       })
       .finally(() => setReordering(false));
   }, [projectId, refreshAfterConflict, railway, snapshot]);
@@ -218,29 +291,13 @@ export function LcosRailway({
         setReorderTargetKey(undefined);
       },
       onElement: (element) => {
-        const targetId = `railway:${projectId}:${destination.key}`;
-        if (
-          element === null ||
-          !destination.available ||
-          destination.workspaceId === undefined
-        ) {
-          unregisterTarget(targetId);
+        if (element === null) {
+          receiveTargetElements.current.delete(destination.key);
+          unregisterTarget(`railway:${projectId}:${destination.key}`);
           return;
         }
-        const target: DropTargetRegistration = {
-          targetId,
-          kind: 'railway-receive',
-          label: destination.label,
-          rect: rectFromDomRect(element.getBoundingClientRect()),
-          priority: 20,
-          enabled: true,
-          semantic: {
-            kind: 'railway-receive',
-            targetRef: { kind: 'workspace', id: destination.workspaceId },
-            destinationRef: destination.sourceRef,
-          },
-        };
-        registerTarget(target);
+        receiveTargetElements.current.set(destination.key, element);
+        publishReceiveTarget(destination, element);
       },
     }),
   );

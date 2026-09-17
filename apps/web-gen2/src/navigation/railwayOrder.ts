@@ -20,9 +20,13 @@ export function reorderRailwayRefV1(
   const movedIndex = orderedRefs.findIndex((ref) => railwayRefKeyV1(ref) === movedKey);
   const targetIndex = orderedRefs.findIndex((ref) => railwayRefKeyV1(ref) === targetKey);
   if (movedIndex < 0 || targetIndex < 0) return orderedRefs;
-  if (orderedRefs.some((ref, index) => railwayRefKeyV1(ref) === movedKey && index !== movedIndex)) {
-    return orderedRefs;
-  }
+  const hasDuplicateMoved = orderedRefs.some(
+    (ref, index) => railwayRefKeyV1(ref) === movedKey && index !== movedIndex,
+  );
+  const hasDuplicateTarget = orderedRefs.some(
+    (ref, index) => railwayRefKeyV1(ref) === targetKey && index !== targetIndex,
+  );
+  if (hasDuplicateMoved || hasDuplicateTarget) return orderedRefs;
   const moved = orderedRefs[movedIndex];
   if (moved === undefined) return orderedRefs;
   const withoutMoved = orderedRefs.filter((_, index) => index !== movedIndex);

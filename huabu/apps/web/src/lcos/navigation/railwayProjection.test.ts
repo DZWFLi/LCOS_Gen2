@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { projectRailwayDestinations } from './railwayProjection';
+import {
+  projectRailwayDestinations,
+  projectRailwaySnapshot,
+} from './railwayProjection';
 
 describe('projectRailwayDestinations', () => {
   const base = {
@@ -135,4 +138,35 @@ describe('projectRailwayDestinations', () => {
       reason: '未解析到唯一可恢复的工作现场',
     });
   });
+  it('projects a fresh CAS-conflict order against the fresh graph context', () => {
+    const snapshot = projectRailwaySnapshot(
+      {
+        projectId: 'project-1',
+        orderedRefs: [{ kind: 'scene', viewId: 'workspace-new' }],
+        version: 4,
+        updatedAt: 'now',
+      },
+      {
+        workspaces: [
+          ...base.workspaces,
+          { id: 'workspace-new', name: '并行新增现场', scopeId: 'scope-context' },
+        ],
+        scopes: base.scopes,
+        surfaceByWorkspace: new Map([
+          ...base.surfaceByWorkspace,
+          ['workspace-new', 'context' as const],
+        ]),
+      },
+    );
+
+    expect(snapshot.order.version).toBe(4);
+    expect(snapshot.destinations).toEqual([
+      expect.objectContaining({
+        key: 'scene:workspace-new',
+        workspaceId: 'workspace-new',
+        available: true,
+      }),
+    ]);
+  });
+
 });

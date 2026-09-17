@@ -51,6 +51,25 @@ export interface RailwayUiSnapshot {
   readonly destinations: readonly RailwayDestinationProjection[];
 }
 
+export type RailwayProjectionContext = Omit<
+  RailwayProjectionInput,
+  'orderedRefs'
+>;
+
+/** Build one UI snapshot from one Core order and the graph context read for that refresh. */
+export function projectRailwaySnapshot(
+  order: ProjectViewRailOrderV0,
+  context: RailwayProjectionContext,
+): RailwayUiSnapshot {
+  return {
+    order,
+    destinations: projectRailwayDestinations({
+      ...context,
+      orderedRefs: order.orderedRefs,
+    }),
+  };
+}
+
 function unavailable(
   ref: ProjectViewRailRefV0,
   label: string,

@@ -32,6 +32,13 @@ test('reorderRailwayRefV1 is a no-op for same target and does not fabricate dupl
   assert.deepEqual(reorderRailwayRefV1(order, 'scene:a', 'context:b', 'before'), [HIDDEN, A, B]);
 });
 
+test('reorderRailwayRefV1 fails closed when either moved or target identity is duplicated', () => {
+  const duplicateMoved = [A, { ...A }, B, C];
+  const duplicateTarget = [A, B, { ...B }, C];
+  assert.equal(reorderRailwayRefV1(duplicateMoved, 'scene:a', 'collection:c', 'after'), duplicateMoved);
+  assert.equal(reorderRailwayRefV1(duplicateTarget, 'scene:a', 'context:b', 'before'), duplicateTarget);
+});
+
 test('removeRailwayRefV1 removes one exact raw ref and keeps unknown refs unchanged', () => {
   const order = [A, HIDDEN, B];
   assert.deepEqual(removeRailwayRefV1(order, 'scene:legacy-root'), [A, B]);

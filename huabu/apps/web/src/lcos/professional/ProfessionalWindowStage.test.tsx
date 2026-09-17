@@ -7,7 +7,9 @@ import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 import { ProfessionalWindowStage } from './ProfessionalWindowStage';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 
-vi.mock('./ArtifactReaderBody', () => ({ ArtifactReaderBody: () => null }));
+vi.mock('./ArtifactReaderBody', () => ({
+  ArtifactReaderBody: ({ artifactId }: { artifactId?: string }) => <div data-reader-artifact={artifactId} />,
+}));
 vi.mock('./AssemblyBody', () => ({ AssemblyBody: () => null }));
 vi.mock('./PortalPreviewBody', () => ({ PortalPreviewBody: () => null }));
 vi.mock('./ConversationWorkViewBody', () => ({ ConversationWorkViewBody: InlineComposerFixture }));
@@ -28,6 +30,25 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); })
 async function escape() {
   await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
 }
+it('renders every independent region and publishes every region as occupied', async () => {
+  const store = useLcosShellStore.getState();
+  store.openWindow('reader', '材料 A', 'artifact-a');
+  store.openWindow('reader', '材料 B', 'artifact-b');
+  await act(async () => root.render(<ProfessionalWindowStage projectId="p" />));
+
+  expect(host.querySelectorAll('[data-lcos-professional-stage]')).toHaveLength(1);
+  const regions = host.querySelectorAll('[data-lcos-window-region-id]');
+  expect(regions).toHaveLength(2);
+  expect((regions[0] as HTMLElement | undefined)?.style.left).not.toBe((regions[1] as HTMLElement | undefined)?.style.left);
+  expect(new Set(Array.from(regions, (element) => element.getAttribute('data-lcos-window-region-id')))).toEqual(
+    new Set(useLcosShellStore.getState().windowRegions.map((region) => region.id)),
+  );
+  expect(host.querySelectorAll('[data-reader-artifact]')).toHaveLength(2);
+  expect(useLcosShellStore.getState().windowEnvironment?.occupiedRects).toHaveLength(2);
+  expect(useLcosShellStore.getState().windowEnvironment?.activeRegionId).toBe(
+    useLcosShellStore.getState().windowRegions[1]?.id,
+  );
+});
 it('closes the inline Composer first and keeps its Work View until the next Escape', async () => {
   const store = useLcosShellStore.getState();
   store.openWindow('conversation', '会话', 'conversation-a');
