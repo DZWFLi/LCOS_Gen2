@@ -75,3 +75,9 @@ apps/desktop/resources/runtime/
 apps/desktop/out/
 tools/light-bridge-kernel/dist-desktop/
 tools/light-bridge-kernel/.desktop-build/
+
+# ripwire 本地索引（二进制不入仓；用 scripts/ripwire-rebuild.ps1 重建）
+.ripwire-*/
+*.ripwirecache
+	mp_rw_index/
+C:\tmp_rw_index/
