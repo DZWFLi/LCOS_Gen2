@@ -164,7 +164,7 @@ describe('CollaborationCommandInputV1', () => {
       { kind: 'answerInput', input: { pendingInputId: 'pi-1', answer: '是' } },
       { kind: 'approve', input: { returnId: 'r-1', decision: 'accept' } },
       { kind: 'cancel', input: { runId: 'run-1' } },
-      { kind: 'recover', input: { continuationOperationId: 'op-1' } },
+      { kind: 'recover', input: { continuationOperationId: 'op-1', action: 'reconcile' } },
     ]
     expect(inputs.map((i) => i.kind)).toEqual([
       'send',

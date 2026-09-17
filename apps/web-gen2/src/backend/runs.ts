@@ -83,6 +83,11 @@ export class CoreRunClient {
     );
   }
 
+  /** POST /runs/:runId/cancel —— 取消进行中的 Run（Core runtimeApplication.cancel 为唯一 owner）。 */
+  cancelRun(runId: string, signal?: AbortSignal): Promise<unknown> {
+    return coreRequest<unknown>(this.http, 'POST', `/runs/${encodeURIComponent(runId)}/cancel`, { signal });
+  }
+
   /** POST /artifact-returns/:id/reject —— 拒绝该 Draft（不改 Current）。 */
   rejectArtifactReturn(returnId: string, signal?: AbortSignal): Promise<unknown> {
     return coreRequest<unknown>(

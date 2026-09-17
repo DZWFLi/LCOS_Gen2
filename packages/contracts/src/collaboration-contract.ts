@@ -261,8 +261,8 @@ export interface CollaborationForkInputV1 {
 }
 
 export interface CollaborationHandoffInputV1 {
+  /** 新承接会话（切换目标）。 */
   readonly conversationId: string
-  readonly note?: string
 }
 
 export interface CollaborationAnswerInputV1 {
@@ -273,6 +273,8 @@ export interface CollaborationAnswerInputV1 {
 export interface CollaborationApproveInputV1 {
   readonly returnId: string
   readonly decision: 'accept' | 'reject'
+  /** accept 必填：canonical 防覆盖 CAS 基线（AcceptArtifactReturnInput.expectedBaseRevisionId）。 */
+  readonly expectedBaseRevisionId?: string
   readonly note?: string
 }
 
@@ -282,6 +284,9 @@ export interface CollaborationCancelInputV1 {
 
 export interface CollaborationRecoverInputV1 {
   readonly continuationOperationId: string
+  /** 必须来自该 operation 当前 projection 的 allowedActions（T6 提供，UI 不发明）。 */
+  readonly action: ContinuationActionV1
+  readonly expectedRevision?: number
 }
 
 /** 按 kind 分发输入类型。 */
@@ -320,6 +325,7 @@ import type {
   ContinuationProviderIdV1,
   ProviderContinuationCapabilitySnapshotV1,
 } from './provider-capability.js'
+import type { ContinuationActionV1 } from './conversation-continuation.js'
 
 export interface CollaborationAdapterDescriptorV1 {
   readonly schemaVersion: 1
