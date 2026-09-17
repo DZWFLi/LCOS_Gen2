@@ -935,3 +935,6 @@ export * from './provider-capability.js'
 export * from './continuation-provider.js'
 
 export * from './boundary-evaluator.js'
+
+export * from './collaboration-contract.js'
+
