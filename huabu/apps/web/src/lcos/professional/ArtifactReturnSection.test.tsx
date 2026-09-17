@@ -148,4 +148,20 @@ describe('ArtifactReturnSection', () => {
     );
     expect(container.querySelector('[data-lcos-artifact-return]')).toBeNull();
   });
+
+  it('readReviews 失败时显示 honest error，不把读取失败伪装成空态', async () => {
+    const collaboration = {
+      readReviews: async () => {
+        throw new Error('review backend unavailable');
+      },
+      approve: vi.fn(),
+      retry: vi.fn(),
+    } as unknown as CoreCollaborationClient;
+    const container = await render(
+      <ArtifactReturnSection collaboration={collaboration} projectId="p1" conversationId="c-1" />,
+    );
+    expect(container.querySelector('[data-lcos-artifact-return]')).not.toBeNull();
+    expect(container.textContent).toContain('复核状态读取失败');
+    expect(container.textContent).toContain('review backend unavailable');
+  });
 });

@@ -170,12 +170,9 @@ export class CoreCollaborationClient {
     const pendingInputId = session.activity.pendingInputId;
     const activeRunId = session.activity.activeRunId;
     if (pendingInputId === undefined || activeRunId === undefined) return undefined;
-    let request;
-    try {
-      request = await this.runs.getPendingInputRequest(activeRunId, signal);
-    } catch {
-      return undefined;
-    }
+    // CoreRunClient 已经把“合法的 404 / 当前没有 pending input”折算成 undefined。
+    // 其它读取失败必须继续向上抛，让产品层显示 honest error，不能伪装成“没有待回答”。
+    const request = await this.runs.getPendingInputRequest(activeRunId, signal);
     if (request === undefined || request.status !== 'pending') return undefined;
     return {
       schemaVersion: 1,
@@ -222,8 +219,10 @@ export class CoreCollaborationClient {
           });
         }
       }
-    } catch {
-      // 读取失败 = 无可用复核面（UI 显示空态，不伪造）。
+    } catch (error: unknown) {
+      // 读取失败 != “当前没有待复核产出”。
+      // 让上层 ArtifactReturnSection 进入 error 状态，避免把 5xx / 网络故障伪装成空态。
+      throw error;
     }
     return reviews;
   }
@@ -459,7 +458,14 @@ export class CoreCollaborationClient {
     }
   }
 
-  /** 交接：ReceiverRuntimeService.prepareHandoff（快照冻结，零副作用切换）。 */
+  /**
+   * 交接必须代表完整 Receiver 切换完成。
+   *
+   * 当前 Core 暴露的 /receiver-handoff 只负责 prepareHandoff：
+   * 冻结/准备 handoff pack，本身不完成 receiver binding 切换。
+   * 在 authoritative bind/commit 事务接入 facade 前，handoff 必须 fail-closed，
+   * 不能把 prepare receipt 冒充成产品层“交接完成”。
+   */
   async handoff(
     projectId: string,
     fromConversationId: string | null,
@@ -470,25 +476,12 @@ export class CoreCollaborationClient {
     },
     signal?: AbortSignal,
   ): Promise<CollaborationCommandResultV1> {
-    try {
-      await coreRequest<unknown>(
-        this.http,
-        'POST',
-        `/projects/${encodeURIComponent(projectId)}/receiver-handoff`,
-        {
-          body: {
-            fromConversationId,
-            toConversationId: input.conversationId,
-            surface: context.surface,
-            selectionEntityIds: context.selectionEntityIds ?? [],
-          },
-          signal,
-        },
-      );
-      return receipt('handoff', { conversationId: input.conversationId });
-    } catch (error: unknown) {
-      return toProductError(error, '交接失败');
-    }
+    void projectId;
+    void fromConversationId;
+    void input;
+    void context;
+    void signal;
+    return unavailable('「交接」尚未接通完整的 Receiver 切换事务；当前仅有交接快照准备能力');
   }
 
   // ------------------------------------------------------------------

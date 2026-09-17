@@ -45,7 +45,9 @@ export function ArtifactReturnSection({ collaboration, projectId, conversationId
   }, [load]);
 
   const pending = reviews.filter((review) => review.status === 'pending_review');
-  if (pending.length === 0) return null;
+  // loading/error 时 reviews 仍可能是空数组，但这不代表“没有待复核产出”。
+  // 只有一次读取成功后，才能把空 pending 列表解释为真正的空态。
+  if (state === 'ready' && pending.length === 0) return null;
 
   const decide = (review: CollaborationReviewV1, action: Action): void => {
     const busyKey = `${action}:${review.returnId}`;

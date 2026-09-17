@@ -94,6 +94,37 @@ test('readTimeline：limit 参数进 query', async () => {
   assert.equal(calls[0]?.url, `${BASE}/projects/p-1/connected-conversations/c-1/collaboration-timeline?limit=10`);
 });
 
+test('readPendingInput：合法 404 仍可折算为空，但 5xx 必须向上抛，不能伪装成“没有待回答”', async () => {
+  const { http, calls } = stubHttp({
+    'GET http://core.test/projects/p-1/connected-conversations/c-1/collaboration-session': {
+      value: {
+        schemaVersion: 1,
+        projectId: 'p-1',
+        conversationId: 'c-1',
+        activity: { pendingInputId: 'req-1', activeRunId: 'run-1' },
+      },
+    },
+    'GET http://core.test/runs/run-1/input-request': { status: 500 },
+  });
+  const collaboration = new CoreCollaborationClient(http);
+  await assert.rejects(() => collaboration.readPendingInput('p-1', 'c-1'));
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1]?.url, `${BASE}/runs/run-1/input-request`);
+});
+
+test('readReviews：下游读取失败必须向上抛，不能折算成空 review 列表', async () => {
+  const { http, calls } = stubHttp({
+    'GET http://core.test/projects/p-1/connected-conversations/c-1/work-view': {
+      value: { runs: [{ runId: 'run-1' }] },
+    },
+    'GET http://core.test/projects/p-1/runs': { status: 500 },
+  });
+  const collaboration = new CoreCollaborationClient(http);
+  await assert.rejects(() => collaboration.readReviews('p-1', 'c-1'));
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1]?.url, `${BASE}/projects/p-1/runs`);
+});
+
 test('answerInput：pendingInputId 映射 requestId，走同一 Run 的 input-request 路由', async () => {
   const { http, calls } = stubHttp({ 'POST http://core.test/runs/run-9/input-request': { value: {} } });
   const collaboration = new CoreCollaborationClient(http);
@@ -170,17 +201,16 @@ test('resume：会话不存在 → unavailable，不发起 submit', async () => 
   assert.equal(calls.length, 1);
 });
 
-test('handoff 走 receiver-handoff 路由（from/to/surface/selection 透传）', async () => {
-  const { http, calls } = stubHttp({ 'POST http://core.test/projects/p-1/receiver-handoff': { status: 201, value: {} } });
+test('handoff：完整 receiver 切换事务未接通前 fail-closed，不把 prepareHandoff 冒充完成态', async () => {
+  const { http, calls } = stubHttp({});
   const collaboration = new CoreCollaborationClient(http);
   const result = await collaboration.handoff('p-1', 'c-old', { conversationId: 'c-new' }, { surface: { kind: 'main', surfaceId: 'main' }, selectionEntityIds: ['e-1'] });
-  assert.equal(result.ok, true);
-  assert.deepEqual(calls[0]?.body, {
-    fromConversationId: 'c-old',
-    toConversationId: 'c-new',
-    surface: { kind: 'main', surfaceId: 'main' },
-    selectionEntityIds: ['e-1'],
-  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, 'unavailable');
+    assert.match(result.error.userMessage, /Receiver/);
+  }
+  assert.equal(calls.length, 0);
 });
 
 test('send/fork 永远 fail-closed：不发任何 HTTP，不 fallback createRun', async () => {
