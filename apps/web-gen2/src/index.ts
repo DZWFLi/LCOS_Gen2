@@ -65,7 +65,7 @@ export type { PresentationDensity, InteractionPhase, ExplicitPresentationMode, N
 
 export { resolveLcosNodeHostPresentation, resolveLcosInitialGeometryPreset } from './presentation/nodeHostPresentation.js';
 export type { LcosHostSurface, LcosNodeHostPresentation, LcosInitialGeometryPreset } from './presentation/nodeHostPresentation.js';
-export { stableGlythHash, resolveGlythIdentity, resolveGlythPresentation, GLYTH_SHAPE_KEYS, GLYTH_IDENTITY_TONES } from './presentation/glythPresentation.js';
+export { stableGlythHash, resolveGlythIdentity, resolveGlythPresentation, glythInputFromCollaborationState, GLYTH_SHAPE_KEYS, GLYTH_IDENTITY_TONES } from './presentation/glythPresentation.js';
 export type { GlythShapeKey, GlythIdentityTone, GlythPresentationPose, GlythIdentity, GlythPresentationInput } from './presentation/glythPresentation.js';
 
 export { pointerModifiersOf, isAdditiveSelection, isReferencePick, isAdditiveSelectionExclusively } from './interaction/pointerIntent.js';

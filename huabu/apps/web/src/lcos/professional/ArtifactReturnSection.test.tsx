@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArtifactReturnSection } from './ArtifactReturnSection';
 
 import type { RunReview } from '@local-creative-os/contracts';
-import type { CoreRunClient } from '@local-creative-os/web-gen2';
+import type { CoreCollaborationClient, CoreRunClient } from '@local-creative-os/web-gen2';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,15 +40,14 @@ function review(overrides: Partial<RunReview> & { capabilities?: RunReview['capa
   } as unknown as RunReview;
 }
 
-function fakeRuns(value: readonly RunReview[]): { client: CoreRunClient; accept: ReturnType<typeof vi.fn> } {
-  const accept = vi.fn(async () => ({ currentRevision: { id: 'revision-next' } }));
-  const client = {
+function fakeRuns(value: readonly RunReview[]): { collaboration: CoreCollaborationClient; approve: ReturnType<typeof vi.fn> } {
+  const approve = vi.fn(async () => ({ ok: true as const, receipt: { schemaVersion: 1 as const, command: 'approve' as const, acceptedAt: '2026-09-17T00:00:00.000Z', returnId: 'ret-1' } }));
+  const runs = {
     listRunReviews: async () => value,
-    acceptArtifactReturn: accept,
-    rejectArtifactReturn: vi.fn(async () => ({})),
     retryArtifactReturn: vi.fn(async () => ({})),
   } as unknown as CoreRunClient;
-  return { client, accept };
+  const collaboration = { runs, approve } as unknown as CoreCollaborationClient;
+  return { collaboration, approve };
 }
 
 async function render(element: React.JSX.Element): Promise<HTMLElement> {
@@ -65,9 +64,9 @@ async function render(element: React.JSX.Element): Promise<HTMLElement> {
 
 describe('ArtifactReturnSection', () => {
   it('capabilities 全关时显示真实 reason，且不渲染任何决定按钮（不假装可用）', async () => {
-    const { client } = fakeRuns([review({})]);
+    const { collaboration } = fakeRuns([review({})]);
     const container = await render(
-      <ArtifactReturnSection runs={client} projectId="p1" runIds={['run-1']} />,
+      <ArtifactReturnSection collaboration={collaboration} projectId="p1" runIds={['run-1']} />,
     );
     const caps = Array.from(container.querySelectorAll('[data-lcos-review-capability]')).map(
       (el) => el.textContent,
@@ -80,7 +79,7 @@ describe('ArtifactReturnSection', () => {
   });
 
   it('存在待复核 returns 且 capability 可用时，采纳带 expectedBaseRevisionId 走真实通道', async () => {
-    const { client, accept } = fakeRuns([
+    const { collaboration, approve } = fakeRuns([
       review({
         returns: [
           {
@@ -100,21 +99,21 @@ describe('ArtifactReturnSection', () => {
       } as unknown as Partial<RunReview>),
     ]);
     const container = await render(
-      <ArtifactReturnSection runs={client} projectId="p1" runIds={['run-1']} />,
+      <ArtifactReturnSection collaboration={collaboration} projectId="p1" runIds={['run-1']} />,
     );
     const acceptButton = container.querySelector('[data-lcos-return-accept]');
     expect(acceptButton).not.toBeNull();
     await act(async () => {
       acceptButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(accept).toHaveBeenCalledWith('ret-1', { expectedBaseRevisionId: 'revision-base' });
+    expect(approve).toHaveBeenCalledWith('p1', { returnId: 'ret-1', decision: 'accept', expectedBaseRevisionId: 'revision-base' });
     expect(container.textContent).toContain('已采纳');
   });
 
   it('无关联 Run 时不渲染（不占位、不伪造空态）', async () => {
-    const { client } = fakeRuns([review({})]);
+    const { collaboration } = fakeRuns([review({})]);
     const container = await render(
-      <ArtifactReturnSection runs={client} projectId="p1" runIds={[]} />,
+      <ArtifactReturnSection collaboration={collaboration} projectId="p1" runIds={[]} />,
     );
     expect(container.querySelector('[data-lcos-artifact-return]')).toBeNull();
   });

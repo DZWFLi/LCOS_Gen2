@@ -64,3 +64,16 @@ export function resolveGlythPresentation(
   }
   return 'idle';
 }
+
+/**
+ * Collaboration Contract V1 → Glyth 呈现输入（Gate 4：Glyth 只消费 6 用户态）。
+ * needs_user → waiting（attention）；working/thinking → active；其余 → 默认 idle。
+ * undefined（投影未加载/不可用）→ 空输入，调用方回退到既有 descriptor 行为。
+ */
+export function glythInputFromCollaborationState(
+  state: import('@local-creative-os/contracts').CollaborationUserStateV1 | undefined,
+): GlythPresentationInput {
+  if (state === 'needs_user') return { waiting: true };
+  if (state === 'working' || state === 'thinking') return { active: true };
+  return {};
+}

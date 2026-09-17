@@ -1,6 +1,6 @@
 // WaitingInputSection — 原 Run 的待回答问题（Figma P0-07b WaitingInputBody 语义）。
-// 挂在 Conversation Work View 的 run/attention section：用真实 runId +
-// GET /runs/:id/input-request 读取；答案 POST 回同一 run（不新建 Run）。
+// 动作走 Collaboration command seam（facade.answerInput，receipt-or-error）；
+// 读取暂借 collaboration.runs（Gate 5 legacy 过渡，登记待 projection 覆盖）。
 // 无 waiting 请求时如实显示「没有待回答」（不伪造）。
 
 import { HttpError } from '@local-creative-os/web-gen2';
@@ -11,16 +11,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { RunInputRequestV1 } from '@local-creative-os/contracts';
-import type { CoreRunClient} from '@local-creative-os/web-gen2';
+import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 
 
 export interface WaitingInputSectionProps {
-  readonly runs: CoreRunClient;
+  readonly collaboration: CoreCollaborationClient;
+  readonly projectId: string;
   readonly runId: string;
   readonly runStatus: string;
 }
 
-export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSectionProps): React.JSX.Element {
+export function WaitingInputSection({ collaboration, projectId, runId, runStatus }: WaitingInputSectionProps): React.JSX.Element {
   const [request, setRequest] = useState<RunInputRequestV1 | undefined>(undefined);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [answerText, setAnswerText] = useState('');
@@ -31,7 +32,7 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
 
   const load = useCallback((): void => {
     setState('loading');
-    void runs
+    void collaboration.runs
       .getPendingInputRequest(runId)
       .then((value) => {
         setRequest(value);
@@ -41,7 +42,7 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
         setState('error');
         setErrorDetail(error instanceof HttpError ? error.message : String(error));
       });
-  }, [runs, runId]);
+  }, [collaboration, runId]);
 
   useEffect(() => {
     load();
@@ -54,20 +55,25 @@ export function WaitingInputSection({ runs, runId, runStatus }: WaitingInputSect
     setSubmitting(true);
     setErrorDetail(undefined);
     setReceipt(null);
-    void runs
-      .answerInput(runId, {
-        requestId: request.requestId,
-        ...(text === '' ? {} : { text }),
+    void collaboration
+      .answerInput(projectId, runId, {
+        pendingInputId: request.requestId,
+        answer: text,
         ...(selected.length === 0 ? {} : { selectedOptions: selected }),
       })
-      .then(() => {
-        setReceipt('回答已提交（同一 Run，不新建）');
-        setAnswerText('');
-        setSelected([]);
-        load();
+      .then((result) => {
+        if (result.ok) {
+          setReceipt('回答已提交（同一 Run，不新建）');
+          setAnswerText('');
+          setSelected([]);
+          load();
+        } else {
+          // 产品错误：保留输入，供编辑后重试
+          setErrorDetail(result.error.userMessage);
+        }
       })
       .catch((error: unknown) => {
-        // 失败保留输入，供编辑后重试
+        // transport 级异常（ seam 未接住时）如实显示
         setErrorDetail(error instanceof HttpError ? `${error.message} (${error.status})` : String(error));
       })
       .finally(() => setSubmitting(false));

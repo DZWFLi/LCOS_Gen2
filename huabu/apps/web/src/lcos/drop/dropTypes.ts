@@ -20,6 +20,7 @@ export type DropTargetKind =
   | 'canvas'
   | 'railway-receive'
   | 'composer-reference'
+  | 'collaboration-reference'
   | 'external-import';
 
 export interface DropRect {
@@ -48,6 +49,11 @@ export type DropTargetSemantic =
     }
   | {
       readonly kind: 'composer-reference';
+    }
+  | {
+      /** CollaborationTarget（收敛方案 V1 §15）：Drop 到 Glyth = 作为 Reference 交给该 Conversation。 */
+      readonly kind: 'collaboration-reference';
+      readonly conversationId: string;
     }
   | {
       readonly kind: 'external-import';
@@ -89,9 +95,22 @@ export interface DropExternalImportIntent {
   readonly payload: Extract<DropPayload, { kind: 'file' | 'text' | 'url' }>;
 }
 
+/**
+ * CollaborationTarget intent（preview = execute）：
+ * 把已有实体作为 Reference 交给「该 Conversation」——preview 与 commit
+ * 使用同一 intent 对象（resolver 注释已约定调用方保留原对象），下游不再弹二次操作选择窗。
+ */
+export interface DropCollaborationReferenceIntent {
+  readonly kind: 'collaboration-reference';
+  readonly targetId: string;
+  readonly conversationId: string;
+  readonly reference: DropEntityRef;
+}
+
 export type DropIntent =
   | DropAssemblyApplyIntent
   | DropComposerReferenceIntent
+  | DropCollaborationReferenceIntent
   | DropExternalImportIntent;
 
 export type DropResolution =

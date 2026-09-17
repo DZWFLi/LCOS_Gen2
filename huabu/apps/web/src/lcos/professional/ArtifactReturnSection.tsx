@@ -1,10 +1,9 @@
 // ArtifactReturnSection — Run 结果的 Review 段（Draft → Accept / Reject / Retry）。
-// 真实来源：GET /projects/:pid/runs 的 returns + draftRevisions + capabilities；
-// 三个决定走 POST /artifact-returns/:id/{accept,reject,retry}（Core 真值，前端不建 review 状态）。
-// capability.enabled=false 时按钮禁用并显示真实 reason（如 no_pending_artifact_return），不假装可用。
+// 采纳/拒绝走 Collaboration command seam（facade.approve，receipt-or-error）；
+// 读取（listRunReviews）与 retry 暂借 collaboration.runs（Gate 5 legacy 过渡，登记待迁移）。
+// capability.enabled=false 时按钮禁用并显示真实 reason，不假装可用。
 // Accept 必须带 expectedBaseRevisionId：用 return.baseRevisionId（防覆盖他人已推进的 Current）。
 
-import { HttpError } from '@local-creative-os/web-gen2';
 import { CheckCheck, RotateCcw, ShieldQuestion, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -12,18 +11,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { RunReview } from '@local-creative-os/contracts';
-import type { CoreRunClient } from '@local-creative-os/web-gen2';
+import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 
 type Action = 'accept' | 'reject' | 'retry';
 type ArtifactReturnLike = RunReview['returns'][number];
 
 export interface ArtifactReturnSectionProps {
-  readonly runs: CoreRunClient;
+  readonly collaboration: CoreCollaborationClient;
   readonly projectId: string;
   readonly runIds: readonly string[];
 }
 
-export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactReturnSectionProps): React.JSX.Element | null {
+export function ArtifactReturnSection({ collaboration, projectId, runIds }: ArtifactReturnSectionProps): React.JSX.Element | null {
   const [reviews, setReviews] = useState<readonly RunReview[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
@@ -34,7 +33,7 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
 
   const load = useCallback((): void => {
     setState('loading');
-    void runs
+    void collaboration.runs
       .listRunReviews(projectId)
       .then((all) => {
         const wanted = new Set(runIds);
@@ -43,11 +42,11 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
       })
       .catch((error: unknown) => {
         setState('error');
-        setErrorDetail(error instanceof HttpError ? `${error.message} (${error.status})` : String(error));
+        setErrorDetail(error instanceof Error ? error.message : String(error));
       });
     // runIds 参与过滤；用 key 表达依赖避免每次渲染重载
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runs, projectId, key]);
+  }, [collaboration, projectId, key]);
 
   useEffect(() => {
     if (runIds.length === 0) return;
@@ -61,21 +60,27 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
     setBusy(busyKey);
     setReceipt(null);
     setErrorDetail(undefined);
+    const returnId = String(ret.id);
     const call =
-      action === 'accept'
-        ? runs.acceptArtifactReturn(String(ret.id), { expectedBaseRevisionId: ret.baseRevisionId })
-        : action === 'reject'
-          ? runs.rejectArtifactReturn(String(ret.id))
-          : runs.retryArtifactReturn(String(ret.id));
+      action === 'retry'
+        ? // retry 尚无独立产品命令（收敛方案 V1）；暂借 runs client，Gate 5 登记迁移。
+          collaboration.runs.retryArtifactReturn(returnId).then(() => ({ ok: true as const }))
+        : collaboration
+            .approve(projectId, {
+              returnId,
+              decision: action,
+              ...(action === 'accept' ? { expectedBaseRevisionId: String(ret.baseRevisionId) } : {}),
+            })
+            .then((result) =>
+              result.ok
+                ? ({ ok: true as const, currentRevisionId: undefined as string | undefined })
+                : Promise.reject(new Error(result.error.userMessage)),
+            );
     void call
-      .then((result) => {
-        const currentRevisionId =
-          action === 'accept'
-            ? (result as { currentRevision?: { id?: string } } | undefined)?.currentRevision?.id
-            : undefined;
+      .then(() => {
         setReceipt(
           action === 'accept'
-            ? `已采纳${currentRevisionId ? ` · Current ${currentRevisionId.slice(0, 10)}` : ''}`
+            ? '已采纳'
             : action === 'reject'
               ? '已拒绝该 Draft（Current 未改变）'
               : '已按同一 Draft 重试（未新建 Run）',
@@ -84,7 +89,7 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
       })
       .catch((error: unknown) => {
         // 冲突（如 base revision 已被推进）如实显示，不改写用户决策
-        setErrorDetail(error instanceof HttpError ? `${error.message} (${error.status})` : String(error));
+        setErrorDetail(error instanceof Error ? error.message : String(error));
       })
       .finally(() => setBusy(null));
   };
@@ -175,7 +180,7 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
                         disabled={!caps.reject.enabled || busy !== null}
                         title={caps.reject.enabled ? '拒绝该 Draft' : `不可用：${caps.reject.reason ?? '未说明'}`}
                         onClick={() => decide(ret, 'reject')}
-                        className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] disabled:opacity-40"
+                        className="rounded-full px-2.5 py-1 text-[11px] disabled:opacity-40"
                         style={{ color: lcosTokens.color.text, minHeight: 30 }}
                       >
                         <XCircle className="h-3 w-3" aria-hidden /> 拒绝
@@ -186,7 +191,7 @@ export function ArtifactReturnSection({ runs, projectId, runIds }: ArtifactRetur
                         disabled={!caps.retry.enabled || busy !== null}
                         title={caps.retry.enabled ? '基于同一 Draft 重试' : `不可用：${caps.retry.reason ?? '未说明'}`}
                         onClick={() => decide(ret, 'retry')}
-                        className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] disabled:opacity-40"
+                        className="rounded-full px-2.5 py-1 text-[11px] disabled:opacity-40"
                         style={{ color: lcosTokens.color.text, minHeight: 30 }}
                       >
                         <RotateCcw className="h-3 w-3" aria-hidden /> 重试

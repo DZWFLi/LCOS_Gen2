@@ -141,15 +141,21 @@ export function LcosComposerHost({
         refs,
       }))
       .then((result) => {
-        const id = (result as { id?: string } | null)?.id;
-        setState('done');
-        setReceipt(
-          id
-            ? `Run 已创建 · ${id.slice(0, 12)}`
-            : 'Run 已创建（回执未带 id，查阅 Main/运行节点）',
-        );
-        // The user may have changed projects, receiver, or draft while awaiting Core.
-        useLcosShellStore.getState().clearSubmittedComposerPrompt(projectId, composerTarget, text);
+        if (result.ok) {
+          const runId = result.receipt.runId;
+          setState('done');
+          setReceipt(
+            runId !== undefined
+              ? `Run 已创建 · ${runId.slice(0, 12)}`
+              : 'Run 已创建（回执未带 id，查阅 Main/运行节点）',
+          );
+          // The user may have changed projects, receiver, or draft while awaiting Core.
+          useLcosShellStore.getState().clearSubmittedComposerPrompt(projectId, composerTarget, text);
+        } else {
+          // 产品错误（capability/conflict/offline）：草稿保留，如实显示用户可读原因。
+          setState('error');
+          setErrorDetail(result.error.userMessage);
+        }
       })
       .catch((error: unknown) => {
         setState('error');

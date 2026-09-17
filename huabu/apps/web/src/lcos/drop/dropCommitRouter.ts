@@ -1,4 +1,5 @@
 import type {
+  DropCollaborationReferenceIntent,
   DropCommitReceipt,
   DropComposerReferenceIntent,
   DropExternalImportIntent,
@@ -15,6 +16,13 @@ export interface DropCommitOwners {
   /** Existing ephemeral Composer reference owner. */
   readonly addComposerReference: (
     intent: DropComposerReferenceIntent,
+  ) => void | Promise<void>;
+  /**
+   * CollaborationTarget owner：把对象作为 Reference 交给该 Conversation。
+   * 缺席 = 该会话引用通道不可用 → fail-close（禁止 fake drop success）。
+   */
+  readonly addConversationReference?: (
+    intent: DropCollaborationReferenceIntent,
   ) => void | Promise<void>;
   /** Optional real capture/import owner; absent means fail-close. */
   readonly importExternal?: (
@@ -81,6 +89,14 @@ export class DropCommitRouter {
 
       if (intent.kind === 'composer-reference') {
         await owners.addComposerReference(intent);
+        return { status: 'success', transactionId, targetId: intent.targetId };
+      }
+
+      if (intent.kind === 'collaboration-reference') {
+        if (owners.addConversationReference === undefined) {
+          return failed(transactionId, intent, '当前会话不支持接收引用（owner 未配置）');
+        }
+        await owners.addConversationReference(intent);
         return { status: 'success', transactionId, targetId: intent.targetId };
       }
 

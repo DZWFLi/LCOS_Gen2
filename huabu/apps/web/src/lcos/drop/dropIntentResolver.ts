@@ -81,6 +81,26 @@ export function resolveDropIntent(
         };
   }
 
+  if (target.semantic.kind === 'collaboration-reference') {
+    const reference = entityRefForPayload(payload);
+    if (reference === undefined) {
+      return ineligible(target, '只有已有实体可以作为该会话的引用');
+    }
+    // collaboration target 只能接收已有对象引用；文件/文本不在此通道（fail-close）。
+    if (payload.kind !== 'object' && payload.kind !== 'assembly') {
+      return ineligible(target, '拖入会话只能使用已有实体');
+    }
+    return {
+      status: 'ready',
+      intent: {
+        kind: 'collaboration-reference',
+        targetId: target.targetId,
+        conversationId: target.semantic.conversationId,
+        reference,
+      },
+    };
+  }
+
   if (target.semantic.kind === 'external-import') {
     if (
       payload.kind !== 'file' &&

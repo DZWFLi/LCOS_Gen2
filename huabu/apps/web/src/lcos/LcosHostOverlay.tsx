@@ -30,6 +30,7 @@ import { advanceDropAtScreenPoint } from './lcosRecognizers';
 
 import type {
   DropAssemblyApplyIntent,
+  DropCollaborationReferenceIntent,
   DropComposerReferenceIntent,
   DropTargetRegistration,
 } from './drop/dropTypes';
@@ -190,6 +191,24 @@ export const LcosHostOverlay: React.FC = () => {
       },
       addComposerReference: (referenceIntent: DropComposerReferenceIntent): void => {
         useLcosReferenceStore.getState().addEntityToDraft(referenceIntent.reference);
+      },
+      // CollaborationTarget（R1 合流）：把对象作为 Reference 交给该 Conversation。
+      // 真实 owner = 该会话的 Composer target + draft references（delegate 提交时随
+      // receiverConversationId 送达）；preview 即 execute，无二次选择。
+      addConversationReference: (referenceIntent: DropCollaborationReferenceIntent) => {
+        useLcosReferenceStore.getState().addEntityToDraft(referenceIntent.reference);
+        const shell = useLcosShellStore.getState();
+        if (shell.composerTarget?.receiverConversationId === referenceIntent.conversationId) {
+          // 已锚定该会话的 Composer：引用已入草稿，保持现状即可。
+          return;
+        }
+        shell.openComposer({
+          nodeId: `conversation:${referenceIntent.conversationId}`,
+          title: '会话引用',
+          anchor: { x: 0, y: 0, width: 0, height: 0 },
+          ...(shell.activeWorkspaceId === null ? {} : { workspaceId: shell.activeWorkspaceId }),
+          receiverConversationId: referenceIntent.conversationId,
+        });
       },
     };
     void router.commit(intent, dropState.transactionId, owners)

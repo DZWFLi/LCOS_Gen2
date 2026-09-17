@@ -119,6 +119,36 @@ describe('R1 single drop intent resolver', () => {
       },
     });
   });
+
+  it('CollaborationTarget（R1 合流）：Drop 到 Glyth = 作为 Reference 交给该会话（preview=execute）', () => {
+    const glyth: DropTargetRegistration = {
+      targetId: 'glyth:node-1',
+      kind: 'collaboration-reference',
+      label: '会话引用 · Glyth',
+      rect: canvasTarget.rect,
+      priority: 20,
+      enabled: true,
+      semantic: { kind: 'collaboration-reference', conversationId: 'c-1' },
+    };
+    const intent = resolveDropIntent(
+      { kind: 'object', entityType: 'artifact', entityId: 'a-1' },
+      glyth,
+    );
+    // preview = execute：一次解析出 intent，commit 使用同一对象，无二次选择窗。
+    expect(intent).toEqual({
+      status: 'ready',
+      intent: {
+        kind: 'collaboration-reference',
+        targetId: 'glyth:node-1',
+        conversationId: 'c-1',
+        reference: { entityType: 'artifact', entityId: 'a-1' },
+      },
+    });
+    // 文件/文本不是实体引用 → fail-close（不落座、不伪造成功）。
+    expect(
+      resolveDropIntent({ kind: 'file', name: 'x.png' }, glyth),
+    ).toMatchObject({ status: 'ineligible' });
+  });
 });
 
 describe('R1 commit router', () => {
@@ -147,6 +177,32 @@ describe('R1 commit router', () => {
     });
     expect(second).toBe(first);
     expect(applyAssembly).toHaveBeenCalledTimes(1);
+  });
+
+  it('CollaborationTarget commit：owner 存在才成功，缺席 fail-close（禁止 fake drop success）', async () => {
+    const router = new DropCommitRouter();
+    const addConversationReference = vi.fn();
+    const intent = {
+      kind: 'collaboration-reference' as const,
+      targetId: 'glyth:node-1',
+      conversationId: 'c-1',
+      reference: { entityType: 'artifact' as const, entityId: 'a-1' },
+    };
+    const ok = await router.commit(intent, 'tx-collab', {
+      applyAssembly: vi.fn(),
+      addComposerReference: vi.fn(),
+      addConversationReference,
+    });
+    expect(ok).toMatchObject({ status: 'success', transactionId: 'tx-collab' });
+    expect(addConversationReference).toHaveBeenCalledWith(intent);
+
+    const fail = await router.commit(intent, 'tx-collab-2', {
+      applyAssembly: vi.fn(),
+      addComposerReference: vi.fn(),
+      // 无 owner → fail-close
+    });
+    expect(fail.status).toBe('failed');
+    expect(fail.message).toContain('不支持接收引用');
   });
 
   it('fails closed when no external import owner exists', async () => {
