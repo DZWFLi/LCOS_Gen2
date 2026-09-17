@@ -1,9 +1,9 @@
 # LCOS Gen2 · T2 C2-2 / C2-3A Current Baseline Rebase Audit
 
-> 日期：2026-09-07  
-> 原稿来源：`C:\Users\1\Desktop\222`  
-> 旧源码基线：`LCOS_Gen2@c2ff890a867922a1256572199458438572eb0a8c`  
-> 当前权威基线：`LCOS_Gen2@232b2ca5` + `Huabu@a3c411e1f655191344285141f08c4738fa6015f7`  
+> 日期：2026-09-07
+> 原稿来源：`C:\Users\1\Desktop\222`
+> 旧源码基线：`LCOS_Gen2@c2ff890a867922a1256572199458438572eb0a8c`
+> 当前权威基线：`LCOS_Gen2@232b2ca5` + `Huabu@a3c411e1f655191344285141f08c4738fa6015f7`
 > 状态：REBASE AUDIT COMPLETE / ORIGINAL BLUEPRINTS NOT YET REWRITTEN / NO PRODUCTION PATCH
 
 ## 1. 审计对象
@@ -197,4 +197,3 @@ T5_BACKFILL
 3. C2-4 直接以 current `232b2ca5/a3c411e` 做 S10/S11/S12 census；
 4. 把 Space Move 纳入 S10 donor matrix；
 5. Production patch 继续锁定。
-

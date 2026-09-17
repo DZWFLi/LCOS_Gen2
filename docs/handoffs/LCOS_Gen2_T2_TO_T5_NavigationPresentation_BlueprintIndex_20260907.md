@@ -1,9 +1,9 @@
 # FROM T2 TO T5 · Navigation / Search / Marker Presentation Blueprint Index
 
-> 日期：2026-09-07  
-> 基线：`LCOS_Gen2/main@232b2ca5`  
-> Huabu upstream：`a3c411e1f655191344285141f08c4738fa6015f7`  
-> 目的：给 T5 提供长期可消费的 presentation seam 总索引  
+> 日期：2026-09-07
+> 基线：`LCOS_Gen2/main@232b2ca5`
+> Huabu upstream：`a3c411e1f655191344285141f08c4738fa6015f7`
+> 目的：给 T5 提供长期可消费的 presentation seam 总索引
 > 状态词：`CURRENT` = 当前源码存在；`PLANNED` = 已有蓝图、未落地；`GAP` = 仍需 owner 输出或实现
 
 ## 0. 使用方式

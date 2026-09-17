@@ -1,10 +1,10 @@
 # LCOS Gen2 · T2 C2-3B Spatial Navigator Exact Source Blueprint
 
-> 日期：2026-09-07  
-> 文档状态：v2 颗粒度审计已通过；Production patch 未施工  
-> Gen2 基线：`LCOS_Gen2/main@232b2ca5`  
-> Huabu upstream 基线：`a3c411e1f655191344285141f08c4738fa6015f7`  
-> 适用范围：Spatial Navigator 的 owner、挂载 seam、复用边界、测试与回滚  
+> 日期：2026-09-07
+> 文档状态：v2 颗粒度审计已通过；Production patch 未施工
+> Gen2 基线：`LCOS_Gen2/main@232b2ca5`
+> Huabu upstream 基线：`a3c411e1f655191344285141f08c4738fa6015f7`
+> 适用范围：Spatial Navigator 的 owner、挂载 seam、复用边界、测试与回滚
 > 禁止解释：本文件不授权修改 `huabu/`，不表示 T2/C2 已整体完成
 
 ## 1. 阶段结论

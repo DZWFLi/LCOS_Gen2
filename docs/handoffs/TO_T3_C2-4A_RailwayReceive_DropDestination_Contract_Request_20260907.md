@@ -1,7 +1,7 @@
 # 给 T3：C2-4A Railway Receive · DropDestination Contract Request
 
-> 可直接转发  
-> 请求方：T2 Navigation / Railway  
+> 可直接转发
+> 请求方：T2 Navigation / Railway
 > 当前基线：`LCOS_Gen2/main@232b2ca5` + `Huabu@a3c411e1f655191344285141f08c4738fa6015f7`
 
 T2 正在编写 `C2-4A Railway Receive Exact Source Blueprint`，需要你提供 T3 当前最终版的 typed DropDestination 与 commit seam。已关闭的产品语义不要重开，也不要为本请求新增实现。
@@ -50,4 +50,3 @@ OPEN GAPS
 - 不让 T3 保存 canonical Railway/Worksite truth；
 - 不用前端坐标或 node id 冒充 canonical destination；
 - 如果最终契约尚未落地，请给最后批准的 plan 原文路径和 planned exact signature，不要凭记忆复述。
-

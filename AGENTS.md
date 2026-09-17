@@ -65,11 +65,11 @@
 
 ## GEN2 前端重新总装硬规则
 
-1. 前端施工前必须读取 `docs/construction/PROJECT_READBACK.md`、设计负责人导出的 `LCOS_Figma_前端施工完整采用清单_20260913.md`、`SOURCE_ADOPTION_LEDGER.md`、`FIGMA_SOURCE_LEDGER.md`、`HUABU_RETIREMENT_LEDGER.md`。
+1. 前端施工前必须先读取 `docs/construction/GEN2_FRONTEND_UX_RUNTIME_CONTRACT.md`，再读 `docs/construction/PROJECT_READBACK.md`、设计负责人导出的 `LCOS_Figma_前端施工完整采用清单_20260913.md`、`SOURCE_ADOPTION_LEDGER.md`、`FIGMA_SOURCE_LEDGER.md`、`HUABU_RETIREMENT_LEDGER.md`。
 2. 新增用户可见组件前先从设计负责人母表导入对应 page/node/component/variant/status，再登记 donor 的 exact repo/commit/file/symbol、采用等级、target file/symbol、production caller、Figma token/asset、real producer/action owner、fallback 和浏览器证据。`NEEDS_FIGMA`、`CONCEPT_ONLY`、`RETIRED`、`GAP` 不得被施工者自行改写为完成态。
 3. 现成 donor 分 A 纯逻辑直接复用、B 机制换壳、C 编排重写、X 禁止迁移。没有核对 donor 不得重造近似组件；无法采用时记录具体依赖冲突。
 4. production route 只有一棵 LCOS App Shell；Huabu Canvas 只有一份。禁止用 overlay、z-index、透明遮罩保留两套产品壳。
-5. Global HUD、Railway、Professional Stage、Atlas、Workflow Hand、Reader/Work View 与 Composer 不得作为任意 Canvas overlay 总装。
+5. Global HUD、Railway、Professional Stage、Atlas、Workflow Hand、Reader/Work View 不得作为任意 Canvas overlay 总装。Composer 只允许经唯一 `LcosHostOverlay`/`CanvasFloatingPopover` 以对象近场形式挂载；不得成为 route-level 常驻底栏，也不得写入 Canvas truth。
 6. 旧 Huabu UI 退出 production tree 时保留其命令/机械 adapter；不得为同一动作重写第二套 store、fetch、session、camera 或 history。
 7. stock/native fallback 只用于明确失败。已绑定主流实体长期 fallback 视为未完成。
 8. 每个前端 Wave 必须给真实 production caller、整页浏览器 before/after、真实鼠标/键盘/拖放/reload 证据。isolated component test、typecheck、token/hex 清理不能单独证明前端完成。

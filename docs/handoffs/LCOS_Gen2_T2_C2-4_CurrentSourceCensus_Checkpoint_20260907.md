@@ -1,8 +1,8 @@
 # LCOS Gen2 · T2 C2-4 Current Source Census Checkpoint
 
-> 日期：2026-09-07  
-> 基线：`LCOS_Gen2/main@232b2ca5` + `Huabu@a3c411e1f655191344285141f08c4738fa6015f7`  
-> 范围：C2-4A Railway Receive / C2-4B Receiver / C2-4C Navigation More  
+> 日期：2026-09-07
+> 基线：`LCOS_Gen2/main@232b2ca5` + `Huabu@a3c411e1f655191344285141f08c4738fa6015f7`
+> 范围：C2-4A Railway Receive / C2-4B Receiver / C2-4C Navigation More
 > 状态：SOURCE CENSUS COMPLETE / EXACT BLUEPRINTS NEXT / NO PRODUCTION PATCH
 
 ## 1. Owner map
@@ -224,4 +224,3 @@ C2-4C blueprint          PENDING
 C2-4 integration         PENDING
 Production patch         LOCKED
 ```
-

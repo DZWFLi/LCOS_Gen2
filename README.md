@@ -16,7 +16,7 @@ App route
 → Canvas Host （Huabu Canvas kernel；Wave 2 收口为 CanvasHostBoundary）
 ```
 
-Global HUD、Railway、Professional Window、Context Atlas、Workflow Hand 与 Composer 属于 LCOS Shell/Worksite，不通过 Canvas overlays 充当整机。
+Global HUD、Railway、Professional Window、Context Atlas、Workflow Hand 与 Composer 属于 LCOS Shell/Worksite。Composer 可通过唯一受控 canvas portal 做对象近场呈现；它不进入 Canvas truth，也不作为 route-level 常驻底栏。其余项目级产品壳不得塞进 Canvas overlay。
 
 Main、Context、Workflow 是同一 Project 的三个语义工作现场，共享 entity identity 和同一 Canvas mechanics；不是三套 graph/store/runtime。三现场各自独立 camera/selection/layout/history，canvasId 由 Core workspaces 提供（首进由 SurfaceDock 建立并回写）。
 
@@ -26,6 +26,7 @@ Main、Context、Workflow 是同一 Project 的三个语义工作现场，共享
 
 ## 施工文档
 
+- 前端 UX 唯一挂载树与 owner 合同：`docs/construction/GEN2_FRONTEND_UX_RUNTIME_CONTRACT.md`
 - 施工认知与账本：`docs/construction/PROJECT_READBACK.md`、`SOURCE_ADOPTION_LEDGER.md`、`FIGMA_SOURCE_LEDGER.md`、`HUABU_RETIREMENT_LEDGER.md`
 - 逐 Wave handoff：`docs/handoffs/GEN2_NewFrontend_WaveN_*.md`
 - 浏览器验收脚本：`scripts/e2e/`（本地 Chromium + playwright-core）

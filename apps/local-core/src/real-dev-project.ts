@@ -99,6 +99,8 @@ const E2E_VIEW_LAYOUT: Record<string, DevViewLayout> = {
   milestone: { displayMode: 'thumbnail', size: { width: 240, height: 160 }, position: { x: 0, y: 300 } },
   reference2: { displayMode: 'thumbnail', size: { width: 240, height: 160 }, position: { x: 280, y: 300 } },
   decision: { displayMode: 'compact', size: { width: 220, height: 96 }, position: { x: 560, y: 300 } },
+  statement: { displayMode: 'card', size: { width: 385, height: 142 }, position: { x: 840, y: 300 } },
+  ambientAudio: { displayMode: 'compact', size: { width: 171, height: 96 }, position: { x: 1265, y: 300 } },
 }
 
 /**
@@ -152,6 +154,36 @@ function createGradientPng(
     pngChunk('IDAT', deflateSync(raw)),
     pngChunk('IEND', Buffer.alloc(0)),
   ])
+}
+
+/**
+ * Deterministic 8-bit mono PCM WAV for browser metadata acceptance.
+ * 38 seconds is deliberate: Figma 5388:186 labels the exact Main sample
+ * as `00:38`, so the e2e verifies duration from real media metadata rather
+ * than from a static success string.
+ */
+function createSilentWav(durationSeconds: number, sampleRate = 8000): Buffer {
+  const channels = 1
+  const bitsPerSample = 8
+  const bytesPerSample = bitsPerSample / 8
+  const sampleCount = Math.max(1, Math.round(durationSeconds * sampleRate))
+  const dataSize = sampleCount * channels * bytesPerSample
+  const output = Buffer.alloc(44 + dataSize)
+  output.write('RIFF', 0, 'ascii')
+  output.writeUInt32LE(36 + dataSize, 4)
+  output.write('WAVE', 8, 'ascii')
+  output.write('fmt ', 12, 'ascii')
+  output.writeUInt32LE(16, 16)
+  output.writeUInt16LE(1, 20)
+  output.writeUInt16LE(channels, 22)
+  output.writeUInt32LE(sampleRate, 24)
+  output.writeUInt32LE(sampleRate * channels * bytesPerSample, 28)
+  output.writeUInt16LE(channels * bytesPerSample, 32)
+  output.writeUInt16LE(bitsPerSample, 34)
+  output.write('data', 36, 'ascii')
+  output.writeUInt32LE(dataSize, 40)
+  output.fill(128, 44)
+  return output
 }
 
 function clampByte(value: number): number {
@@ -239,6 +271,22 @@ export function ensureRealDevProject(repository: SqliteMetadataRepository, works
       mimeType: 'image/png',
       kind: 'image',
       bytes: createGradientPng(512, 320, [20, 62, 74], [28, 96, 84]),
+    })
+    sourceFiles.push({
+      id: 'statement',
+      title: '品牌主张（e2e fixture）',
+      relativePath: 'brand-statement.e2e-fixture.txt',
+      mimeType: 'text/plain',
+      kind: 'other',
+      bytes: Buffer.from('越过边界，\n看见下一座山。\n', 'utf8'),
+    })
+    sourceFiles.push({
+      id: 'ambientAudio',
+      title: '山野环境声',
+      relativePath: 'ambient.e2e-fixture.wav',
+      mimeType: 'audio/wav',
+      kind: 'other',
+      bytes: createSilentWav(38),
     })
   }
   mkdirSync(workspaceRoot, { recursive: true })
@@ -454,16 +502,8 @@ export function ensureRealDevProject(repository: SqliteMetadataRepository, works
     checkpoints: [],
   }
   repository.save(snapshot)
-  // T2 C2-1C：种子 rail order（当前现场 = Main workspace），让 Railway 可见体有真实结构导航数据。
-  try {
-    repository.saveProjectViewRailOrder(
-      String(project.id),
-      workspaces.map((workspace) => ({ kind: 'scene' as const, viewId: String(workspace.id) })),
-      0,
-    )
-  } catch {
-    // 幂等/并发无关的种子写失败不阻塞项目创建（rail order 可随后由用户操作写入）。
-  }
+  // Railway 只呈现用户保存的具体长期目的地。Main / Context / Workflow 的
+  // 一级入口由 SurfaceDock 独占；不要把三张 root workspace 自动写成第二套 Dock。
   if (e2eFixture) seedE2eConnectedConversation(repository, project.id, createdAt)
   return true
 }

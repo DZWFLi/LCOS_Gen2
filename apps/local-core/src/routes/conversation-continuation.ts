@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type {
+  ContinuationExternalEvidenceV1,
   ContinuationProviderAdapterV1,
   ContinuationReconcileRequestV1,
   ContinuationStepAdvanceRequestV1,
@@ -117,13 +118,12 @@ function parseAdvance(raw: unknown): { readonly input: Omit<ContinuationStepAdva
   if (Object.keys(inputRaw).some((key) => !['step', 'outcome', 'externalEvidence', 'errorEvidence', 'expectedRevision'].includes(key))) {
     return { error: 'Unexpected field in continuation step advance input.' }
   }
+  const externalEvidence = inputRaw.externalEvidence === undefined ? undefined : parseExternalEvidence(inputRaw.externalEvidence)
+  if (externalEvidence !== undefined && 'error' in externalEvidence) return externalEvidence
   const input: Omit<ContinuationStepAdvanceRequestV1, never> = {
     step,
     outcome: inputRaw.outcome,
-    ...(inputRaw.externalEvidence === undefined ? {}
-      : isRecord(inputRaw.externalEvidence)
-        ? { externalEvidence: { schemaVersion: 1, provider: String(inputRaw.externalEvidence.provider), externalSessionId: String(inputRaw.externalEvidence.externalSessionId), correlationId: String(inputRaw.externalEvidence.correlationId), createdAt: String(inputRaw.externalEvidence.createdAt) } }
-        : {}),
+    ...(externalEvidence === undefined ? {} : { externalEvidence: externalEvidence.value }),
     ...(typeof inputRaw.errorEvidence === 'string' ? { errorEvidence: inputRaw.errorEvidence } : {}),
     ...(typeof inputRaw.expectedRevision === 'number' ? { expectedRevision: inputRaw.expectedRevision } : {}),
   }
@@ -138,15 +138,38 @@ function parseReconcile(raw: unknown): { readonly input: Omit<ContinuationReconc
   if (Object.keys(inputRaw).some((key) => !['externalConfirmed', 'externalEvidence', 'errorEvidence', 'expectedRevision'].includes(key))) {
     return { error: 'Unexpected field in continuation reconcile input.' }
   }
+  const externalEvidence = inputRaw.externalEvidence === undefined ? undefined : parseExternalEvidence(inputRaw.externalEvidence)
+  if (externalEvidence !== undefined && 'error' in externalEvidence) return externalEvidence
   const input: Omit<ContinuationReconcileRequestV1, never> = {
     ...(typeof inputRaw.externalConfirmed === 'boolean' ? { externalConfirmed: inputRaw.externalConfirmed } : {}),
-    ...(inputRaw.externalEvidence !== undefined && isRecord(inputRaw.externalEvidence)
-      ? { externalEvidence: { schemaVersion: 1, provider: String(inputRaw.externalEvidence.provider), externalSessionId: String(inputRaw.externalEvidence.externalSessionId), correlationId: String(inputRaw.externalEvidence.correlationId), createdAt: String(inputRaw.externalEvidence.createdAt) } }
-      : {}),
+    ...(externalEvidence === undefined ? {} : { externalEvidence: externalEvidence.value }),
     ...(typeof inputRaw.errorEvidence === 'string' ? { errorEvidence: inputRaw.errorEvidence } : {}),
     ...(typeof inputRaw.expectedRevision === 'number' ? { expectedRevision: inputRaw.expectedRevision } : {}),
   }
   return { input, origin }
+}
+
+function parseExternalEvidence(raw: unknown): { readonly value: ContinuationExternalEvidenceV1 } | { readonly error: string } {
+  if (!isRecord(raw)
+    || raw.schemaVersion !== 1
+    || typeof raw.provider !== 'string' || raw.provider.trim() === ''
+    || typeof raw.externalSessionId !== 'string' || raw.externalSessionId.trim() === ''
+    || typeof raw.correlationId !== 'string' || raw.correlationId.trim() === ''
+    || typeof raw.createdAt !== 'string' || raw.createdAt.trim() === '') {
+    return { error: 'externalEvidence requires schemaVersion=1, provider, externalSessionId, correlationId and createdAt.' }
+  }
+  if (Object.keys(raw).some((key) => !['schemaVersion', 'provider', 'externalSessionId', 'correlationId', 'createdAt', 'raw'].includes(key))) {
+    return { error: 'Unexpected field in externalEvidence.' }
+  }
+  return {
+    value: {
+      schemaVersion: 1,
+      provider: raw.provider,
+      externalSessionId: raw.externalSessionId,
+      correlationId: raw.correlationId,
+      createdAt: raw.createdAt,
+    },
+  }
 }
 
 export async function handleConversationContinuationRoute(ctx: ConversationContinuationRouteContext): Promise<boolean> {

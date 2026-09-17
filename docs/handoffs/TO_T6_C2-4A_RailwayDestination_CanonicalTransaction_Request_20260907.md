@@ -1,7 +1,7 @@
 # 给 T6：C2-4A Railway Receive · Canonical Destination/Transaction Request
 
-> 可直接转发  
-> 请求方：T2 Navigation / Railway  
+> 可直接转发
+> 请求方：T2 Navigation / Railway
 > 当前基线：`LCOS_Gen2/main@232b2ca5` + `Huabu@a3c411e1f655191344285141f08c4738fa6015f7`
 
 T2 正在编写 `C2-4A Railway Receive Exact Source Blueprint`，需要你提供 T6 当前最终版的 Railway destination eligibility、canonical ref 与 semantic transaction 契约。Phase B 已关闭语义不要重开，也不要为本请求新增数据库或实现。
@@ -62,4 +62,3 @@ OPEN GAPS
 - 不把 Collection、Scope、临时 Context block 自动加入 Railway；
 - 不用旧 `ProjectViewRailKindV0` 直接冒充最终 ontology；
 - 如果 exact contract 尚未落地，请返回最后批准 plan 的文件路径和 planned signature，并明确标 `PLAN ONLY`。
-
