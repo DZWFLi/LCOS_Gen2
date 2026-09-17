@@ -3,7 +3,7 @@
 // section 可 partial（identity_only 也可打开）；迟到回包由 controller 的 epoch/generation 丢弃。
 
 
-import { CoreContinuationClient, CoreConversationClient, CoreRunClient } from '@local-creative-os/web-gen2';
+import { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 import { ConversationWorkViewController } from '@local-creative-os/web-gen2';
 import { CircleDot, Radio, User } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -29,12 +29,13 @@ export function ConversationWorkViewBody({
   connectedConversationId,
 }: ConversationWorkViewBodyProps): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
+  const collaboration = useMemo(() => new CoreCollaborationClient(session.http), [session]);
   const controller = useMemo(
-    () => new ConversationWorkViewController(new CoreConversationClient(session.http)),
-    [session],
+    () => new ConversationWorkViewController(collaboration.conversations),
+    [collaboration],
   );
-  const runs = useMemo(() => new CoreRunClient(session.http), [session]);
-  const continuations = useMemo(() => new CoreContinuationClient(session.http), [session]);
+  const runs = collaboration.runs;
+  const continuations = collaboration.continuations;
   const [localOperations, setLocalOperations] = useState<readonly ContinuationRecoveryProjectionV1[] | null>(null);
   const composerOpen = useLcosShellStore((s) => s.composerOpen);
   const composerTarget = useLcosShellStore((s) => s.composerTarget);

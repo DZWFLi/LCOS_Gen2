@@ -4,7 +4,7 @@
 // workspaceId 必须用当前现场的真实 workspace（由 Shell 从 Core workspaces 反查传入）——
 // 写死 'main' 会被 Core 外键拒绝（FOREIGN KEY constraint failed → 409）。
 
-import { CoreRunClient, HttpError } from '@local-creative-os/web-gen2';
+import { CoreCollaborationClient, HttpError } from '@local-creative-os/web-gen2';
 import { ArrowUp, Paperclip, X } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 
@@ -68,7 +68,7 @@ export function LcosComposerHost({
   inline = false,
 }: LcosComposerHostProps): React.JSX.Element | null {
   const session = useMemo(() => createLcosCoreSession(), []);
-  const runs = useMemo(() => new CoreRunClient(session.http), [session]);
+  const collaboration = useMemo(() => new CoreCollaborationClient(session.http), [session]);
   const draftRefs = useLcosReferenceStore((s) => s.draft.orderedEntityRefs);
   const text = useLcosShellStore((s) => s.composerPrompt);
   const composerTarget = useLcosShellStore((s) => s.composerTarget);
@@ -93,8 +93,8 @@ export function LcosComposerHost({
     setErrorDetail(undefined);
     setReceipt(null);
     const refs: readonly CoreEntityRefLike[] = draftRefs;
-    void runs
-      .createRun(projectId, buildComposerRunInput({
+    void collaboration
+      .delegate(projectId, buildComposerRunInput({
         projectId,
         instruction: text.trim(),
         workspaceId,

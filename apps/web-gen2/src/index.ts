@@ -174,6 +174,7 @@ export type { LcosEndpointConfig, LcosHostRuntime, CreateLcosRuntimeDeps, PhaseC
 export type { RendererFamily, PresentationSpecies, PresentationDescriptor, NodeCapability, CoreEntityRefLoose } from './presentation/rendererRegistry.js';
 
 export { CoreConversationClient } from './backend/conversations.js';
+export { CoreCollaborationClient } from './backend/collaboration.js';
 export { CoreAssemblyClient } from './backend/assembly.js';
 export { CoreRailwayClient } from './backend/railway.js';
 export type { RailwayOrderWriteInputV1 } from './backend/railway.js';
