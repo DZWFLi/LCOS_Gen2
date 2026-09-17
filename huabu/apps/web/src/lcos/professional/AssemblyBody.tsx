@@ -15,15 +15,17 @@ import { DropdownMenu, DropdownMenuItem, DropdownMenuSubmenu } from '@/component
 import useCanvasStore from '@/store/canvasStore';
 
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { acquireDrop } from '../lcosRecognizers';
+import { useLcosDropStore } from '../lcosDropState';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { childSurfaceForItem, workspaceTargetsForItem } from '../navigation/workspaceTargets';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
+import { assemblySourceRefOf } from './assemblySourceRef';
 
 import type {
   AssemblyApplyResultV1,
-  AssemblySourceRefV1,
   AssemblyTargetRefV1,
   WarehouseItemV1,
   WarehouseEntityKindV1,
@@ -103,23 +105,7 @@ export function previewUrlOf(item: WarehouseItemV1): string | undefined {
   return /^(?:https?:\/\/|blob:|data:image\/)/i.test(value) ? value : undefined;
 }
 
-export function assemblySourceRefOf(item: WarehouseItemV1): AssemblySourceRefV1 {
-  switch (item.kind) {
-    case 'artifact':
-      return {
-        kind: 'artifactView',
-        id: item.entityRef.viewId ?? item.entityRef.id,
-      };
-    case 'note':
-    case 'resource':
-    case 'conversation':
-    case 'context':
-    case 'workflow':
-    case 'scene':
-    case 'collection':
-      return { kind: item.kind, id: item.entityRef.id };
-  }
-}
+export { assemblySourceRefOf } from './assemblySourceRef';
 
 function targetLabel(target: AssemblyTargetRefV1): string {
   switch (target.kind) {
@@ -234,6 +220,39 @@ export function AssemblyBody({
       .finally(() => setApplying(false));
   };
 
+  const beginAssemblyDrag = (
+    event: React.DragEvent<HTMLDivElement>,
+    item: WarehouseItemV1,
+  ): void => {
+    const sourceRef = assemblySourceRefOf(item);
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData(
+      'application/x-lcos-assembly',
+      JSON.stringify({ itemId: item.entityRef.id, sourceRef }),
+    );
+    acquireDrop({
+      kind: 'assembly',
+      itemId: item.entityRef.id,
+      sourceRef,
+    });
+  };
+
+  const finishAssemblyDrag = (): void => {
+    const store = useLcosDropStore.getState();
+    if (store.state.status === 'preview' && store.resolution?.status === 'ready') {
+      const transactionId = globalThis.crypto?.randomUUID?.() ?? `drop-${Date.now()}`;
+      store.commitAt(transactionId);
+      return;
+    }
+    if (
+      store.state.status === 'tracking' ||
+      store.state.status === 'dwell' ||
+      store.state.status === 'preview'
+    ) {
+      store.cancel();
+    }
+  };
+
   const enterChildWorkspace = (item: WarehouseItemV1, workspace: Workspace): void => {
     if (workspace.canvasId === undefined) return;
     const targetSurface = childSurfaceForItem(item, workspace);
@@ -301,6 +320,9 @@ export function AssemblyBody({
               data-lcos-assembly-item={item.entityRef.id}
               data-lcos-assembly-item-kind={item.kind}
               data-lcos-assembly-visual-family={item.visualFamily ?? item.kind}
+              draggable
+              onDragStart={(event) => beginAssemblyDrag(event, item)}
+              onDragEnd={finishAssemblyDrag}
               className="group mb-4 flex break-inside-avoid flex-col gap-2 rounded-2xl p-3 transition-shadow hover:shadow-md focus-within:shadow-md"
               onMouseEnter={() => setActiveItemId(item.entityRef.id)}
               onMouseLeave={() => setActiveItemId((current) => current === item.entityRef.id ? null : current)}

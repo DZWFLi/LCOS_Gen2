@@ -24,6 +24,7 @@ import { nodeIdAtScreenPoint } from '@/handler/canvasNodeAtPoint';
 import { useLcosDropStore } from './lcosDropState';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { markReferencePickCompleted } from './referenceClickSuppressor';
+import { resolveDropIntent } from './drop/dropIntentResolver';
 
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
 import type { PointerRecognizer } from '@/handler/pointerRouter';
@@ -124,6 +125,55 @@ export function acquireDrop(payload: DropPayload): void {
 }
 
 /**
+ * Advance an in-flight drop from a screen-space point. Pointer-router and
+ * native HTML5 dragover events share this exact path, so a source cannot get
+ * one resolver for pointer dragging and another for browser dragging.
+ */
+export function advanceDropAtScreenPoint(
+  point: { readonly clientX: number; readonly clientY: number },
+  ctx: Pick<CanvasPointerRouterContext, 'wrapper' | 'instance'>,
+  now = Date.now(),
+): void {
+  const store = useLcosDropStore.getState();
+  const state = store.state;
+  if (state.status === 'idle' || state.status === 'committing' || state.status === 'failed') return;
+  const rect = ctx.wrapper.getBoundingClientRect();
+  store.setBounds({
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom,
+  });
+  const target = store.targetAt({ x: point.clientX, y: point.clientY });
+  const destination = target === undefined
+    ? undefined
+    : {
+        targetId: target.targetId,
+        previewPoint: {
+          x: point.clientX - rect.left,
+          y: point.clientY - rect.top,
+        },
+      };
+  const resolution = target === undefined
+    ? undefined
+    : resolveDropIntent(state.payload, target);
+  const placementPoint = target?.kind === 'canvas'
+    ? ctx.instance.screenToFlowPosition({
+        x: point.clientX,
+        y: point.clientY,
+      })
+    : undefined;
+  store.advance(
+    { x: point.clientX - rect.left, y: point.clientY - rect.top },
+    target !== undefined,
+    now,
+    destination,
+    resolution,
+    placementPoint,
+  );
+}
+
+/**
  * Semantic-drop recognizer: positional driver for an in-flight drop. Pure
  * observer — it never claims a pointer (so it never fights node drag /
  * selection) and only advances the machine while a drop with a payload is
@@ -147,26 +197,28 @@ export function createDropRecognizer(): PointerRecognizer<
         activePointerId = event.pointerId;
       },
       onMove: (event, ctx) => {
+        // Native drag sources can acquire the payload just after pointerdown;
+        // accept the first subsequent move for the in-flight gesture instead
+        // of silently missing the whole drop.
+        if (activePointerId === null) {
+          if (useLcosDropStore.getState().state.status === 'idle') return;
+          activePointerId = event.pointerId;
+        }
         if (event.pointerId !== activePointerId) return;
-        const rect = ctx.wrapper.getBoundingClientRect();
-        useLcosDropStore.getState().setBounds({
-          left: rect.left,
-          right: rect.right,
-          top: rect.top,
-          bottom: rect.bottom,
-        });
-        useLcosDropStore.getState().advance(
-          { x: event.clientX - rect.left, y: event.clientY - rect.top },
-          false,
-          Date.now(),
-        );
+        advanceDropAtScreenPoint(event, ctx);
       },
       onUp: (event) => {
         if (event.pointerId !== activePointerId) return;
         activePointerId = null;
-        const status = useLcosDropStore.getState().state.status;
+        const store = useLcosDropStore.getState();
+        const status = store.state.status;
+        if (status === 'preview' && store.resolution?.status === 'ready') {
+          const id = globalThis.crypto?.randomUUID?.() ?? `drop-${Date.now()}`;
+          store.commitAt(id);
+          return;
+        }
         if (status === 'tracking' || status === 'dwell' || status === 'preview') {
-          useLcosDropStore.getState().cancel();
+          store.cancel();
         }
       },
       onCancel: (event) => {

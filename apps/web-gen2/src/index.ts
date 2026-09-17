@@ -90,6 +90,7 @@ export type {
   SemanticDropState,
   DropPayload,
   DropDestination,
+  DropIntentSnapshot,
   DropBounds,
   SurfacePoint,
 } from './interaction/semanticDropMachine.js';
@@ -178,6 +179,8 @@ export { CoreCollaborationClient } from './backend/collaboration.js';
 export { CoreAssemblyClient } from './backend/assembly.js';
 export { CoreRailwayClient } from './backend/railway.js';
 export type { RailwayOrderWriteInputV1 } from './backend/railway.js';
+export { railwayRefKeyV1, reorderRailwayRefV1, removeRailwayRefV1 } from './navigation/railwayOrder.js';
+export type { RailwayReorderPlacementV1 } from './navigation/railwayOrder.js';
 export { CoreContinuationClient } from './backend/continuation.js';
 export { CoreRunClient } from './backend/runs.js';
 export type { CreateRunInputV1 } from './backend/runs.js';
@@ -191,8 +194,25 @@ export type { ComposerViewStateV1, ComposerSubmitOutcomeV1, ComposerViewInputV1 
 export { ComposerController } from './composer/composerController.js';
 export type { ComposerControllerStateV1, ComposerReferenceLikeV1 } from './composer/composerController.js';
 
-export { professionalRegionRefV1, rectsOverlapV1, placeProfessionalRegionV1 } from './windows/professionalWindowLayout.js';
-export type { ProfessionalBodyKeyV1, ProfessionalRectV1, ProfessionalRegionRefV1, ProfessionalWindowEnvironmentV1 } from './windows/professionalWindowLayout.js';
+export {
+  professionalRegionRefV1,
+  rectsOverlapV1,
+  placeProfessionalRegionV1,
+  deriveProfessionalWindowEnvironmentV1,
+  safeInsetsFromRectV1,
+  clampProfessionalRectV1,
+  resizeProfessionalRectV1,
+} from './windows/professionalWindowLayout.js';
+export type {
+  ProfessionalBodyKeyV1,
+  ProfessionalRectV1,
+  ProfessionalRegionRefV1,
+  ProfessionalWindowEnvironmentV1,
+  ProfessionalRegionLayoutV1,
+  ProfessionalRegionPlacementV1,
+  ProfessionalEdgeInsetsV1,
+  ProfessionalResizeHandleV1,
+} from './windows/professionalWindowLayout.js';
 
 export { createEmptyConversationWorkViewV1 } from './lcos/conversation/conversationWorkViewModel.js';
 export type { ConversationWorkViewSectionKindV1, ConversationWorkViewSectionStatusV1, ConversationWorkViewSectionStateV1, ConversationWorkViewStateV1 } from './lcos/conversation/conversationWorkViewModel.js';

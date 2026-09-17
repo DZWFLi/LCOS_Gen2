@@ -17,11 +17,6 @@ import type { DropPayload } from '@local-creative-os/web-gen2';
 
 const ACCENT = '#2e90ff';
 
-const SURFACE_LABEL: Record<string, string> = {
-  'surface:left-dock': '左侧导航坞',
-  'surface:bottom-dock': '底部停靠区',
-};
-
 function payloadAction(payload: DropPayload): string {
   switch (payload.kind) {
     case 'object':
@@ -43,22 +38,26 @@ function shortId(id: string): string {
 
 export const LcosDropPreview: React.FC = () => {
   const state = useLcosDropStore((s) => s.state);
+  const resolution = useLcosDropStore((s) => s.resolution);
+  const targets = useLcosDropStore((s) => s.targets);
   if (state.status !== 'preview') return null;
 
   const { destination, payload } = state;
-  const label = SURFACE_LABEL[destination.surface] ?? destination.surface;
+  const target = targets().find((item) => item.targetId === destination.targetId);
+  const targetLabel = target?.label ?? destination.targetId;
+  const ineligible = resolution?.status === 'ineligible';
 
   return (
     <div
       data-lcos-drop-preview=""
       style={{
         position: 'absolute',
-        left: destination.place.x,
-        top: destination.place.y,
+        left: destination.previewPoint.x,
+        top: destination.previewPoint.y,
         transform: 'translate(-50%, -50%)',
         padding: '6px 10px',
         borderRadius: 8,
-        background: ACCENT,
+        background: ineligible ? 'rgba(158, 73, 62, 0.92)' : ACCENT,
         color: '#fff',
         fontSize: 12,
         fontWeight: 600,
@@ -68,7 +67,9 @@ export const LcosDropPreview: React.FC = () => {
         zIndex: overlayZ('drop-preview'),
       }}
     >
-      {payloadAction(payload)} → {label}
+      {ineligible
+        ? `暂不可放置 · ${resolution.reason}`
+        : `${payloadAction(payload)} → ${targetLabel}`}
     </div>
   );
 };

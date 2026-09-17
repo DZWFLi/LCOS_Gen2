@@ -3,7 +3,7 @@
 // 4 目的地 hug 178（8+36×4+6×3+8），与 Figma 两个变体尺寸都能对上，故不写死高度。
 // 目的地数量是唯一变体轴；hover 预览 / Enter 进入 / 拖动重排由 container 负责。
 
-import type { ComponentType } from 'react';
+import type { ComponentType, DragEvent } from 'react';
 
 export interface LcosRailwayViewItem {
   readonly key: string;
@@ -11,6 +11,15 @@ export interface LcosRailwayViewItem {
   readonly icon: ComponentType<{ className?: string }>;
   readonly selected?: boolean;
   readonly disabled?: boolean;
+  /** Container-owned ref used to publish live receive geometry. */
+  readonly onElement?: (element: HTMLButtonElement | null) => void;
+  /** Container-owned direct manipulation; this is reorder, never Receive. */
+  readonly draggable?: boolean;
+  readonly onDragStart?: (event: DragEvent<HTMLButtonElement>) => void;
+  readonly onDragOver?: (event: DragEvent<HTMLButtonElement>) => void;
+  readonly onDrop?: (event: DragEvent<HTMLButtonElement>) => void;
+  readonly onDragEnd?: (event: DragEvent<HTMLButtonElement>) => void;
+  readonly reorderDropTarget?: boolean;
 }
 
 export interface LcosRailwayViewProps {
@@ -44,14 +53,21 @@ export function LcosRailwayView({ items, onSelect, footer }: LcosRailwayViewProp
           return (
             <button
               key={item.key}
+              ref={item.onElement}
               type="button"
+              draggable={item.draggable}
               data-lcos-railway-item={item.key}
+              data-lcos-railway-reorder-target={item.reorderDropTarget ? 'true' : undefined}
               data-lcos-variant={variant}
               aria-current={item.selected ? 'page' : undefined}
               disabled={item.disabled}
               title={item.label}
               aria-label={item.label}
               onClick={() => onSelect?.(item.key)}
+              onDragStart={item.onDragStart}
+              onDragOver={item.onDragOver}
+              onDrop={item.onDrop}
+              onDragEnd={item.onDragEnd}
             >
               <Icon className="h-[21px] w-[21px]" />
             </button>

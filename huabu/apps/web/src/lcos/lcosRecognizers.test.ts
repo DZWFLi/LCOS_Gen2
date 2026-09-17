@@ -14,6 +14,8 @@ import { useLcosDropStore } from './lcosDropState';
 import { createReferencePickRecognizer, createDropRecognizer, acquireDrop } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
 
+import type { DropTargetRegistration } from './drop/dropTypes';
+
 interface FakeEvent {
   pointerId: number;
   pointerType: string;
@@ -74,6 +76,12 @@ const dropWrapper = {
   }),
 } as unknown as HTMLDivElement;
 const dropCtx = { wrapper: dropWrapper } as never;
+const dropCtxWithInstance = {
+  wrapper: dropWrapper,
+  instance: {
+    screenToFlowPosition: ({ x, y }: { x: number; y: number }) => ({ x, y }),
+  },
+} as never;
 
 const REF_A = { entityType: 'artifact', entityId: 'a1' };
 const REF_B = { entityType: 'artifact', entityId: 'b2' };
@@ -254,6 +262,35 @@ describe('semantic-drop recognizer (A06)', () => {
 
     recognizer.observe?.onUp?.(fakeEvent({ clientX: 400, clientY: 795 }), dropCtx);
     expect(useLcosDropStore.getState().state.status).toBe('idle');
+  });
+
+  it('resolves a registered canvas target and carries the exact intent to commit', async () => {
+    const target: DropTargetRegistration = {
+      targetId: 'canvas:main',
+      kind: 'canvas',
+      label: 'Main',
+      rect: { left: 0, top: 0, width: 1200, height: 800 },
+      priority: 10,
+      enabled: true,
+      semantic: { kind: 'canvas', targetRef: { kind: 'main' } },
+    };
+    useLcosDropStore.getState().registerTarget(target);
+    acquireDrop({ kind: 'object', entityType: 'artifact', entityId: 'a1' });
+    const { advanceDropAtScreenPoint } = await import('./lcosRecognizers');
+    advanceDropAtScreenPoint({ clientX: 400, clientY: 795 }, dropCtxWithInstance, 1000);
+    advanceDropAtScreenPoint({ clientX: 400, clientY: 795 }, dropCtxWithInstance, 1500);
+    const store = useLcosDropStore.getState();
+    expect(store.state.status).toBe('preview');
+    expect(store.resolution).toMatchObject({
+      status: 'ready',
+      intent: {
+        kind: 'assembly-apply',
+        targetId: 'canvas:main',
+        targetRef: { kind: 'main' },
+      },
+    });
+    store.commitAt('tx-canvas');
+    expect(useLcosDropStore.getState().state.status).toBe('committing');
   });
 
   it('ignores movement when no drop is in flight (idle observer is passive)', () => {

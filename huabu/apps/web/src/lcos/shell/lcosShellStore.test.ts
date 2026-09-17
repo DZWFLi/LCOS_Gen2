@@ -114,6 +114,53 @@ describe('Assembly target intent', () => {
   });
 });
 
+describe('Professional window topology', () => {
+  it('creates one floating region per opened instance instead of an implicit global tab group', () => {
+    const store = useLcosShellStore.getState();
+    store.clear();
+    store.openWindow('reader', '材料 A', 'artifact-a');
+    store.openWindow('reader', '材料 B', 'artifact-b');
+
+    const state = useLcosShellStore.getState();
+    expect(state.windowRegions).toHaveLength(2);
+    expect(state.windowRegions.every((region) => region.layout === 'floating')).toBe(true);
+    expect(state.windowRegions.every((region) => region.windowIds.length === 1)).toBe(true);
+    expect(new Set(state.windowRegions.map((region) => region.activeWindowId)).size).toBe(2);
+  });
+
+  it('keeps region activeWindowId in sync and allows an explicit dock layout', () => {
+    const store = useLcosShellStore.getState();
+    store.clear();
+    store.openWindow('reader', '材料 A', 'artifact-a');
+    const first = useLcosShellStore.getState().windows[0];
+    if (!first) throw new Error('window must exist');
+    const region = useLcosShellStore.getState().windowRegions[0];
+    if (!region) throw new Error('region must exist');
+
+    store.setWindowRegionLayout(region.id, 'docked-right');
+    store.activateWindow(first.id);
+    expect(useLcosShellStore.getState().windowRegions[0]).toMatchObject({
+      id: region.id,
+      layout: 'docked-right',
+      activeWindowId: first.id,
+    });
+  });
+
+  it('publishes and clears environment as ephemeral stage state', () => {
+    const store = useLcosShellStore.getState();
+    store.clear();
+    const environment = {
+      safeRect: { x: 0, y: 0, width: 800, height: 600 },
+      occupiedRects: [{ x: 400, y: 0, width: 400, height: 600 }],
+      activeRegionId: 'region-a',
+    };
+    store.publishWindowEnvironment(environment);
+    expect(useLcosShellStore.getState().windowEnvironment).toEqual(environment);
+    store.clearWindowEnvironment();
+    expect(useLcosShellStore.getState().windowEnvironment).toBeNull();
+  });
+});
+
 it('keeps an explicit child-worksite return context separate from project truth', () => {
   const store = useLcosShellStore.getState();
   store.clear();

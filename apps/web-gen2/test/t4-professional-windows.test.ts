@@ -3,9 +3,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  clampProfessionalRectV1,
+  deriveProfessionalWindowEnvironmentV1,
   placeProfessionalRegionV1,
   professionalRegionRefV1,
   rectsOverlapV1,
+  resizeProfessionalRectV1,
+  safeInsetsFromRectV1,
   type ProfessionalRectV1,
 } from '../src/windows/professionalWindowLayout.js';
 import { CoreConversationClient } from '../src/backend/conversations.js';
@@ -90,6 +94,61 @@ test('placeProfessionalRegionV1 avoids occupied rects, then steps, then yields u
     preferred,
   );
   assert.equal(blocked, undefined);
+});
+
+test('deriveProfessionalWindowEnvironmentV1 keeps floating obstruction precise and shrinks only a right dock', () => {
+  const viewport = { x: 0, y: 0, width: 1200, height: 800 };
+  const environment = deriveProfessionalWindowEnvironmentV1({
+    viewport,
+    activeRegionId: 'dock',
+    regions: [
+      { regionId: 'float', layout: 'floating', rect: { x: 320, y: 180, width: 420, height: 300 } },
+      { regionId: 'dock', layout: 'docked-right', rect: { x: 900, y: 80, width: 300, height: 720 } },
+    ],
+  });
+  assert.deepEqual(environment.safeRect, { x: 0, y: 0, width: 884, height: 800 });
+  assert.deepEqual(safeInsetsFromRectV1(viewport, environment.safeRect), { top: 0, right: 316, bottom: 0, left: 0 });
+  assert.equal(environment.occupiedRects.length, 2);
+  assert.equal(environment.activeRegionId, 'dock');
+});
+
+test('clampProfessionalRectV1 preserves minimum dimensions and keeps a window in the viewport', () => {
+  assert.deepEqual(
+    clampProfessionalRectV1(
+      { x: -40, y: -20, width: 100, height: 100 },
+      { x: 0, y: 0, width: 800, height: 600 },
+    ),
+    { x: 0, y: 0, width: 320, height: 240 },
+  );
+  assert.deepEqual(
+    clampProfessionalRectV1(
+      { x: 700, y: 500, width: 400, height: 300 },
+      { x: 0, y: 0, width: 800, height: 600 },
+    ),
+    { x: 400, y: 300, width: 400, height: 300 },
+  );
+});
+
+test('resizeProfessionalRectV1 applies directional deltas without crossing minimums', () => {
+  const viewport = { x: 0, y: 0, width: 1000, height: 700 };
+  assert.deepEqual(
+    resizeProfessionalRectV1(
+      { x: 100, y: 100, width: 600, height: 400 },
+      'se',
+      { x: -500, y: -300 },
+      viewport,
+    ),
+    { x: 100, y: 100, width: 320, height: 240 },
+  );
+  assert.deepEqual(
+    resizeProfessionalRectV1(
+      { x: 100, y: 100, width: 600, height: 400 },
+      'nw',
+      { x: 500, y: 400 },
+      viewport,
+    ),
+    { x: 380, y: 260, width: 320, height: 240 },
+  );
 });
 
 // ---- conversation client ----

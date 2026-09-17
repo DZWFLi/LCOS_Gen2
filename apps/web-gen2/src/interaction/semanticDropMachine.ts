@@ -6,12 +6,14 @@
 // zone + pop-up menu. A DropPayload may only express: an existing object ref,
 // an external file, text/URL, or an assembly item. A destination must never
 // open a second taxonomy picker — if the target is ambiguous the preview says
-// what WILL happen, and the user moves onto a specific container/slot to
+// what WILL happen, and the user moves onto a specific registered target to
 // commit.
 //
 // dwellMs starts at 420ms per the A06 task card: the Huabu pointer router and
 // desktop event rhythm differ, and touch/silky feel is judged after real drag
 // sessions — the token is a single knob (was 520ms in Gen1).
+
+import type { AssemblySourceRefV1 } from '@local-creative-os/contracts';
 
 /** A point in the coordinate system the caller gives us (px by default). */
 export type SurfacePoint = { readonly x: number; readonly y: number };
@@ -31,27 +33,45 @@ export type DropPayload =
   | { readonly kind: 'object'; readonly entityType: string; readonly entityId: string }
   | { readonly kind: 'file'; readonly name: string; readonly size?: number; readonly mime?: string }
   | { readonly kind: 'text' | 'url'; readonly value: string }
-  | { readonly kind: 'assembly'; readonly itemId: string };
+  /** Assembly rows carry the canonical source ref; itemId alone is not an identity. */
+  | { readonly kind: 'assembly'; readonly itemId: string; readonly sourceRef: AssemblySourceRefV1 };
 
 /**
- * The spatial intent the user has expressed by hovering a container/slot.
- * Phase A: expressed purely by edge anchor + surface; a richer container/slot
- * model lands with Phase C surfaces.
+ * The spatial intent the user has expressed by hovering a registered target.
+ * `targetId` is stable for the gesture; the host owns its semantic descriptor
+ * and the resolver owns the business operation. The pure machine deliberately
+ * knows nothing about Canvas, Railway, Composer, DOM, or React.
  */
 export interface DropDestination {
-  readonly kind: 'slot';
-  readonly anchor: 'left' | 'bottom';
-  readonly surface: string;
-  /** World/space placement point, converted by the Huabu viewport transformer. */
-  readonly place: SurfacePoint;
+  readonly targetId: string;
+  readonly previewPoint: SurfacePoint;
+}
+
+/** Small frozen reference retained through the commit lifecycle. */
+export interface DropIntentSnapshot {
+  readonly kind: string;
+  readonly targetId: string;
 }
 
 export type SemanticDropState =
   | { readonly status: 'idle' }
   | { readonly status: 'tracking'; readonly payload: DropPayload }
   | { readonly status: 'dwell'; readonly payload: DropPayload; readonly anchor: 'left' | 'bottom'; readonly originPx: SurfacePoint; readonly since: number }
-  | { readonly status: 'preview'; readonly payload: DropPayload; readonly destination: DropDestination }
-  | { readonly status: 'committing'; readonly transactionId: string }
+  | {
+      readonly status: 'preview';
+      readonly payload: DropPayload;
+      readonly destination: DropDestination;
+      /** Gesture hysteresis only; never a destination identity. */
+      readonly carryAnchor: 'left' | 'bottom';
+    }
+  | {
+      readonly status: 'committing';
+      readonly payload: DropPayload;
+      readonly destination: DropDestination;
+      readonly carryAnchor: 'left' | 'bottom';
+      readonly intent: DropIntentSnapshot;
+      readonly transactionId: string;
+    }
   | { readonly status: 'failed'; readonly reason: string; readonly recoverable: boolean };
 
 /**
@@ -99,11 +119,24 @@ export function advanceDropIntent(
   bounds: DropBounds,
   now: number,
   overDestination = false,
+  destination?: DropDestination,
 ): SemanticDropState {
   if (state.status === 'idle' || state.status === 'committing' || state.status === 'failed') return state;
 
   if (state.status === 'preview') {
-    return overDestination || inDropPreviewCarryZone(pointPx, bounds, state.destination.anchor) ? state : { status: 'tracking', payload: state.payload };
+    // A live target can change while the pointer remains inside the broad
+    // carry zone. In that case invalidate the old preview; the host must
+    // dwell/resolve the new target before any commit is possible.
+    if (
+      overDestination &&
+      destination !== undefined &&
+      destination.targetId !== state.destination.targetId
+    ) {
+      return { status: 'tracking', payload: state.payload };
+    }
+    return overDestination || inDropPreviewCarryZone(pointPx, bounds, state.carryAnchor)
+      ? state
+      : { status: 'tracking', payload: state.payload };
   }
 
   if (state.status === 'tracking') {
@@ -123,7 +156,12 @@ export function advanceDropIntent(
 export function completeDropDwell(state: SemanticDropState, destination: DropDestination, now: number): SemanticDropState {
   if (state.status !== 'dwell') return state;
   if (now - state.since < DROP_INTENT_TOKENS.dwellMs) return state;
-  return { status: 'preview', payload: state.payload, destination };
+  return {
+    status: 'preview',
+    payload: state.payload,
+    destination,
+    carryAnchor: state.anchor,
+  };
 }
 
 export function dropDwellRemainingMs(state: SemanticDropState, now: number): number {
@@ -131,8 +169,21 @@ export function dropDwellRemainingMs(state: SemanticDropState, now: number): num
   return Math.max(0, DROP_INTENT_TOKENS.dwellMs - (now - state.since));
 }
 
-export function confirmDrop(state: SemanticDropState, transactionId: string): SemanticDropState {
-  return state.status === 'preview' ? { status: 'committing', transactionId } : state;
+export function confirmDrop(
+  state: SemanticDropState,
+  transactionId: string,
+  intent?: DropIntentSnapshot,
+): SemanticDropState {
+  if (state.status !== 'preview' || intent === undefined) return state;
+  if (intent.targetId !== state.destination.targetId) return state;
+  return {
+    status: 'committing',
+    payload: state.payload,
+    destination: state.destination,
+    carryAnchor: state.carryAnchor,
+    intent,
+    transactionId,
+  };
 }
 
 /** Fail the drop. State-independent override — it always ends in `failed`. */

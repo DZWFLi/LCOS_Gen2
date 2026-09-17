@@ -40,6 +40,8 @@ describe('projectRailwayDestinations', () => {
         available: true,
         workspaceId: 'workspace-context',
         surface: 'context',
+        sourceRef: { kind: 'context', viewId: 'workspace-context' },
+        sourceIndex: 1,
       },
     ]);
   });
@@ -68,6 +70,20 @@ describe('projectRailwayDestinations', () => {
     });
     expect(result[1]).toMatchObject({ available: false });
     expect(result[2]).toMatchObject({ available: false });
+  });
+
+  it('keeps raw source identity and full-order index when legacy rows are hidden', () => {
+    const result = projectRailwayDestinations({
+      ...base,
+      orderedRefs: [
+        { kind: 'scene', viewId: 'workspace-main' },
+        { kind: 'context', viewId: 'scope-context' },
+      ],
+    });
+    expect(result[0]).toMatchObject({
+      sourceRef: { kind: 'context', viewId: 'scope-context' },
+      sourceIndex: 1,
+    });
   });
 
   it('resolves a concrete child scene to its exact workspace and surface', () => {
