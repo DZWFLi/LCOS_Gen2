@@ -45,6 +45,7 @@ import { ReceiverRuntimeService } from './receiver-runtime-service.js'
 import { SessionLifecycleService } from './session-lifecycle-service.js'
 import { ConversationIdentityService } from './conversation-identity-service.js'
 import { ConversationWorkViewProjectionService } from './conversation-work-view-projection-service.js'
+import { CollaborationProjectionService } from './collaboration-projection-service.js'
 import { HuabuAgentletContinuationAdapterV1 } from './huabu-agentlet-continuation-adapter.js'
 import { DevFakeAgentletTransportV1 } from './dev-fake-agentlet-transport.js'
 import { HuabuAgentletHostTransportV1 } from './huabu-agentlet-host-transport.js'
@@ -122,6 +123,7 @@ export interface LocalCoreServices {
   readonly sessionLifecycle: SessionLifecycleService | undefined
   readonly conversationIdentity: ConversationIdentityService | undefined
   readonly workView: ConversationWorkViewProjectionService | undefined
+  readonly collaborationProjection: CollaborationProjectionService | undefined
   readonly recoveryAdapter: HuabuAgentletContinuationAdapterV1 | undefined
   readonly warehouse: WarehouseService | undefined
   readonly resultSlots: ResultSlotService | undefined
@@ -248,6 +250,23 @@ export function composeLocalCoreServices(options: LocalCoreServerOptions = {}): 
       },
     )
   }
+  const runtimeReviewService = options.runtimeReviewService ?? (metadata === undefined ? undefined : new RuntimeReviewService(metadata, undefined, undefined, semantic, resultSlots, mutationSafety))
+  const collaborationCapabilityProbe = recoveryAdapter === undefined
+    ? undefined
+    : async () => {
+        try {
+          return await recoveryAdapter.probe({
+            provider: recoveryAdapter.provider,
+            adapterId: recoveryAdapter.adapterId,
+            probeId: `collab-read:${Date.now()}`,
+          })
+        } catch {
+          return undefined
+        }
+      }
+  const collaborationProjection = metadata === undefined || conversationIdentity === undefined
+    ? undefined
+    : new CollaborationProjectionService(metadata, conversationIdentity, conversationContinuation, receiverRuntime, runtimeReviewService, collaborationCapabilityProbe)
   if (options.runtimeApplicationService !== undefined && sessionLifecycle !== undefined) {
     options.runtimeApplicationService.attachSessionLifecycle(sessionLifecycle)
   }
@@ -294,11 +313,12 @@ export function composeLocalCoreServices(options: LocalCoreServerOptions = {}): 
     matcher: options.resourceMatcher ?? new ResourceMatcher(),
     contextManifest: options.contextManifestService ?? (metadata === undefined ? undefined : new ContextManifestService(metadata)),
     // F6 P0-A2：accept 诞生的 artifact 即索引（第四参可选挂点）。
-    runtimeReview: options.runtimeReviewService ?? (metadata === undefined ? undefined : new RuntimeReviewService(metadata, undefined, undefined, semantic, resultSlots, mutationSafety)),
+    runtimeReview: runtimeReviewService,
     runtimeApplication: options.runtimeApplicationService,
     sessionLifecycle,
     conversationIdentity,
     workView,
+    collaborationProjection,
     recoveryAdapter,
     activeContext,
     contextProposals: options.contextProposalStore ?? new ContextProposalStore(metadata, projectEvents),

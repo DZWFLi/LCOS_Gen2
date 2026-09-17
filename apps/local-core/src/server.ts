@@ -87,6 +87,7 @@ import { handleRuntimeRoute } from './routes/runtime.js'
 import { handleF6AssemblyRoute } from './routes/f6-assembly.js'
 import { handleConversationIdentityRoute } from './routes/conversation-identity.js'
 import { handleWorkViewRoute } from './routes/work-view.js'
+import { handleCollaborationRoute } from './routes/collaboration.js'
 import { handleRunsRoute } from './routes/runs.js'
 import { handlePresentationsRoute } from './routes/presentations.js'
 import { handleProjectEventsRoute, handleRealtimeDebugRoute } from './routes/project-events.js'
@@ -358,7 +359,7 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
     resourceReader, matcher, contextManifest, runtimeReview, runtimeApplication, activeContext,
     contextProposals, runEventListeners, obsidian, obsidianSessions, connectorRegistry,
     ownsConversationService, conversations, previewWorker, presentation, curation, search, curationCommand, semantic, warehouse, resultSlots, assemblyApply, projectSummary, skillCatalog, skillPackages, skillProposals, companionProjections, curatorDispatch, skillAuthorDispatch,
-    runtimeRegistry, intelligence, captureStaging, resolveProjectAffinity, captureApplication, captureWatch, captureSpace, reorganize, sessionReadSet, spaceSandbox, agentletRuntime, spatialRetrieval, attentionRuntime, boundaryEvaluator, projectEvents, projectMutations, mutationSafety, feedbackRevision, continuityRuntime, conversationContinuation, receiverRuntime, sessionLifecycle, conversationIdentity, workView, recoveryAdapter,
+    runtimeRegistry, intelligence, captureStaging, resolveProjectAffinity, captureApplication, captureWatch, captureSpace, reorganize, sessionReadSet, spaceSandbox, agentletRuntime, spatialRetrieval, attentionRuntime, boundaryEvaluator, projectEvents, projectMutations, mutationSafety, feedbackRevision, continuityRuntime, conversationContinuation, receiverRuntime, sessionLifecycle, conversationIdentity, workView, collaborationProjection, recoveryAdapter,
   } = services
   metadata?.setRunEventSink?.((event) => {
     const payloadProjectId = (event.payload as { projectId?: string } | null)?.projectId
@@ -1426,6 +1427,17 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
         signal: controller.signal,
         metadata,
         workView,
+        helpers: routeHelpers,
+      })) return
+      if (await handleCollaborationRoute({
+        method,
+        pathname,
+        url,
+        request,
+        response,
+        signal: controller.signal,
+        metadata,
+        collaborationProjection,
         helpers: routeHelpers,
       })) return
       if (await handleRetrievalRoute({
