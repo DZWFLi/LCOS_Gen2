@@ -7,11 +7,13 @@
 import { CoreSearchClient, HttpError } from '@local-creative-os/web-gen2';
 import { ArrowRight, LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 
 import useCanvasStore from '@/store/canvasStore';
 
 import { waitForProjectedEntity } from './waitForProjectedEntity';
+import { paletteTonesV1, readColorPinPaletteV1, toneForColorPinV1, type LcosColorPinTone } from './lcosColorPinPalette';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { useLcosReferenceStore } from '../lcosReferenceState';
@@ -21,17 +23,25 @@ import { LcosNavigatorIslandView } from '../ui/families';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
 
 import type { LcosNavigatorIslandState, LcosNavigatorPin } from '../ui/families';
-import type { SearchHitVNext } from '@local-creative-os/contracts';
+import type {
+  ColorPinMembershipV0,
+  ColorPinSnapshotV0,
+  NavigationResolutionV0,
+  SearchHitVNext,
+  SpatialMarkerTargetRefV0,
+} from '@local-creative-os/contracts';
 
 interface NavigatorIslandProps {
   readonly projectId: string;
   readonly canvasBySurface: Readonly<Partial<Record<LcosSurfaceKey, string>>>;
   readonly surfaceByWorkspace?: Readonly<Map<string, LcosSurfaceKey>>;
   readonly ensureCanvas: (surface: LcosSurfaceKey, force?: boolean) => Promise<string | undefined>;
+  /** 进入子现场（颜色组指向 workspace: 目标时用；与 Railway activateDestination 同一通道）。 */
+  readonly ensureWorkspaceCanvas?: (workspaceId: string) => Promise<string | undefined>;
   /**
    * 彩色标 Pin（Figma 状态=彩色标）。Pin = 颜色分组偏好及成员关系（00 页 5409:2）。
-   * Core 目前没有 pin/color-group producer，故生产恒为空数组 → 岛停在「静息 / 搜索」；
-   * 彩色标等其余状态由 dev gallery 覆盖，生产 producer 归属 R4/T2。
+   * R6：生产 producer 已接通 —— 未显式传入时由 canonical color-pins owner
+   * （GET /projects/:pid/color-pins）驱动；显式传入只用于 dev gallery 覆盖。
    */
   readonly pins?: readonly LcosNavigatorPin[];
 }
@@ -40,10 +50,14 @@ interface NavigatorIslandProps {
 type IslandState = '静息' | '搜索' | 'loading' | 'error' | 'empty';
 
 export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Element {
-  const { projectId, pins = [] } = _props;
+  const { projectId } = _props;
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
+  const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
+  const openWindow = useLcosShellStore((s) => s.openWindow);
   const windowEnvironment = useLcosShellStore((s) => s.windowEnvironment);
   const requestLocate = useLcosShellStore((s) => s.requestLocate);
+  const setActiveSurface = useLcosShellStore((s) => s.setActiveSurface);
+  const navigate = useNavigate();
   const [focus, setFocus] = useState(false);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<readonly SearchHitVNext[]>([]);
@@ -118,6 +132,138 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus, query, projectId]);
+
+  // ---- R6 ColorPin：颜色组（canonical color-pins owner）----
+  //
+  // 岛消费 canonical snapshot（definitions + memberships），不建第二 pin store；
+  // 标记目标是 canonical `surface` 引用（当前工作现场 / main），由 Core resolve 校验。
+  // 拿不到 canonical 目标或调色板时诚实不可用——不猜坐标、不按 title/time 模糊重绑。
+
+  const [palette, setPalette] = useState<Readonly<Record<LcosColorPinTone, string>> | undefined>(undefined);
+  const [pinSnapshot, setPinSnapshot] = useState<ColorPinSnapshotV0 | undefined>(undefined);
+  const [pinNote, setPinNote] = useState<string | undefined>(undefined);
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinPaletteOpen, setPinPaletteOpen] = useState(false);
+  const [openPinId, setOpenPinId] = useState<string | undefined>(undefined);
+
+  useEffect(() => { setPalette(readColorPinPaletteV1()); }, []);
+
+  const reloadPins = useCallback((): void => {
+    void session.colorPins
+      .snapshot(projectId)
+      .then((value) => { setPinSnapshot(value); })
+      .catch((error: unknown) => {
+        setPinNote(`颜色组读取失败${error instanceof Error ? `（${error.message}）` : ''}`);
+      });
+  }, [projectId, session]);
+
+  useEffect(() => { reloadPins(); }, [reloadPins]);
+
+  /** 当前现场的可推导 canonical surface 目标（无猜测）。 */
+  const currentSurfaceTarget: SpatialMarkerTargetRefV0 = activeWorkspaceId === null
+    ? { projectId, kind: 'surface', id: 'main' }
+    : { projectId, kind: 'surface', id: `workspace:${activeWorkspaceId}` };
+
+  const pinList: readonly LcosNavigatorPin[] = useMemo(() => {
+    if (pinSnapshot === undefined || palette === undefined) return [];
+    // 颜色组 = 成员关系：没有成员的定义不渲染（canonical 定义仍保留，可被重新标记复用）。
+    return pinSnapshot.definitions
+      .map((definition) => ({
+        id: definition.id,
+        tone: toneForColorPinV1(definition.color, palette),
+        label: definition.label ?? `颜色组 ${definition.color}`,
+        color: definition.color,
+        count: pinSnapshot.memberships.filter((membership) => membership.colorPinId === definition.id).length,
+      }))
+      .filter((pin) => (pin.count ?? 0) > 0);
+  }, [palette, pinSnapshot]);
+
+  const pins = _props.pins ?? pinList;
+
+  const definitionsById = useMemo(
+    () => new Map((pinSnapshot?.definitions ?? []).map((definition) => [definition.id, definition])),
+    [pinSnapshot],
+  );
+  const membershipsByPin = useMemo(() => {
+    const grouped = new Map<string, readonly ColorPinMembershipV0[]>();
+    for (const membership of pinSnapshot?.memberships ?? []) {
+      grouped.set(membership.colorPinId, [...(grouped.get(membership.colorPinId) ?? []), membership]);
+    }
+    return grouped;
+  }, [pinSnapshot]);
+
+  /** 当前现场已有的 canonical 成员关系（决定「标记」是新建还是如实提示已存在）。 */
+  const currentSurfaceMembership = (pinSnapshot?.memberships ?? []).find(
+    (membership) => membership.targetRef.kind === 'surface' && membership.targetRef.id === currentSurfaceTarget.id,
+  );
+
+  const assignPin = (tone: LcosColorPinTone): void => {
+    if (palette === undefined) { setPinNote('颜色组调色板不可用（设计 token 未加载）'); return; }
+    setPinBusy(true);
+    setPinNote(undefined);
+    void session.colorPins
+      .assign(projectId, { targetRef: currentSurfaceTarget, color: palette[tone] })
+      .then((receipt) => {
+        setPinNote(receipt.changeSetId === undefined ? '已标为颜色组' : `已标为颜色组 · 变更 ${receipt.changeSetId.slice(0, 8)}`);
+        setPinPaletteOpen(false);
+        reloadPins();
+      })
+      .catch((error: unknown) => { setPinNote(`标记失败${error instanceof Error ? `（${error.message}）` : ''}`); })
+      .finally(() => { setPinBusy(false); });
+  };
+
+  const removeMembership = (membershipId: string): void => {
+    setPinBusy(true);
+    setPinNote(undefined);
+    void session.colorPins
+      .removeMembership(projectId, membershipId)
+      .then((receipt) => {
+        setPinNote(receipt.changeSetId === undefined ? '已移除颜色组' : `已移除颜色组 · 变更 ${receipt.changeSetId.slice(0, 8)}`);
+        reloadPins();
+      })
+      .catch((error: unknown) => { setPinNote(`移除失败${error instanceof Error ? `（${error.message}）` : ''}`); })
+      .finally(() => { setPinBusy(false); });
+  };
+
+  /** 前往颜色组成员：canonical resolve → 真实前往；unresolved 是合法结果（诚实说明）。 */
+  const travelToMembership = async (membership: ColorPinMembershipV0): Promise<void> => {
+    setPinBusy(true);
+    setPinNote(undefined);
+    try {
+      const resolution: NavigationResolutionV0 = await session.navigation.resolveTarget(projectId, membership.targetRef);
+      if (resolution.status === 'unresolved') {
+        setPinNote(`无法前往：目标已失效（${resolution.reason}）`);
+        return;
+      }
+      const { surfaceKind, surfaceRef } = resolution.target;
+      if (surfaceKind === 'main' || surfaceKind === 'context' || surfaceKind === 'workflow') {
+        await switchWorksite(surfaceKind);
+        return;
+      }
+      if (surfaceKind === 'conversation') {
+        const conversationId = surfaceRef.startsWith('conversation:') ? surfaceRef.slice('conversation:'.length) : '';
+        if (conversationId === '') { setPinNote('无法前往：会话身份不完整'); return; }
+        openWindow('conversation', '会话', conversationId);
+        return;
+      }
+      if (surfaceRef.startsWith('workspace:')) {
+        const workspaceId = surfaceRef.slice('workspace:'.length);
+        const canvasId = await _props.ensureWorkspaceCanvas?.(workspaceId);
+        if (canvasId === undefined) { setPinNote('目标现场还没有可用画布'); return; }
+        const loaded = await useCanvasStore.getState().switchCanvas(canvasId);
+        if (!loaded) { setPinNote('未能读取目标现场，请重试'); return; }
+        const surface = _props.surfaceByWorkspace?.get(workspaceId);
+        if (surface !== undefined) setActiveSurface(surface);
+        navigate(`/projects/${encodeURIComponent(projectId)}/${surface ?? 'main'}?workspaceId=${encodeURIComponent(workspaceId)}`, { replace: true });
+        return;
+      }
+      setPinNote('该颜色组目标暂不支持前往');
+    } catch (error: unknown) {
+      setPinNote(`前往失败${error instanceof Error ? `（${error.message}）` : ''}`);
+    } finally {
+      setPinBusy(false);
+    }
+  };
 
   const closeSearch = useCallback((): void => {
     arrival.current?.abort();
@@ -209,6 +355,17 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
       <LcosNavigatorIslandView
         state={viewState}
         pins={pins}
+        onActivatePin={(pin) => {
+          setPinPaletteOpen(false);
+          setPinNote(undefined);
+          setOpenPinId((current) => (current === pin.id ? undefined : pin.id));
+        }}
+        onCreatePin={() => {
+          setOpenPinId(undefined);
+          setPinNote(undefined);
+          setPinPaletteOpen((open) => !open);
+        }}
+        createPinDisabled={pinBusy}
         query={query}
         onQueryChange={(value) => {
           arrival.current?.abort();
@@ -288,6 +445,96 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
               <span>{surface ? (arriving ? '前往中…' : '前往并定位') : '位置暂不可打开'}</span>
             </button>;
           })}
+        </div>
+      )}
+
+      {/* R6 ColorPin：标记当前现场（调色板值直接来自设计 token，canonical #RRGGBB） */}
+      {pinPaletteOpen && (
+        <div data-lcos-color-pin-palette className="mt-2 rounded-xl p-2" style={{ ...lcosGlassStyle, width: 240 }}>
+          <p className="px-2 pb-1 text-xs" style={{ color: lcosTokens.color.muted }}>
+            {currentSurfaceMembership === undefined ? '把当前现场标为颜色组' : '当前现场已有颜色组'}
+          </p>
+          {palette === undefined ? (
+            <p className="px-2 py-1 text-xs" style={{ color: lcosTokens.color.danger }}>调色板不可用（设计 token 未加载）</p>
+          ) : (
+            <div className="flex items-center gap-2 px-2 py-1">
+              {paletteTonesV1().map((tone) => (
+                <button
+                  key={tone}
+                  type="button"
+                  data-lcos-color-pin-swatch={tone}
+                  aria-label={`标为 ${tone}`}
+                  title={`标为 ${tone}`}
+                  disabled={pinBusy || currentSurfaceMembership !== undefined}
+                  onClick={() => assignPin(tone)}
+                  className="h-8 w-8 rounded-full disabled:opacity-40"
+                  style={{ background: palette[tone], minHeight: 32, minWidth: 32 }}
+                />
+              ))}
+            </div>
+          )}
+          {currentSurfaceMembership !== undefined && (
+            <button
+              type="button"
+              data-lcos-color-pin-remove-current
+              disabled={pinBusy}
+              onClick={() => removeMembership(currentSurfaceMembership.id)}
+              className="mt-1 w-full rounded-lg px-2 py-1 text-xs"
+              style={{ color: lcosTokens.color.danger, minHeight: 32 }}
+            >
+              移除当前现场的颜色组
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* R6 ColorPin：颜色组成员 + canonical resolve 前往 */}
+      {openPinId !== undefined && (
+        <div data-lcos-color-pin-members className="mt-2 max-h-[40vh] overflow-y-auto rounded-xl p-2" style={{ ...lcosGlassStyle, width: 320 }}>
+          <p className="px-2 pb-1 text-xs" style={{ color: lcosTokens.color.muted }}>
+            {(definitionsById.get(openPinId)?.label ?? '颜色组')} · 成员 {(membershipsByPin.get(openPinId) ?? []).length}
+          </p>
+          {(membershipsByPin.get(openPinId) ?? []).length === 0 && (
+            <p className="px-2 py-1 text-xs" style={{ color: lcosTokens.color.muted }}>这个颜色组还没有成员</p>
+          )}
+          {(membershipsByPin.get(openPinId) ?? []).map((membership) => (
+            <div key={membership.id} data-lcos-color-pin-member={membership.id} className="flex items-center gap-1 px-2 py-1">
+              <span className="min-w-0 flex-1 truncate text-xs" style={{ color: lcosTokens.color.text }}>
+                {membership.targetRef.kind} · {membership.targetRef.id}
+              </span>
+              <button
+                type="button"
+                data-lcos-color-pin-travel
+                disabled={pinBusy}
+                onClick={() => { void travelToMembership(membership); }}
+                className="shrink-0 rounded-full px-2 py-1 text-xs"
+                style={{ color: lcosTokens.color.info, minHeight: 32 }}
+              >
+                前往
+              </button>
+              <button
+                type="button"
+                data-lcos-color-pin-remove
+                disabled={pinBusy}
+                onClick={() => removeMembership(membership.id)}
+                className="shrink-0 rounded-full px-2 py-1 text-xs"
+                style={{ color: lcosTokens.color.danger, minHeight: 32 }}
+              >
+                移除
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pinNote !== undefined && (
+        <div
+          data-lcos-color-pin-note
+          className="mt-2 max-w-[90vw] rounded-xl px-4 py-2 text-xs"
+          style={{ ...lcosGlassStyle, color: lcosTokens.color.muted }}
+          aria-live="polite"
+        >
+          {pinNote}
         </div>
       )}
     </div>
