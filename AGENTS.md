@@ -20,18 +20,78 @@
 - **免读**：同阶段内小对话、已明确断点的续做、仅修改测试/回归验证——一律不重读上述文档，延续当前上下文。
 - 红线：见"继续/续做/改个测试"就整包重读 = 消耗滥用，禁止。
 
+## 单项施工前置阅读纪律（逐项封闭，2026-09-19 用户裁定 —— 覆盖上节"免读"）
+
+> **触发**：任何"按卡施工"的单项 —— R1–R6 的每一轮、每一张卡的每一个 residual、每一个 VIOLATION/GAP 的修复。
+> **免读条款（同阶段小对话 / 已明确断点续做 / 仅改测试）不适用于本类工作。** 逐项都要重新读一遍，不得沿用上一项的阅读结论。
+
+每修一个单项，动工前必须按序读完下列**四层**；缺任一层，不得动工、不得写代码、不得 commit：
+
+1. **原卡正本 + 精确补丁卡**（是原件，不是本仓核查表、不是任何转述或摘要）
+   - 入口 = `GEN2_新前端重新总装正本_20260913\10_T1-T7原始施工卡阅读入口.md` 的「Wave → 原卡最小读取表」。
+   - 卡正本不在本仓时，必须到收口目录 / Project Library / 桌面正本中找原件并读取；**找不到就停下来要卡，严禁用转述替代原卡**。
+2. **卡内 `READ_SOURCE` 指定的源码范围**（exact file + 章节 / Source ID，含卡内的"当前源码普查 / census"段落与其 point-in-time ref）。
+3. **卡引出的一级索引与更细粒度指引**：正本包的 `appendices/`、`references/core_plans/`、`references/figma-master/`、`references/original_route_cards/V6/*_30KB_Planning_Guide.md`；以及卡正文里再引用的下级专卡/精确补丁卡。**必须读到"没有再细分"的那一级**（指引 → 索引 → 引用，直达最底层）。
+4. **卡点名引用的外部 donor 源**（含版本/pin），例如：Huabu upstream（pin 见 `HUABU_UPSTREAM.md`）、Gen1 `LCOS-local-creativeOS@3e99769`、`dockview@8.2.0`、RhineLabUI、TapNow / Lovart / Spatial / LibTV / AgentGit、Figma 设计包（仓外 `E:\Codex 项目\OS开发\exports\LCOS_Figma_全设计包_20260913\unification\{specs,structures}`）。
+   donor 的复制/引用必须带 provenance（owner/repo/path@commit + license），照「施工落点纪律」执行。
+
+**每项的 handoff 条目必须写明**（正本回传要求，六字段不可省）：
+
+```text
+READ_SOURCE: 绝对路径 + 章节 / Source ID
+ADOPTED:     donor exact file/symbol → target file/symbol → production caller
+VISUAL_SOURCE: Figma page / node / component / variant
+RETIRED:     被替换的旧 UI caller
+VERIFIED:    真实 production action / 浏览器证据 / receipt
+UNRESOLVED:  原卡 GAP / NEEDS_FIGMA / NEEDS_SOURCE_BINDING
+```
+
+**违反判定**：未写 `READ_SOURCE`、或以核查表/转述替代原卡、或未读到第 3 层最细粒度指引就动手的修复 —— **一律视为未开工**，不得计入进度、不得进 handoff、不得 commit。
+
+**材料舱（上列第①③④层原件的离线镜像，2026-09-19 建）**
+
+- 舱根：`e:\TRAE项目\LCOS0.1收口\_cabin\`（只读镜像，约 2,430 MB / 45,746 文件）
+- **总索引：`_cabin\00_INDEX.md`** —— 按用途精确查找，逐条给舱内相对路径
+- 内已含：正本全包（`appendices/` A–H、`references/{core_plans, figma-master, original_route_cards/{V6,T1..T7}, design_assets}`、`10_T1-T7原始施工卡阅读入口.md`）、T2 细卡 `222`、T3/T4/T6 卡 `接续包`、Patched 卡 `施工前最后一轮校准`、`663`、`正式规划用`、R 系列 F1/F2/F3、Figma 全设计包（九面 `specs/` + `structures/`）、**外部 donor 源码**（Gen1 `LCOS-local-creativeOS`、Grok/Huabu/LibTV/Lovart/Spatial/TapNow 素材包、Donor 精选包、GUI 轮子包）、原型与截图、Harness 方案
+- 舱内**只读不施工**；施工落本仓库。桌面/仓库为实时正源，舱为快照。
+
+## 正本施工序与失败样本（2026-09-19 补录，来自正本原件，必须遵守）
+
+**① 唯一合法施工序列 = Wave 0–10**（正本 `04_逐Wave施工卡与验收.md`）。R1–R6 是后续批次层，**不替代 Wave 序**：
+
+`0 地基救援`（只救 Core/contracts/pure logic，不救旧 overlay UI，不得汇报"视觉重写已完成"）→ **`1 新 App Shell`：进入项目已不再是 Huabu 三栏壳；production path 不 mount 五类旧件** → `2 Huabu kernel 收口`（只有一份 Canvas/selection/camera/history，LCOS mode 不挂 NodeToolbar/Controls/MiniMap）→ `3 节点物种`（主流已绑定实体全走 LCOS body，native body 仅 unbound/unsupported/unavailable 且可见原因）→ `4 Main+HUD+Navigator`（**第一轮交用户手测**）→ `5 Assembly+Reader+Composer` → `6/7 Context / Workflow` → `8 Glyth+Work View+T7` → `9 LOD/motion/responsive` → `10 Golden Path`（完整前端候选）。
+
+> **红线原文**：「如果旧壳仍在而 LCOS 只是浮在上面，即使 typecheck、unit test 和 200 个按钮测试全绿，也仍然判失败。」「不能跳过 Wave 1–3 直奔 T7、Recovery、WaitingInput。」
+> 禁「用 `display:none`、透明遮罩或更高 z-index 伪造退役」。
+
+**② 失败样本 F1–F8（出现任一即判失败）**：`F1` 旧壳仍在、新 UI 盖上去（整页失败 → 修 route composition，不是调 z-index）｜`F2` 接口存在但 production caller 不存在（不能用 isolated test 抵账）｜`F3` fallback 变主路径｜`F4` Figma 只落 token/颜色｜`F5` donor 只被读过（无 import/移植/target caller = 未采用）｜`F6` 局部 body 先于整机｜`F7` Mock 画面冒充真实能力｜`F8` 堆无具体失败场景的 gate。
+
+**③ 完成措辞禁令**：不得写「全链打通」而主路径用 fake；不得写「Figma 全量落地」而只改 token；不得把 16 组 T7 body 称「完整前端」；不得在 Wave 2/3/6/7 未接 caller 时写「只剩 LOD」。
+**④ 承接补丁卡八字段**（正本 `09_...现成轮子承接补丁卡.md`）：`需求 Source ID → 设计 node/variant → donor exact repo/file/symbol → 采用等级 A/B/C/X → target file/symbol → production caller → 被替代旧 UI / 保留 kernel → 浏览器证据或真实 receipt`。
+**⑤ V6 规划侧硬门**：≥5 轮不同目的调查 + 5 份 ≥30KB + `P15 Replacement Boundary 九字段` + `P16 轮子优先 8 问` + `P17 DON'T BUILD` + `P18 upstream 每次重核 pin` + `P19` 阶梯（`SOURCE_AVAILABLE→CONTRACT→UNIT_PROVEN→WIRED→BROWSER_PROVEN→PERSISTED→CROSS_SURFACE→PRODUCT_COMPLETE`，任何"完成"必须说到哪一级）。
+
+**当前实测状态（2026-09-19 @ faf3291）：Wave 1 退出条件未达成** —— `pages/CanvasPage/CanvasPage.tsx:284-292` 仍 `<MainLayout header={<CanvasHeader/>} leftPanel={<CanvasLayerPanel/>} rightPanel={<PreviewWorkspacePanel/>}><CenterArea/></MainLayout>`；`CenterArea.tsx:59` 仍挂 `absolute top-3 right-2 z-30` 的 Handbook/Settings/Chat 组；`App.tsx:274` 的 `...lcosProjectRoutes()` 与 `:286` 的 `<CanvasPage />` 并列 —— LCOS 是并行路由，不是替换。**在 Wave 1 关闭前，不得声称前端整体完成。**
+
 ## 每阶段开工必读清单（顺序固定，缺一不得动工）
 
-> **每个阶段（Phase A/B/C/D 的每张任务卡）开工前都要重读一遍**，不是读过一次就永久生效。
+> **路径已全部改为舱内路径**（2026-09-19，原桌面路径整包已镜像进舱，见上「材料舱」）。舱根＝`e:\TRAE项目\LCOS0.1收口\_cabin\`。
+> **权威补充**：自 2026-09-13 正本起，现行必读是**正本 `00–12` + `appendices/A–H` + `references/`**（`_cabin\01_正本\GEN2_新前端重新总装正本_20260913\`），其阅读顺序见正本 `06_Trae施工Agent完整开工提示词.md` 的 17 项。下列 8 条为 2026-09-02 基线入口，**仍须读，但与正本冲突时以正本为准**。
 
-1. **`README_Gen2_整合施工_20260902.md`（动工入口，必读首件）** —— 位于 `C:\Users\1\Desktop\Gen2开发\`（副本亦在 `...\Gen2开发\审计交付_20260902\`）。一页结论六条 / 五类分工 / Owner 架构 / 施工 SOP（M0–M3）/ 引用原文路径 / 施工前信息搜集流程 / GUI 最终效果 / H0-H6 动工顺序 / 红线。
-2. **GLM 施工正本 00 总索引**（`LCOS_Gen2_GLM施工正本_00_总索引_源证据_执行顺序_20260902.md`，同目录）—— 裁决优先级 / U-F-GH Source ID 表 / GitHub 固定读取入口 / 全功能→阶段路由 / 回传 SOP / "完成"用词。
-3. **当前阶段的任务卡**（`LCOS_Gen2_GLM施工正本_Phase_A/B/C/D_...md` 对应文件）—— 只精读当前阶段全文；后续阶段建概认知即可，轮到时再精读。
-4. **需求正本**（`LCOS_Gen2_8月21日后需求正本_源码遗漏审计与Donor转化总计划_20260902.md`，L0 上位证据）—— §2 需求正本表按当前任务对应功能域重查；§8 必改句；§10 一句话施工钉子。
-5. **节点呈现宪法**（`审计交付_20260902\LCOS_Gen2_节点呈现宪法_完整版_20260902.md`）—— 涉及节点/GUI/交互的任务必读；规范冲突以此为准（去节点化 / 11 态 / 圣诞树禁令 / 共享物理语法 / renderer 契约）。
-6. **GUI 实现 SOP**（`审计交付_20260902\LCOS_Gen2_GUI实现SOP_20260902.md`）—— 每个 GUI 决策过一遍 M0 先问 Huabu → M1 再问轮子 → M2 才允许自研（填 Rejection Record）→ M3 LCOS 语义层；QA 阶梯；Handoff 模板。
-7. **三方对比审计·代码级**（`审计交付_20260902\LCOS_Gen2_三方对比审计_代码级_20260902.md`）—— 落码前查组件映射：import 路径 + 真实 props + Gen1 替换对象（16 个 Common 实读）。
-8. **施工时即时读取的源码**（GLM 正本 00 §4 固定入口）：Gen2 `host/*` + `spatial/*`；Huabu `Canvas.tsx` / `useCanvasPointerRouter.ts` / `NodeWrapper.tsx` / `useTextAutoSize.ts` / `semanticZoom.ts` / PreviewWorkspace；旧 LCOS 只读要迁的纯函数签名。**必须读取远端最新 main 并与审计 ref 比对**；路径/contract 变化时更新任务卡落点，不回退旧 ref。
+1. **`README_Gen2_整合施工_20260902.md`（动工入口，必读首件）** —— `_cabin\04_R系列与T5规划\Gen2开发\审计交付_20260902\README_Gen2_整合施工_20260902.md`。一页结论六条 / 五类分工 / Owner 架构 / 施工 SOP（M0–M3）/ 引用原文路径 / 施工前信息搜集流程 / GUI 最终效果 / H0-H6 动工顺序 / 红线。
+2. **GLM 施工正本 00 总索引**（`LCOS_Gen2_GLM施工正本_00_总索引_源证据_执行顺序_20260902.md`）—— `_cabin\04_R系列与T5规划\Gen2开发\思路参考_施工规划_仅供借鉴_20260903\`。裁决优先级 / U-F-GH Source ID 表 / GitHub 固定读取入口 / 全功能→阶段路由 / 回传 SOP / "完成"用词。
+3. **当前阶段的任务卡**（`LCOS_Gen2_GLM施工正本_Phase_A/B/C/D_*.md`）—— 同 `...\思路参考_施工规划_仅供借鉴_20260903\`（A Shared_Kernel_Host_Owner / B Node_Morphology_WorkView / C Surfaces_Instruments_Composer / D Navigation_Glyph_Motion_Release）。只精读当前阶段全文；后续阶段建概认知即可。
+4. **需求正本**（`LCOS_Gen2_8月21日后需求正本_源码遗漏审计与Donor转化总计划_20260902.md`，L0 上位证据）—— 同 `...\思路参考_施工规划_仅供借鉴_20260903\`。§2 需求正本表按当前任务对应功能域重查；§8 必改句；§10 一句话施工钉子。
+5. **节点呈现宪法**（`LCOS_Gen2_节点呈现宪法_完整版_20260902.md`）—— `_cabin\01_正本\GEN2_新前端重新总装正本_20260913\references\core_plans\`。涉及节点/GUI/交互的任务必读；规范冲突以此为准（去节点化 / 11 态 / 圣诞树禁令 / 共享物理语法 / renderer 契约）。
+6. **GUI 实现 SOP**（`LCOS_Gen2_GUI实现SOP_20260902.md`）—— 同 `references\core_plans\`。每个 GUI 决策过一遍 M0 先问 Huabu → M1 再问轮子 → M2 才允许自研（填 Rejection Record）→ M3 LCOS 语义层；QA 阶梯；Handoff 模板。
+7. **三方对比审计·代码级**（`LCOS_Gen2_三方对比审计_代码级_20260902.md`）—— `_cabin\04_R系列与T5规划\Gen2开发\审计交付_20260902\`。落码前查组件映射：import 路径 + 真实 props + Gen1 替换对象（16 个 Common 实读）。
+8. **施工时即时读取的源码**（GLM 正本 00 §4 固定入口）：本仓库 `apps/web-gen2/src/{host,spatial,presentation,integration}` + Huabu `components/Panels/Canvas/Canvas.tsx` / `hooks/useCanvasPointerRouter.ts` / `components/Nodes/NodeWrapper.tsx` / `hooks/useTextAutoSize.ts` / `config/semanticZoom.ts` / PreviewWorkspace；旧 LCOS 只读要迁的纯函数签名。**必须读取远端最新 main 并与审计 ref 比对**；路径/contract 变化时更新任务卡落点，不回退旧 ref。
+
+**配套（同一舱内，落码必查）**：
+- 反造轮子宪法：`_cabin\04_R系列与T5规划\Gen2开发\00_SHARED_Gen2施工原则_反造轮子宪法.md`（＝ V6 共用宪法块 `P0–P20`）
+- 七路承接补丁卡：`_cabin\01_正本\...\09_T1-T7现成轮子承接补丁卡.md`
+- 信息损失责任矩阵：`_cabin\01_正本\...\08_T1-T7规划信息损失责任矩阵.md`
+- 失败样本与完成措辞：`_cabin\01_正本\...\05_证据账本与失败样本.md`
+- 外部材料索引（pin 与采用边界）：`_cabin\01_正本\...\references\REFERENCE_INDEX.md`
 
 ## 两条全局动工指令（覆盖所有阶段）
 

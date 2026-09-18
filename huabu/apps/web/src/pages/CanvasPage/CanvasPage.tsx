@@ -1,25 +1,30 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+// Wave 1（正本 `04_逐Wave施工卡与验收.md` Wave 1 + `appendices\B_...` +
+// `docs/construction/HUABU_RETIREMENT_LEDGER.md` 第 11 行）：
+// `/canvas/:canvasId` **不再挂载 Huabu 三栏壳**（`MainLayout` / `CanvasHeader` /
+// `CanvasLayerPanel` / `PreviewWorkspacePanel` / `CenterArea`）。本页解析 canonical
+// 归属（canvasId → 项目 + 显式工作现场）后交给唯一 LCOS Shell（`LcosProjectRoute`
+// → `LcosProjectShell`）。
+//
+// owner 收敛：画布加载/切换由 `LcosWorksiteStage` 持有，canvas SSE 订阅由
+// `useLcosCanvasProps` 持有，Cmd/Ctrl+F 由 LCOS Navigator 持有。本页**只**保留
+// CanvasPage 原本独有的 KEEP-KERNEL 一次性 intent 与画布注意力仲裁，避免同一
+// canvasStore 出现第二个写 owner。
+
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
-
-import { CenterArea } from '@/pages/CanvasPage/CenterArea.tsx';
-import { MainLayout } from '@/pages/CanvasPage/MainLayout.tsx';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { Loading } from '../../components/Common/Loading';
 import { toast } from '../../components/Common/Toast';
-import { CanvasLayerPanel } from '../../components/Panels/CanvasLayerPanel';
-import { CanvasHeader } from '../../components/Panels/Header/CanvasHeader.tsx';
-import { PreviewWorkspacePanel } from '../../components/Panels/PreviewWorkspace/PreviewWorkspacePanel';
-import { useGlobalSearchHotkey } from '../../hooks/useGlobalSearchHotkey';
+import { LcosProjectRoute } from '../../lcos/app/LcosProjectRoute';
+import { useLcosCanvasBinding } from '../../lcos/app/useLcosCanvasBinding';
 import { useTrackCanvasAttention } from '../../store/canvasAttentionStore';
 import useStore, { dismissVersionConflictToast } from '../../store/canvasStore';
-import { useCanvasSyncStore } from '../../store/canvasSyncStore';
 import { openPreviewNode } from '../../store/previewWorkspace/actions';
-import { useShortcutsUiStore } from '../../store/shortcutsUiStore';
 import { useToolStore } from '../../store/toolStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
@@ -68,55 +73,34 @@ function readNewCanvasPlacementIntent(
 
 /**
  * Page component for a single canvas.
- * Reads the `canvasId` from the URL and loads / switches the canvas accordingly.
+ *
+ * Wave 1 起：解析 `canvasId` 的 canonical 项目归属，并把渲染交给 LCOS Shell。
+ * 本页自身不再拥有画布机械，只持有一次性 intent（新建画布后的默认工具 /
+ * 指定节点预览）与画布注意力仲裁。
  */
 export default function CanvasPage() {
   const { t } = useTranslation();
   const { canvasId } = useParams<{ canvasId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const switchCanvas = useStore((s) => s.switchCanvas);
-  const loadCanvas = useStore((s) => s.loadCanvas);
   const isLoading = useStore((s) => s.isLoading);
   const canvasNotFound = useStore((s) => s.canvasNotFound);
-  const canvasLoadFailure = useStore((s) => s.canvasLoadFailure);
+  const nodeCount = useStore((s) => s.nodes.length);
+  // Subscribed so intent consumption can wait for the *matching* canvas to finish
+  // loading instead of reading a stale/empty store.
+  const storeCanvasId = useStore((s) => s.canvasId);
   const worldCanvasId = useWorkspaceStore((s) => s.worldCanvasId);
   const refreshSpaceTitles = useWorkspaceStore((s) => s.refreshSpaceTitles);
-  const nodeCount = useStore((s) => s.nodes.length);
-  // Subscribed so the very first render can detect a mismatch between the
-  // URL canvas and whatever (stale or empty) canvas is currently in the
-  // store — without this we'd flash the previous canvas's `MainLayout`
-  // for one synchronous frame before the mount effect below kicks
-  // `loadCanvas` and flips `isLoading` on.
-  const storeCanvasId = useStore((s) => s.canvasId);
-  const initialised = useRef(false);
+  const setPendingNodeType = useToolStore((s) => s.setPendingNodeType);
   const newCanvasPlacementRef = useRef<NewCanvasPlacementIntent | null>(null);
   const previewNodeIntentRef = useRef<string | null>(null);
-  const setPendingNodeType = useToolStore((s) => s.setPendingNodeType);
-  const isShortcutsOpen = useShortcutsUiStore((s) => s.isOpen);
-  const openShortcuts = useShortcutsUiStore((s) => s.open);
-  // Cmd+F / Ctrl+F → focus the canvas-wide search input in the
-  // left layer panel (or, when focus is inside the expanded
-  // preview, the in-preview find bar).
-  useGlobalSearchHotkey();
 
-  // Canvas floating chrome steps aside while the user works in the chat
-  // panel, an expanded node, or the layer panel. Tracked here rather than
-  // inside `Canvas` because the surfaces being arbitrated between are
-  // siblings of the canvas, not children of it.
+  // Canvas floating chrome still steps aside while the user works in a
+  // professional window / composer. Tracked at route level so the arbitration
+  // survives the retirement of the old three-column shell.
   useTrackCanvasAttention();
 
-  // Real-time sync: subscribe to server-pushed canvas mutations (e.g. an
-  // ACP agent writing via the reachback `/execute` route) for the loaded
-  // canvas so the frontend auto-refreshes. Keyed on the store's canvasId
-  // so we (re)connect once a canvas is actually loaded / switched.
-  const connectSync = useCanvasSyncStore((s) => s.connect);
-  const disconnectSync = useCanvasSyncStore((s) => s.disconnect);
-  useEffect(() => {
-    if (!storeCanvasId) return;
-    connectSync(storeCanvasId);
-    return () => disconnectSync();
-  }, [storeCanvasId, connectSync, disconnectSync]);
+  const binding = useLcosCanvasBinding(canvasId);
 
   // A create action carries a one-shot placement intent through router state.
   // Capture it before loading, then immediately remove it from browser history
@@ -147,25 +131,6 @@ export default function CanvasPage() {
       openPreviewNode(nodeId);
     }
   }, [canvasId, isLoading, storeCanvasId]);
-
-  useEffect(() => {
-    if (!canvasId) {
-      navigate('/', { replace: true });
-      return;
-    }
-
-    // On first mount, use loadCanvas; on subsequent canvas ID changes
-    // use switchCanvas (which flushes the previous canvas's autosave).
-    // We compare against the store's `canvasId` (already subscribed
-    // above) instead of carrying a separate ref — the subscription
-    // makes any local mirror redundant.
-    if (!initialised.current) {
-      initialised.current = true;
-      void switchCanvas(canvasId);
-    } else if (canvasId !== storeCanvasId) {
-      void switchCanvas(canvasId);
-    }
-  }, [canvasId, storeCanvasId, loadCanvas, switchCanvas, navigate]);
 
   useEffect(() => {
     if (!canvasId || canvasId !== worldCanvasId) return;
@@ -206,71 +171,21 @@ export default function CanvasPage() {
     setPendingNodeType,
   ]);
 
-  // When the user leaves the canvas page (e.g. clicks the back arrow
-  // to the canvas list, navigates into settings, or opens the docs),
-  // dismiss the persistent "modified elsewhere" toast so it doesn't
-  // bleed into other routes where the stale baseline isn't relevant.
-  // Pending save drains are handled by the navigation blocker in
-  // `RootLayout` (which lives in the data router and never unmounts),
-  // not here — putting the blocker on this component would leak stale
-  // entries under React.StrictMode and freeze later navigations.
+  // When the user leaves the canvas page, dismiss the persistent "modified
+  // elsewhere" toast so it doesn't bleed into other routes where the stale
+  // baseline isn't relevant. Pending save drains are handled by the navigation
+  // blocker in `RootLayout` (which lives in the data router and never unmounts).
   useEffect(() => {
     return () => {
       dismissVersionConflictToast();
     };
   }, []);
 
-  // Keep failures ahead of the mismatch spinner: the store retains the
-  // previous canvas while a requested route fails, so a failed route must not
-  // render an endless loading state.
-  const routeLoadFailure =
-    canvasLoadFailure?.canvasId === canvasId ? canvasLoadFailure : null;
-
-  if (routeLoadFailure?.kind === 'error') {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
-        <div className="text-center">
-          <h2 className="text-fg-default text-lg font-semibold">
-            画布加载失败
-          </h2>
-          <p className="text-fg-subtle mt-1 max-w-md text-sm">
-            {routeLoadFailure.message}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void loadCanvas(canvasId)}
-          className="bg-inverse text-fg-inverse hover:bg-inverse/90 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors"
-        >
-          重试加载
-        </button>
-      </div>
-    );
+  if (!canvasId) {
+    return <Navigate to="/" replace />;
   }
 
-  if (routeLoadFailure?.kind === 'not-found') {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
-        <div className="text-center">
-          <h2 className="text-fg-default text-lg font-semibold">
-            {t('canvasPage.notFoundTitle')}
-          </h2>
-          <p className="text-fg-subtle mt-1 text-sm">
-            {t('canvasPage.notFoundDescription')}
-          </p>
-        </div>
-        <Link
-          to="/spaces"
-          className="bg-inverse text-fg-inverse hover:bg-inverse/90 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {t('canvasPage.backToList')}
-        </Link>
-      </div>
-    );
-  }
-
-  if (isLoading || (canvasId && storeCanvasId !== canvasId)) {
+  if (binding.kind === 'resolving') {
     return (
       <Loading
         variant="brand"
@@ -281,13 +196,41 @@ export default function CanvasPage() {
     );
   }
 
+  if (binding.kind === 'resolved') {
+    // 唯一 LCOS Shell 组合根；`/canvas/:id` 与 `/projects/...` 共用同一 Shell，
+    // 因此 route-level Shell caller 只有一个。
+    return (
+      <LcosProjectRoute
+        projectIdOverride={binding.projectId}
+        workspaceIdOverride={binding.workspaceId}
+        surfaceOverride={binding.surface}
+      />
+    );
+  }
+
+  const detail =
+    binding.kind === 'error'
+      ? `读取 Core 工作现场失败：${binding.message}`
+      : '这个画布没有绑定任何 LCOS 项目工作现场。';
+
   return (
-    <MainLayout
-      header={<CanvasHeader onOpenShortcuts={openShortcuts} />}
-      leftPanel={<CanvasLayerPanel />}
-      rightPanel={<PreviewWorkspacePanel />}
+    <div
+      data-lcos-canvas-binding={binding.kind}
+      className="flex h-full flex-col items-center justify-center gap-4"
     >
-      <CenterArea canvasShortcutsDisabled={isShortcutsOpen} />
-    </MainLayout>
+      <div className="max-w-md text-center">
+        <h2 className="text-fg-default text-lg font-semibold">
+          此画布入口已移交 LCOS 工作空间
+        </h2>
+        <p className="text-fg-subtle mt-1 text-sm">{detail}</p>
+      </div>
+      <Link
+        to="/projects"
+        className="bg-inverse text-fg-inverse hover:bg-inverse/90 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        {t('canvasPage.backToList')}
+      </Link>
+    </div>
   );
 }

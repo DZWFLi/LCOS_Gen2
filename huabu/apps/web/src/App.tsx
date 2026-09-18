@@ -28,7 +28,8 @@ import { WindowChrome } from './components/Shell/WindowChrome';
 import { useDisableBrowserZoom } from './hooks/useDisableBrowserZoom';
 import { useInputModeListener } from './hooks/useInputMode';
 import { lcosProjectRoutes } from './lcos/app/LcosAppRoutes';
-import CanvasListPage from './pages/CanvasListPage';
+// Wave 1：`CanvasListPage`（Huabu 产品列表页）已从生产路由退役，不再挂载。
+// 组件本体按 appendices B 的 `KEEP COMMAND-HIDE UI` 保留，命令/数据路径可继续被 LCOS 复用。
 import { WorkspaceLoadingScreen } from './pages/WorkspaceLoadingScreen';
 import WorkspaceSetupPage from './pages/WorkspaceSetupPage';
 import { drainPendingSaves } from './store/canvasStore.ts';
@@ -41,7 +42,10 @@ import { useWorkspaceStore } from './store/workspaceStore';
  * `modulepreload` in `index.html` and must be parsed before the first React
  * paint, which is the single largest contributor to desktop cold-start time.
  */
-const CanvasPage = lazy(() => import('./pages/CanvasPage/CanvasPage.tsx'));
+// Wave 1（正本 04 + appendices B）：`/canvas/:canvasId` 不再挂载旧产品壳（`MainLayout` 三栏）。
+// `CanvasPage` 退役为 LCOS 入口：解析 canonical 项目归属后交给唯一 LCOS Shell
+// （见 pages/CanvasPage/CanvasPage.tsx），URL / loader / guard / not-found 契约保持不变。
+const CanvasPage = lazy(() => import('./pages/CanvasPage/CanvasPage'));
 
 const playgroundRoutes = import.meta.env.DEV
   ? [
@@ -271,8 +275,9 @@ export default function App() {
               element: <WorkspaceGuardLayout />,
               children: [
                 { path: '/', element: <WorkspaceLanding /> },
+                // Wave 1（正本 04 / appendices B）：`/spaces` 已由 LCOS 路由组接管
+                // （见 lcos/app/LcosAppRoutes.tsx），此处不再挂 Huabu CanvasListPage。
                 ...lcosProjectRoutes(),
-                { path: '/spaces', element: <CanvasListPage /> },
                 {
                   path: '/canvas/:canvasId',
                   element: (

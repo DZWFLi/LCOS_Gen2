@@ -23,6 +23,9 @@ const withSuspense = (element: ReactNode): ReactNode => (
 export function lcosProjectRoutes(): readonly RouteObject[] {
   return [
     { path: '/projects', element: withSuspense(<LcosProjectLauncherPage />) },
+    // Wave 1（正本 04 / appendices B）：产品前台入口不再挂 Huabu CanvasListPage。
+    // `/spaces` 与 `/projects` 同为 LCOS 项目列表（读真实 Core 项目），把默认落地页从旧产品壳换到 LCOS Shell。
+    { path: '/spaces', element: withSuspense(<LcosProjectLauncherPage />) },
     { path: '/projects/:projectId/:surface?', element: withSuspense(<LcosProjectRoute />) },
   ];
 }
