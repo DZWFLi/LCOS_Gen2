@@ -64,7 +64,7 @@ process.env.E2E_LOCAL_CORE_DB_PATH = CORE_DB_PATH;
 
 export default defineConfig({
   testDir: '.',
-  testMatch: /lcos-collab-(golden|r2r3)\.spec\.ts/,
+  testMatch: /lcos-collab-(golden|r2r3|r4)\.spec\.ts/,
   timeout: 120_000,
   workers: 1,
   retries: 0,
