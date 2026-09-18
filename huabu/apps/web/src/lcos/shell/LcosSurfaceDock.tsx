@@ -48,17 +48,19 @@ export function LcosSurfaceDock({
   const handleSwitch = (surface: LcosSurfaceKey): void => {
     void switchWorksite(surface);
   };
-  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, viewport);
+  // R2-B：HUD 在 safe area 内居中，而不是在整个视口内居中。
+  // 无窗口 / 只有浮动窗口时 safeRect 不变 → 结果与旧行为逐字相同（仍是视口中心）；
+  // 有右侧停靠窗口时 safeRect 变窄 → 底栏自动让开，不会被窗口盖住。
+  const safeCenteredLeft = (edgeOffsets.left + (viewport.width - edgeOffsets.right)) / 2;
 
   return (
     <div
       data-lcos-surface-dock
       className="pointer-events-auto fixed z-40 rounded-full px-2 py-1.5"
       style={{
-        left: '50%',
+        left: safeCenteredLeft,
         bottom: edgeOffsets.bottom,
         transform: 'translateX(-50%)',
         maxWidth: 'calc(100vw - 24px)',

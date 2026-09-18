@@ -194,16 +194,17 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
   // 输入是否展开由用户意图决定；异步读取/空结果不能卸载正在输入的文本框。
   const viewState: LcosNavigatorIslandState =
     focus ? '搜索' : pins.length > 0 ? '彩色标' : '静息';
-  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, viewport);
+  // R2-B：与 SurfaceDock 同一规则 —— 导航岛在 safe area 内居中，右侧停靠窗口不会盖住它。
+  // 无窗口 / 只有浮动窗口时结果仍是视口中心（与旧行为一致）。
+  const safeCenteredLeft = (edgeOffsets.left + (viewport.width - edgeOffsets.right)) / 2;
 
   return (
     <div
       data-lcos-navigator-island
-      className="pointer-events-auto fixed left-1/2 top-6 z-40 -translate-x-1/2"
-      style={{ maxWidth: '90vw', top: edgeOffsets.top }}
+      className="pointer-events-auto fixed top-6 z-40 -translate-x-1/2"
+      style={{ maxWidth: '90vw', top: edgeOffsets.top, left: safeCenteredLeft }}
     >
       <LcosNavigatorIslandView
         state={viewState}
