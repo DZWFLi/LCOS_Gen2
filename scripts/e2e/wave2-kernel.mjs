@@ -43,8 +43,12 @@ async function coreGet(path) {
 const browser = await chromium.launch({ executablePath: EXE, headless: true });
 const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
 const consoleErrors = [];
+const consoleWarns = [];
+const consoleLcos = [];
 page.on('console', (m) => {
   if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 240));
+  if (m.type() === 'warning' || m.type() === 'warn') consoleWarns.push(m.text().slice(0, 400));
+  if (m.type() === 'info' && /\[lcos\]/.test(m.text())) consoleLcos.push(m.text().slice(0, 200));
 });
 page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${String(e.message).slice(0, 240)}`));
 const failedResponses = [];
@@ -96,6 +100,153 @@ const dismissConflictToast = async () => {
   if ((await keepMine.count()) > 0) await keepMine.click({ timeout: 5000 }).catch(() => undefined);
   else if ((await loadLatest.count()) > 0) await loadLatest.click({ timeout: 5000 }).catch(() => undefined);
   await page.waitForTimeout(1500);
+};
+
+/**
+ * 节点对账：把画布上渲染出的 `.react-flow__node` 与 Core 的 canonical
+ * `ProjectionBinding`（`GET /projects/:pid/spatial/bindings`）做集合比对。
+ * - `unboundRendered` 非空 = 渲染了没有 binding 的节点（重复投影/孤儿）
+ * - `danglingBindings` 非空 = binding 指向的节点在画布上不存在（泄漏）
+ */
+const nodeAccounting = async (projectId, label) => {
+  const renderedIds = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.react-flow__node')).map((el) => el.getAttribute('data-id')),
+  );
+  const canvasIdNow = await page.evaluate(
+    () => document.querySelector('[data-lcos-worksite-stage]')?.getAttribute('data-lcos-canvas-id') ?? null,
+  );
+  const rawProbe = await probeBindings(projectId);
+  const bindings = rawProbe.records;
+  const canvasRead = await readCanvasNodeIds(canvasIdNow ?? '');
+  const nodeBindings = bindings.filter((b) => b.spatialKind === 'node' && b.canvasId === canvasIdNow);
+  const boundIds = nodeBindings.map((b) => b.spatialId);
+  return {
+    label,
+    canvasId: canvasIdNow,
+    representedCount: bindings.length,
+    rawProbe: {
+      projectId: rawProbe.projectId,
+      status: rawProbe.status,
+      count: rawProbe.count,
+      canvasIds: rawProbe.canvasIds,
+      spatialKinds: rawProbe.spatialKinds,
+      sample: rawProbe.sample,
+      bodyHead: rawProbe.bodyHead,
+    },
+    rawProbeDefaultProject: label === 'first-load' ? await probeBindings('disposable-mvp-sample') : undefined,
+    bindingSample: bindings.slice(0, 3),
+    bindingCanvasIds: Array.from(new Set(bindings.map((b) => b.canvasId))),
+    bindingSpatialKinds: Array.from(new Set(bindings.map((b) => b.spatialKind))),
+    renderedNodes: renderedIds.length,
+    nodeBindings: nodeBindings.length,
+    renderedIds,
+    boundIds,
+    canvasNodeCount: canvasRead.nodeIds.length,
+    canvasReadStatus: canvasRead.status,
+    canvasReadHead: canvasRead.rawHead,
+    // 身份级重复：同一个实体（entityType:entityId）不得持有两个 node binding。
+    // 这才是「重复投影」的准确判据 —— 画布节点总数会因为"某个实体迟到"而变，
+    // 但一个实体对应两个空间节点**永远**是 bug。
+    duplicateEntityBindings: (() => {
+      const seen = new Map();
+      for (const b of nodeBindings) {
+        const key = `${b.entityType}:${b.entityId}`;
+        seen.set(key, (seen.get(key) ?? 0) + 1);
+      }
+      return Array.from(seen.entries()).filter(([, n]) => n > 1).map(([key, n]) => `${key}×${n}`);
+    })(),
+    // 权威对账集合（以画布服务端内容为准）
+    unboundCanvasNodes: canvasRead.nodeIds.filter((id) => !boundIds.includes(id)),
+    danglingBindings: boundIds.filter((id) => !canvasRead.nodeIds.includes(id)),
+    // DOM 口径仅作参考（视口外不渲染）
+    unboundRendered: renderedIds.filter((id) => !boundIds.includes(id)),
+    renderedButOffCanvas: renderedIds.filter((id) => !canvasRead.nodeIds.includes(id)),
+  };
+};
+
+/**
+ * 权威节点集合：直接读画布服务端内容（`GET /api/canvas/:id`）。
+ * DOM 计数不可用于对账 —— `Canvas.tsx` 开了 `onlyRenderVisibleElements`，
+ * 视口外的节点根本不渲染，用 DOM 会得出假的「binding 泄漏 / 节点增长」。
+ */
+const readCanvasNodeIds = async (canvasId) => {
+  try {
+    const res = await fetch(`${BASE}/api/canvas/${encodeURIComponent(canvasId)}`);
+    const text = await res.text();
+    let payload = null;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+    const record = payload && typeof payload === 'object' ? (payload.value ?? payload) : null;
+    // 画布内容形状：{ canvasId, title, version, state: { nodes: [...] } }（兼容顶层 nodes）。
+    const nodes = record === null
+      ? null
+      : Array.isArray(record.nodes)
+        ? record.nodes
+        : record.state && Array.isArray(record.state.nodes)
+          ? record.state.nodes
+          : null;
+    return {
+      status: res.status,
+      nodeIds: nodes ? nodes.map((n) => String(n.id)) : [],
+      rawHead: text.slice(0, 120),
+    };
+  } catch (error) {
+    return { status: 'threw', nodeIds: [], error: String(error), rawHead: '' };
+  }
+};
+
+/**
+ * 等节点数稳定：reconcile 是**增量**的（先出现 1~2 个，再补齐），过早采样会把
+ * 「投影还没跑完」误判成「reload 后增长 = 重复投影」。连续两个采样计数相同即认为稳定。
+ */
+const waitForStableNodeCount = async (settleMs = 2500, capMs = 30000) => {
+  const started = Date.now();
+  let last = -1;
+  let stableSince = Date.now();
+  for (;;) {
+    const count = await page.locator('.react-flow__node').count();
+    if (count !== last) {
+      last = count;
+      stableSince = Date.now();
+    }
+    if (Date.now() - stableSince >= settleMs) return count;
+    if (Date.now() - started > capMs) return last;
+    await page.waitForTimeout(400);
+  }
+};
+
+/** 原始探针：把 HTTP 状态与 body 前 200 字带回来（不再吞掉失败原因）。 */
+const probeBindings = async (projectIdToQuery) => {
+  try {
+    const res = await fetch(
+      `${CORE}/projects/${encodeURIComponent(projectIdToQuery)}/spatial/bindings`,
+      { headers: { Authorization: `Bearer ${CORE_TOKEN}` } },
+    );
+    const text = await res.text();
+    let records = null;
+    try {
+      const parsed = JSON.parse(text);
+      const arr = parsed.value ?? parsed;
+      records = Array.isArray(arr) ? arr : null;
+    } catch {
+      records = null;
+    }
+    return {
+      projectId: projectIdToQuery,
+      status: res.status,
+      count: records ? records.length : null,
+      canvasIds: records ? Array.from(new Set(records.map((b) => b.canvasId))) : [],
+      spatialKinds: records ? Array.from(new Set(records.map((b) => b.spatialKind))) : [],
+      sample: records ? records.slice(0, 3) : [],
+      records: records ?? [],
+      bodyHead: text.slice(0, 120),
+    };
+  } catch (error) {
+    return { projectId: projectIdToQuery, status: 'threw', error: String(error), body: '' };
+  }
 };
 
 try {
@@ -150,6 +301,10 @@ try {
   evidence.nodeCount = nodeCount;
   const hasNodes = nodeCount > 0;
   check(hasNodes, `画布上没有投影出任何真实节点（nodeCount=${nodeCount}）`);
+  // 基准对账：本轮的渲染节点集合 vs Core canonical binding 集合。
+  // 先等投影跑完（增量），否则会拿部分节点当基准。
+  evidence.settledNodeCountFirstLoad = await waitForStableNodeCount();
+  evidence.accountingFirstLoad = await nodeAccounting(projectId, 'first-load');
   if (!hasNodes) {
     evidence.noNodeDiagnostics = await page.evaluate(() => ({
       bodyText: (document.body.innerText ?? '').replace(/\s+/g, ' ').slice(0, 400),
@@ -338,13 +493,53 @@ try {
     evidence.afterReload.controls === 0 && evidence.afterReload.miniMap === 0 && evidence.afterReload.strayPanel === 0,
     'reload 后旧 Huabu chrome 又出现',
   );
+  evidence.settledNodeCountAfterReload = await waitForStableNodeCount();
+  evidence.accountingAfterReload = await nodeAccounting(projectId, 'after-reload');
   await snap('wave2_step5_reload_1366.png');
+
+  // ── B4 对账断言：不得「渲染了却没有 binding」，也不得因 reload 增长 ─────────
+  for (const acc of [evidence.accountingFirstLoad, evidence.accountingAfterReload]) {
+    if (!acc) continue;
+    check(
+      acc.canvasNodeCount > 0,
+      `${acc.label}：读不到画布节点（status=${acc.canvasReadStatus} head=${acc.canvasReadHead}）`,
+    );
+    check(
+      acc.unboundCanvasNodes.length === 0,
+      `${acc.label}：${acc.unboundCanvasNodes.length} 个画布节点没有 canonical ProjectionBinding（重复投影/孤儿）：${acc.unboundCanvasNodes.slice(0, 4).join(', ')}`,
+    );
+    check(
+      acc.danglingBindings.length === 0,
+      `${acc.label}：${acc.danglingBindings.length} 个 binding 指向的节点不在画布上（泄漏）：${acc.danglingBindings.slice(0, 4).join(', ')}`,
+    );
+    check(
+      acc.renderedButOffCanvas.length === 0,
+      `${acc.label}：${acc.renderedButOffCanvas.length} 个渲染节点不在画布内容里（DOM 与服务端不一致）`,
+    );
+    check(
+      acc.duplicateEntityBindings.length === 0,
+      `${acc.label}：同一实体持有多个空间节点（重复投影）：${acc.duplicateEntityBindings.join(', ')}`,
+    );
+  }
+  if (evidence.accountingFirstLoad && evidence.accountingAfterReload) {
+    // 画布节点总数允许因「某个实体迟到」而增加，但不能减少（丢失），也不允许身份级重复。
+    check(
+      evidence.accountingAfterReload.canvasNodeCount >= evidence.accountingFirstLoad.canvasNodeCount,
+      `reload 后画布节点变少（${evidence.accountingFirstLoad.canvasNodeCount} → ${evidence.accountingAfterReload.canvasNodeCount}）= 投影丢失`,
+    );
+    check(
+      evidence.accountingAfterReload.nodeBindings === evidence.accountingAfterReload.canvasNodeCount,
+      `binding 数与画布节点数不等（${evidence.accountingAfterReload.nodeBindings} vs ${evidence.accountingAfterReload.canvasNodeCount}）`,
+    );
+  }
 
   check(
     !consoleErrors.some((t) => /Cannot update a component/.test(t)),
     '出现 "Cannot update a component ... while rendering" 违反项',
   );
   evidence.consoleErrors = consoleErrors;
+  evidence.consoleWarns = consoleWarns;
+  evidence.consoleLcos = consoleLcos;
   evidence.failedResponses = failedResponses;
 } catch (error) {
   failures.push(`脚本异常：${error instanceof Error ? error.message : String(error)}`);

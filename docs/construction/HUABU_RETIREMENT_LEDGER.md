@@ -71,12 +71,14 @@
 
 ### 未通过 / 暴露的真实缺陷（Wave 2 阻塞项）
 
-| # | 现象 | 证据 | 可能归属 |
+| # | 现象 | 现状（2026-09-19 复核后） | 归属 |
 |---|---|---|---|
-| B1 | **Ctrl+Shift+Z 重做未回到拖后几何**（Ctrl+Z 撤销正常） | 绑定本身正确（`config/shortcuts.ts` `edit.redo` = mod+shift+z；分发在 `hooks/shortcuts/useCanvasShortcuts.ts:371-377`，且在 shift guard 之前）→ 需查 undo 之后 redo 栈是否被重排/清空 | Wave 2 |
-| B2 | **401 `GET /lcos-core/projects/<id>/events`** | Core 事件流（SSE）请求未带 token | Wave 2（LCOS Core client 鉴权） |
-| B3 | **409 `PUT /api/canvas/<id>/nodes/<nodeId>/content`**（`NODE_CONTENT_CONFLICT`） | `canvas.route.ts` 自带注释记录过同类「spurious 409」；`store/canvasStore/save/structureSaveReconciliation.ts` 有 `isCoveredCanvasVersionConflict` 容忍逻辑 | Wave 2（写 owner / rev-CAS 协调） |
-| B4 | **节点数跨次加载增长 3 → 4 → 9** | 同一夹具反复 reload 后 `.react-flow__node` 计数递增 | Wave 2/3（reconcile 幂等性，疑似重复投影） |
-| B5 | 曾出现 `contentConflict` toast（`i18n/resources/zh-CN/common.json::contentConflict`「已在别处被修改」） | 该 toast `fixed z-9999` 会拦截 pointer，一次实测中直接挡住后续步骤 | Wave 2（同 B3：同一画布第二个写 owner） |
+| B1 | **Ctrl+Z / Ctrl+Shift+Z 撤销·重做不稳定**：同一门禁不同轮次分别报「撤销未生效」「重做未回到拖后几何」；绑定与分发路径已确认正确（`config/shortcuts.ts` 的 `edit.undo`/`edit.redo`；`hooks/shortcuts/useCanvasShortcuts.ts:371-377` redo、`:399-402` undo）。`canvasHistoryManager.takeSnapshot()` 与 `clear()` 都会清 redo 栈 → 疑与 B3/B5 同源（落盘回显经 sync 流回来被当成远端变更重载 → 历史被清） | **未修**（门禁唯一仍失败项） | Wave 2 |
+| B2 | ~~401 `GET /lcos-core/projects/<id>/events`~~ | **已修**：`apps/web-gen2/src/backend/collaboration.ts` 生产路径改为 `fetch` + SSE 流并带 `Authorization: Bearer`（`EventSource` 无法发头，而 Core `server.ts::validBearerToken` 只认头 → 以前稳定 401、协作 invalidation 永远收不到）。证据：干净环境 `failedResponses` 不再出现该 401；web-gen2 `tsx --test test/collaboration-client.test.ts` 16/16、`tsc` exit 0 | ✅ 已闭环 |
+| B3 | **409 `PUT /api/canvas/<id>/nodes/<nodeId>/content`**（`NODE_CONTENT_CONFLICT`）；同轮画布 `version` 从 8 涨到 18 | **未修**（登记） | Wave 2 |
+| B4 | ~~节点数跨次 reload 增长（3→4→9），疑似重复投影~~ | **排除：门禁伪影**。`Canvas.tsx` 开了 `onlyRenderVisibleElements`，DOM 计数 ≠ 画布内容。改用权威口径（`GET /api/canvas/:id` 的 `state.nodes` vs Core `GET /projects/:pid/spatial/bindings`）后全绿：`unboundCanvasNodes=[]`、`danglingBindings=[]`、`duplicateEntityBindings=[]`（同一实体不会有两个空间节点）、`renderedButOffCanvas=[]` | ✅ 已闭环 |
+| B5 | 曾出现 `contentConflict` toast（`i18n/resources/zh-CN/common.json::contentConflict`「已在别处被修改」，`fixed z-9999` 会拦截 pointer） | **未修**（登记；与 B3 同源） | Wave 2 |
+
+> 门禁现状（干净环境、连续两轮复跑一致）：`ok:false`，**唯一失败项 = B1**。其余全绿，包括权威身份级对账（无孤儿 / 无泄漏 / 同一实体无重复空间节点 / DOM 与服务端一致）。
 
 > 注：B2/B3/B4/B5 与 Wave 1 的路由组合改动无关（都发生在 `useLcosCanvasProps` 驱动的 projection/reconcile 与 Huabu 客户端 autosave 之间），但都在 Wave 2「一位 owner、不倒退」的验收范围内，因此必须在本 Wave 内解决。

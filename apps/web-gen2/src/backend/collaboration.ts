@@ -265,16 +265,12 @@ export class CoreCollaborationClient {
     listener: (event: CollaborationSessionEventV1) => void,
     options: CollaborationSubscribeOptions = {},
   ): (() => void) | undefined {
-    const factory = options.eventSourceFactory
-      ?? (typeof EventSource === 'undefined' ? undefined : (url: string) => new EventSource(url));
-    if (factory === undefined) return undefined;
     const params = new URLSearchParams();
     if (options.lastSeenProjectSeq !== undefined) params.set('lastSeenProjectSeq', String(options.lastSeenProjectSeq));
     if (options.runtimeId !== undefined) params.set('runtimeId', options.runtimeId);
     const query = params.size > 0 ? `?${params.toString()}` : '';
-    const source = factory(
-      `${this.http.config.baseUrl}/projects/${encodeURIComponent(projectId)}/events${query}`,
-    );
+    const url = `${this.http.config.baseUrl}/projects/${encodeURIComponent(projectId)}/events${query}`;
+
     const emit = (kind: CollaborationSessionEventV1['kind']): void => {
       listener({
         schemaVersion: 1,
@@ -284,8 +280,9 @@ export class CoreCollaborationClient {
         occurredAt: new Date().toISOString(),
       });
     };
-    source.addEventListener('project-event', (message) => {
-      const data = (message as MessageEvent<string>).data;
+
+    // §22 折算：内部 run/continuity/artifact/... → 产品三类信号。
+    const handleProjectEvent = (data: string): void => {
       let envelope: ProjectEventEnvelope | undefined;
       try {
         const parsed = JSON.parse(data) as { ok?: boolean; value?: ProjectEventEnvelope };
@@ -294,7 +291,6 @@ export class CoreCollaborationClient {
         return;
       }
       if (envelope === undefined) return;
-      // §22 折算：内部 run/continuity/artifact/... → 产品三类信号。
       if (envelope.type === 'run.changed') {
         emit('session.changed');
         emit('timeline.appended');
@@ -306,11 +302,60 @@ export class CoreCollaborationClient {
       } else {
         emit('session.changed');
       }
-    });
-    // snapshot/replay = 连接（重）建，投影需整体刷新。
-    source.addEventListener('snapshot', () => emit('session.changed'));
-    source.addEventListener('replay', () => emit('session.changed'));
-    return () => source.close();
+    };
+
+    // 测试 seam：显式注入的 EventSource 保持原路径。
+    if (options.eventSourceFactory) {
+      const source = options.eventSourceFactory(url);
+      source.addEventListener('project-event', (message) => {
+        handleProjectEvent((message as MessageEvent<string>).data);
+      });
+      // snapshot/replay = 连接（重）建，投影需整体刷新。
+      source.addEventListener('snapshot', () => emit('session.changed'));
+      source.addEventListener('replay', () => emit('session.changed'));
+      return () => source.close();
+    }
+
+    // 生产路径必须用 fetch 读 SSE 流：`EventSource` 无法携带 `Authorization` 头，而 Core 的
+    // `/projects/:id/events` 只认 `Bearer` 头（`apps/local-core/src/server.ts` 的
+    // `validBearerToken` 只看 header）—— 用 EventSource 会稳定 401，协作 invalidation 信号
+    // 永远收不到（实测 B2）。这里与 Huabu 客户端同一套做法：fetch + 流式读。
+    if (typeof fetch !== 'function' || typeof AbortController === 'undefined') return undefined;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const headers: Record<string, string> = { Accept: 'text/event-stream' };
+        if (this.http.config.token) headers['Authorization'] = `Bearer ${this.http.config.token}`;
+        const response = await fetch(url, { headers, signal: controller.signal });
+        if (!response.ok || response.body === null) return;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let boundary = buffer.indexOf('\n\n');
+          while (boundary >= 0) {
+            const block = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            let eventName = 'message';
+            const dataLines: string[] = [];
+            for (const line of block.split('\n')) {
+              if (line.startsWith(':')) continue;
+              if (line.startsWith('event:')) eventName = line.slice('event:'.length).trim();
+              else if (line.startsWith('data:')) dataLines.push(line.slice('data:'.length).trimStart());
+            }
+            if (eventName === 'project-event') handleProjectEvent(dataLines.join('\n'));
+            else if (eventName === 'snapshot' || eventName === 'replay') emit('session.changed');
+            boundary = buffer.indexOf('\n\n');
+          }
+        }
+      } catch {
+        // 中止或断流：调用方退化为手动刷新（语义同 EventSource 缺席）。
+      }
+    })();
+    return () => controller.abort();
   }
 
   // ------------------------------------------------------------------
