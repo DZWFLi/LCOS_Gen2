@@ -4,7 +4,10 @@
 import { create } from 'zustand';
 
 import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
-import type { ProfessionalWindowEnvironmentV1 } from '@local-creative-os/web-gen2';
+import type {
+  ProfessionalRectV1,
+  ProfessionalWindowEnvironmentV1,
+} from '@local-creative-os/web-gen2';
 
 export type LcosSurfaceKey = 'main' | 'context' | 'workflow';
 
@@ -102,6 +105,14 @@ export interface LcosWindowRegion {
   readonly layout: LcosWindowRegionLayout;
   readonly windowIds: readonly string[];
   readonly activeWindowId: string;
+  /**
+   * R2-B：用户显式几何 override（仅 floating 生效）。缺省 = 由 Stage 派生初始摆放。
+   * 它进 `windowRegions` 而不是 body 局部 state —— 拓扑/几何只有这一份真相，
+   * 因此工程/现场往返回来时几何随拓扑一起恢复。
+   */
+  readonly rect?: ProfessionalRectV1;
+  /** R2-B：用户显式 dock 宽度（仅 docked-right 生效）。缺省 = 该 region 的 preferredWidth。 */
+  readonly dockWidth?: number;
 }
 
 export interface LcosShellUiState {
@@ -152,6 +163,17 @@ export interface LcosShellUiState {
   closeWindow(id: string): void;
   activateWindow(id: string): void;
   setWindowRegionLayout(regionId: string, layout: LcosWindowRegionLayout): void;
+  /** R2-B：提交一次 move/resize 后的 region 几何（唯一几何真相仍是 windowRegions）。 */
+  setWindowRegionRect(regionId: string, rect: ProfessionalRectV1): void;
+  /** R2-B：提交 docked-right 的宽度（左缘 resize）。 */
+  setWindowRegionDockWidth(regionId: string, dockWidth: number): void;
+  /**
+   * R2-B 显式分组：把 sourceRegion 的**全部**窗口并进 targetRegion 成为 tab，
+   * sourceRegion 消失。绝不自动把多个 instance 合成一个 tab 组 —— 只有本动作会。
+   */
+  groupWindowRegions(sourceRegionId: string, targetRegionId: string): void;
+  /** R2-B 显式取消分组：把该 region 的活动窗口拆成独立 floating region。 */
+  ungroupWindowRegion(regionId: string): void;
   publishWindowEnvironment(environment: ProfessionalWindowEnvironmentV1): void;
   clearWindowEnvironment(): void;
   clear(): void;
@@ -350,6 +372,68 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
         region.id === regionId ? { ...region, layout } : region,
       ),
     })),
+  // R2-B：几何 override 写回 windowRegions —— 拓扑与几何同一份真相，工程往返可恢复。
+  setWindowRegionRect: (regionId, rect) =>
+    set((s) => ({
+      windowRegions: s.windowRegions.map((region) =>
+        region.id === regionId ? { ...region, rect } : region,
+      ),
+    })),
+  setWindowRegionDockWidth: (regionId, dockWidth) =>
+    set((s) => ({
+      windowRegions: s.windowRegions.map((region) =>
+        region.id === regionId ? { ...region, dockWidth: Math.max(1, Math.round(dockWidth)) } : region,
+      ),
+    })),
+  // R2-B 显式分组：只有这个动作会把多个 region 合成一个 tab 组。
+  groupWindowRegions: (sourceRegionId, targetRegionId) =>
+    set((s) => {
+      if (sourceRegionId === targetRegionId) return s;
+      const source = s.windowRegions.find((region) => region.id === sourceRegionId);
+      const target = s.windowRegions.find((region) => region.id === targetRegionId);
+      if (source === undefined || target === undefined) return s;
+      const merged = [...target.windowIds];
+      for (const windowId of source.windowIds) {
+        if (!merged.includes(windowId)) merged.push(windowId);
+      }
+      return {
+        windowRegions: s.windowRegions
+          .filter((region) => region.id !== sourceRegionId)
+          .map((region) =>
+            region.id === targetRegionId
+              ? {
+                  ...region,
+                  windowIds: merged,
+                  activeWindowId: source.activeWindowId,
+                  // tab 顶栏接管呈现：dock 专用宽度不再适用，几何交回 Stage 派生。
+                  ...(region.dockWidth === undefined ? {} : { dockWidth: undefined }),
+                }
+              : region,
+          ),
+      };
+    }),
+  // R2-B 显式取消分组：把活动窗口拆出去，剩余窗口留在原 region。
+  ungroupWindowRegion: (regionId) =>
+    set((s) => {
+      const source = s.windowRegions.find((region) => region.id === regionId);
+      if (source === undefined || source.windowIds.length < 2) return s;
+      const detached = source.windowIds.filter((windowId) => windowId !== source.activeWindowId);
+      const nextRegionId = `region-${source.activeWindowId}`;
+      if (s.windowRegions.some((region) => region.id === nextRegionId)) return s;
+      const index = s.windowRegions.findIndex((region) => region.id === regionId);
+      const regions = s.windowRegions.map((region) =>
+        region.id === regionId
+          ? { ...region, windowIds: detached, activeWindowId: detached[detached.length - 1]! }
+          : region,
+      );
+      regions.splice(index + 1, 0, {
+        id: nextRegionId,
+        layout: 'floating',
+        windowIds: [source.activeWindowId],
+        activeWindowId: source.activeWindowId,
+      });
+      return { windowRegions: regions };
+    }),
   publishWindowEnvironment: (windowEnvironment) => set({ windowEnvironment }),
   clearWindowEnvironment: () => set({ windowEnvironment: null }),
   clear: () => {

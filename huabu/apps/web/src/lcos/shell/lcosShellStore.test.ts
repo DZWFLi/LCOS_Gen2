@@ -159,6 +159,81 @@ describe('Professional window topology', () => {
     store.clearWindowEnvironment();
     expect(useLcosShellStore.getState().windowEnvironment).toBeNull();
   });
+
+  // R2-B：几何 override 与拓扑同住 windowRegions（唯一真相），并随工程会话一起往返。
+  it('stores region geometry as a topology field, not body-local state', () => {
+    const store = useLcosShellStore.getState();
+    store.clear();
+    store.openWindow('reader', '材料 A', 'artifact-a');
+    const region = useLcosShellStore.getState().windowRegions[0];
+    if (!region) throw new Error('region must exist');
+
+    store.setWindowRegionRect(region.id, { x: 120, y: 140, width: 640, height: 520 });
+    expect(useLcosShellStore.getState().windowRegions[0]?.rect)
+      .toEqual({ x: 120, y: 140, width: 640, height: 520 });
+
+    store.setWindowRegionDockWidth(region.id, 520.4);
+    expect(useLcosShellStore.getState().windowRegions[0]?.dockWidth).toBe(520);
+    // 几何字段不影响拓扑身份
+    expect(useLcosShellStore.getState().windowRegions[0]?.windowIds).toEqual([useLcosShellStore.getState().windows[0]!.id]);
+  });
+
+  it('geometry survives a project round-trip through the same session record', () => {
+    const store = useLcosShellStore.getState();
+    store.clear();
+    store.setProject('project-a');
+    store.openWindow('reader', '材料 A', 'artifact-a');
+    const region = useLcosShellStore.getState().windowRegions[0];
+    if (!region) throw new Error('region must exist');
+    store.setWindowRegionRect(region.id, { x: 60, y: 90, width: 700, height: 500 });
+
+    store.setProject('project-b');
+    expect(useLcosShellStore.getState().windowRegions).toHaveLength(0);
+    store.setProject('project-a');
+    expect(useLcosShellStore.getState().windowRegions[0]?.rect)
+      .toEqual({ x: 60, y: 90, width: 700, height: 500 });
+    store.clear();
+  });
+
+  // R2-B：只有显式 group/ungroup 才会把多个窗口合成/拆开 tab 组。
+  it('groups two regions into one tabbed region and ungroups back out again', () => {
+    const store = useLcosShellStore.getState();
+    store.clear();
+    store.openWindow('reader', '材料 A', 'artifact-a');
+    store.openWindow('assembly', 'Assembly');
+    const before = useLcosShellStore.getState();
+    expect(before.windowRegions).toHaveLength(2);
+    expect(before.windowRegions.every((region) => region.windowIds.length === 1)).toBe(true);
+    const [first, second] = before.windowRegions;
+    if (!first || !second) throw new Error('two regions must exist');
+
+    store.groupWindowRegions(second.id, first.id);
+    const grouped = useLcosShellStore.getState();
+    expect(grouped.windowRegions).toHaveLength(1);
+    expect(grouped.windowRegions[0]?.windowIds).toHaveLength(2);
+    expect(grouped.windowRegions[0]?.activeWindowId).toBe(second.activeWindowId);
+
+    store.ungroupWindowRegion(grouped.windowRegions[0]!.id);
+    const ungrouped = useLcosShellStore.getState();
+    expect(ungrouped.windowRegions).toHaveLength(2);
+    expect(ungrouped.windowRegions.every((region) => region.windowIds.length === 1)).toBe(true);
+    expect(new Set(ungrouped.windowRegions.map((region) => region.activeWindowId)).size).toBe(2);
+    store.clear();
+  });
+
+  it('group/ungroup is a no-op without an explicit topology change', () => {
+    const store = useLcosShellStore.getState();
+    store.clear();
+    store.openWindow('reader', '材料 A', 'artifact-a');
+    const region = useLcosShellStore.getState().windowRegions[0];
+    if (!region) throw new Error('region must exist');
+    // 单窗口不可取消分组；同一区域不可自我分组
+    store.ungroupWindowRegion(region.id);
+    store.groupWindowRegions(region.id, region.id);
+    expect(useLcosShellStore.getState().windowRegions).toHaveLength(1);
+    expect(useLcosShellStore.getState().windowRegions[0]?.windowIds).toEqual([useLcosShellStore.getState().windows[0]!.id]);
+    store.clear();
+  });
 });
 
 it('keeps an explicit child-worksite return context separate from project truth', () => {
