@@ -145,27 +145,27 @@ export async function openWorkView(page: Page, index = 0): Promise<void> {
 export interface ReceiverSeed { readonly conv1: string; readonly conv2: string; readonly label1: string; readonly label2: string }
 
 /** 真实 Core seed：两条 connected conversation + receiver binding（幂等）。 */
-export async function seedReceiverConversations(): Promise<ReceiverSeed> {
+export async function seedReceiverConversations(projectId: string = PROJECT_ID): Promise<ReceiverSeed> {
   const label1 = 'E2E 会话甲';
   const label2 = 'E2E 会话乙';
-  const list = await coreJson('GET', `/projects/${PROJECT_ID}/connected-conversations`);
+  const list = await coreJson('GET', `/projects/${projectId}/connected-conversations`);
   const rows = (list.value as Array<{ id: string; conversationRef: string }> | undefined) ?? [];
   let conv1 = rows.find((row) => row.conversationRef === 'e2e-rec-1')?.id;
   let conv2 = rows.find((row) => row.conversationRef === 'e2e-rec-2')?.id;
   if (conv1 === undefined) {
-    const made = await coreJson('POST', `/projects/${PROJECT_ID}/connected-conversations`, {
+    const made = await coreJson('POST', `/projects/${projectId}/connected-conversations`, {
       action: 'connect', conversationRef: 'e2e-rec-1', executorId: 'executor-e2e', provider: 'codex', label: label1,
     });
     conv1 = (made.value as { id?: string } | undefined)?.id;
   }
   if (conv2 === undefined) {
-    const made = await coreJson('POST', `/projects/${PROJECT_ID}/connected-conversations`, {
+    const made = await coreJson('POST', `/projects/${projectId}/connected-conversations`, {
       action: 'connect', conversationRef: 'e2e-rec-2', executorId: 'executor-e2e', provider: 'codex', label: label2,
     });
     conv2 = (made.value as { id?: string } | undefined)?.id;
   }
   if (conv1 === undefined || conv2 === undefined) throw new Error(`receiver seed failed: ${JSON.stringify({ conv1, conv2 })}`);
-  const bound = await coreJson('POST', `/projects/${PROJECT_ID}/receiver-binding`, { connectedConversationId: conv1 });
+  const bound = await coreJson('POST', `/projects/${projectId}/receiver-binding`, { connectedConversationId: conv1 });
   if (!bound.ok) throw new Error(`receiver binding failed: ${bound.status}`);
   return { conv1, conv2, label1, label2 };
 }
@@ -460,4 +460,159 @@ export async function readProjectRunReviews(projectId: string): Promise<readonly
 export async function changeSetIds(projectId: string): Promise<readonly string[]> {
   const res = await coreJson('GET', `/projects/${projectId}/change-sets`);
   return ((res.value ?? []) as Array<{ id?: string }>).map((row) => String(row.id ?? '')).filter((id) => id !== '');
+}
+// ─────────────────── R4 Assembly dedicated fixture ───────────────────
+//
+// R4 Assembly 的四路 Source Bay 需要真实的 canonical 数据才可信：
+//   Project Warehouse ← graph（note）
+//   Capture Space     ← /runtime/capture-space/enqueue（desktop 快速捕获同一 canonical 入口）
+//   Resources         ← resource-upload-sessions（真实导入，不依赖外网）
+//   Skills            ← 仓库内 packages/skills（分层只读）
+// 全部在隔离 Core 里用 canonical API 建，不造第二套 Assembly 数据。
+
+export interface AssemblyFixture {
+  readonly projectId: string;
+  readonly scopeId: string;
+  readonly captureId: string;
+  /** 第二条 capture：专供 canonical retry 幂等证明（不被 UI 消费）。 */
+  readonly captureId2: string;
+  readonly resourceId: string;
+  readonly noteId: string;
+}
+
+/** 真实 Capture：走 desktop 快速捕获同一条 canonical enqueue（system-level staging）。 */
+async function seedCapture(operationId: string, title: string): Promise<string> {
+  const enqueued = await coreJson('POST', '/runtime/capture-space/enqueue', {
+    schemaVersion: 1,
+    operationId,
+    capturedAt: new Date().toISOString(),
+    source: { kind: 'text', pageTitle: title },
+    content: { text: `${title} · payload`, mimeType: 'text/plain' },
+    target: { mode: 'staging' },
+    hints: { title },
+  });
+  if (!enqueued.ok) throw new Error(`assembly fixture capture failed: ${enqueued.status} ${JSON.stringify(enqueued.value)}`);
+  const stagingId = (enqueued.value as { receipt?: { stagingId?: string } } | undefined)?.receipt?.stagingId;
+  if (stagingId === undefined) throw new Error(`capture receipt has no stagingId: ${JSON.stringify(enqueued.value)}`);
+  return stagingId;
+}
+
+/** 真实 Resource：canonical 上传会话（PUT 原始字节 → complete），完全离线。 */
+async function seedResource(projectId: string, scopeId: string, fileName: string, body: string): Promise<string> {
+  const started = await coreJson('POST', `/projects/${projectId}/resource-upload-sessions`, {
+    importRequestId: `import-assembly-${projectId}`,
+    rootName: fileName,
+    scopeId,
+    x: 0,
+    y: 0,
+  });
+  if (!started.ok) throw new Error(`assembly fixture upload session failed: ${started.status}`);
+  const sessionId = String((started.value as { sessionId?: string } | undefined)?.sessionId ?? '');
+  if (sessionId === '') throw new Error('assembly fixture upload session has no sessionId');
+  const uploaded = await coreJson('PUT', `/projects/${projectId}/resource-upload-sessions/${sessionId}/files?path=${encodeURIComponent(fileName)}`, body);
+  if (!uploaded.ok) throw new Error(`assembly fixture upload failed: ${uploaded.status}`);
+  const done = await coreJson('POST', `/projects/${projectId}/resource-upload-sessions/${sessionId}/complete`);
+  if (!done.ok) throw new Error(`assembly fixture complete failed: ${done.status} ${JSON.stringify(done.value)}`);
+  const resourceId = String((done.value as { resourceId?: string } | undefined)?.resourceId ?? '');
+  if (resourceId === '') throw new Error(`assembly fixture has no resourceId: ${JSON.stringify(done.value)}`);
+  return resourceId;
+}
+
+let assemblyFixturePromise: Promise<AssemblyFixture> | undefined;
+
+export function seedAssemblyFixture(): Promise<AssemblyFixture> {
+  assemblyFixturePromise ??= (async (): Promise<AssemblyFixture> => {
+    const now = new Date().toISOString();
+    const parentPath = join(TEMP_ROOT ?? tmpdir(), 'assembly-fixture-workspace');
+    mkdirSync(parentPath, { recursive: true });
+    const created = await coreJson('POST', '/projects', {
+      name: 'LCOS Assembly E2E', intent: 'create', parentPath, directoryName: 'assembly-fixture',
+    });
+    if (!created.ok) throw new Error(`assembly fixture project create failed: ${created.status}`);
+    const projectId = String(created.value.id);
+    const graph = await coreJson('GET', `/projects/${projectId}/graph`);
+    const snapshot = graph.value;
+    const rootScopeId = String((snapshot.scopes ?? []).find((scope: { kind?: string }) => scope.kind === 'root')?.id
+      ?? `scope-${projectId}-root`);
+    const scopes = [...(snapshot.scopes ?? [])];
+    const workspaces = [...(snapshot.workspaces ?? [])];
+
+    const addWorkspace = (scopeId: string, surface: 'main' | 'context' | 'workflow', label: string): void => {
+      if (workspaces.some((workspace: { preferredSurface?: string }) => workspace.preferredSurface === surface)) return;
+      workspaces.push({
+        id: `workspace-assembly-${surface}-${projectId}`, projectId, scopeId, name: label,
+        intent: 'canvas', viewport: { x: 0, y: 0, zoom: 1 }, focusedViewIds: [], visibleLayers: [],
+        contextPolicy: 'workspace-related', preferredSurface: surface, updatedAt: now,
+      });
+    };
+    addWorkspace(rootScopeId, 'main', 'Assembly Main');
+    for (const surface of ['context', 'workflow'] as const) {
+      const scopeId = `scope-assembly-${surface}-${projectId}`;
+      scopes.push({
+        id: scopeId, projectId, parentScopeId: rootScopeId, containerViewId: null,
+        kind: surface, name: `Assembly ${surface}`, createdAt: now, updatedAt: now,
+      });
+      addWorkspace(scopeId, surface, `Assembly ${surface}`);
+    }
+
+    const noteId = 'note-assembly-1';
+    // 60 条 note：让 canonical 分页（nextCursor）在浏览器里真实可达（默认页 50）。
+    // updatedAt 略微前置，保证 note 稳定落在第一页（排序 = updatedAt 降序 + id 稳定序）。
+    const noteStamp = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const notes = [...(snapshot.notes ?? [])];
+    for (let index = 1; index <= 60; index += 1) {
+      const id = `note-assembly-${index}`;
+      if (notes.some((note: { id?: string }) => note.id === id)) continue;
+      notes.push({ id, projectId, anchor: { type: 'project' }, body: `Assembly 投放用备注 ${index}`, createdAt: noteStamp, updatedAt: noteStamp });
+    }
+    const saved = await coreJson('PUT', `/projects/${projectId}/graph`, { snapshot: { ...snapshot, scopes, workspaces, notes } });
+    if (!saved.ok) throw new Error(`assembly fixture graph failed: ${saved.status} ${JSON.stringify(saved.value)}`);
+
+    const [captureId, captureId2, resourceId] = await Promise.all([
+      seedCapture(`e2e-assembly-capture-${projectId}`, 'Assembly 暂存文本'),
+      seedCapture(`e2e-assembly-capture-retry-${projectId}`, 'Assembly 重试暂存文本'),
+      seedResource(projectId, rootScopeId, 'assembly-source.txt', 'Assembly 来源文本（E2E）'),
+    ]);
+    return { projectId, scopeId: rootScopeId, captureId, captureId2, resourceId, noteId };
+  })();
+  return assemblyFixturePromise;
+}
+
+export async function enterAssemblyProject(page: Page, fixture: AssemblyFixture): Promise<void> {
+  await enterProjectById(page, fixture.projectId, 'main');
+}
+
+/** 真实入口按钮打开 Assembly（不是 page.evaluate 造窗口）。 */
+export async function openAssemblyWindow(page: Page): Promise<void> {
+  await page.locator('[data-lcos-assembly-entry]').first().click();
+  await expect(page.locator('[data-lcos-assembly]').first()).toBeVisible({ timeout: 30_000 });
+}
+
+/** Assembly 所在的 region id（用于证明「同一个 region」）。 */
+export async function assemblyRegionId(page: Page): Promise<string> {
+  return page.locator('[data-lcos-assembly]').first().evaluate((node) =>
+    (node.closest('[data-lcos-window-region-id]') as HTMLElement | null)?.dataset.lcosWindowRegionId ?? '');
+}
+
+export function assemblyTargetKind(page: Page): Promise<string | null> {
+  return page.locator('[data-lcos-assembly]').first().getAttribute('data-lcos-assembly-target');
+}
+
+/** live targetRef 的 id（main 为空串）——用于证明「同一个 Assembly 只换 target」。 */
+export function assemblyTargetId(page: Page): Promise<string | null> {
+  return page.locator('[data-lcos-assembly]').first().getAttribute('data-lcos-assembly-target-id');
+}
+
+/** 切 Source Bay tab（真实 click）并等到该路离开 loading。 */
+export async function selectAssemblySourceTab(
+  page: Page,
+  tab: 'project' | 'capture' | 'sources' | 'skills',
+  options: { readonly allowError?: boolean } = {},
+): Promise<void> {
+  await page.locator(`[data-lcos-assembly-source-tab="${tab}"]`).first().click();
+  await expect(page.locator(`[data-lcos-assembly-source-panel="${tab}"]`)).toBeVisible({ timeout: 15_000 });
+  if (options.allowError !== true) {
+    await expect(page.locator(`[data-lcos-assembly-source-panel="${tab}"] [data-lcos-assembly-error="${tab}"]`)).toHaveCount(0, { timeout: 15_000 });
+  }
+  await expect(page.locator(`[data-lcos-assembly-source-panel="${tab}"] [data-lcos-assembly-preview]`)).toHaveCount(0);
 }
