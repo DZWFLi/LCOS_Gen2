@@ -270,3 +270,51 @@ test('R6-4. 显式子工作现场 → workspace:<exact>；root scope 不唯一�
   await page.waitForTimeout(800);
   expect((await colorPins(fixture.projectId)).memberships.length, 'fail closed 时不得写入任何 membership').toBe(beforeUnavailable);
 });
+// ---- R6 Focus / Locator：F = Focus/Where（与 Ctrl/Cmd+F Search 严格分离） ----
+
+test('R6-5. Focus/Where（F）：已知对象「在哪」真实枚举 + 前往；与 Ctrl/Cmd+F Search 不合并', async ({ page }) => {
+  test.slow();
+  await enterProject(page);
+  await dismissCanvasConflictToast(page);
+
+  const focusWhereOpen = page.locator('[data-lcos-focus-where][data-open="true"]');
+  const searchInput = page.locator('[data-lcos-navigator-island] [data-lcos-nav-part="input"]');
+
+  // 1) Ctrl/Cmd+F 是 Search —— 绝不打开 Focus/Where（两条链不得合并）
+  await page.keyboard.press('Control+f');
+  await expect(searchInput, 'Ctrl/Cmd+F 必须打开 Search').toBeVisible({ timeout: 15_000 });
+  await expect(focusWhereOpen, 'Ctrl/Cmd+F 不得打开 Focus/Where').toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(searchInput).toHaveCount(0, { timeout: 10_000 });
+
+  // 2) 没有选中对象时按 F：诚实说明，不假枚举
+  await page.keyboard.press('f');
+  await expect(focusWhereOpen, 'F 必须打开 Focus/Where').toBeVisible({ timeout: 15_000 });
+  await expect(focusWhereOpen).toContainText('没有选中的对象');
+  await page.keyboard.press('Escape');
+  await expect(focusWhereOpen).toHaveCount(0, { timeout: 10_000 });
+
+  // 3) 真实选中一个已投影对象再按 F：标题必须来自 canonical descriptor
+  const node = page.locator('.react-flow__node-image').first();
+  await expect(node, 'fixture 必须有可点选的已投影对象').toBeVisible({ timeout: 40_000 });
+  await node.click();
+  await page.waitForTimeout(500);
+  const cameraBefore = await readCamera(page);
+  await page.keyboard.press('f');
+  await expect(focusWhereOpen).toBeVisible({ timeout: 15_000 });
+  const panelText = (await focusWhereOpen.textContent()) ?? '';
+  expect(panelText, 'Focus/Where 必须回答「在哪」').toContain('在哪 ·');
+  expect(panelText, '标题不得回落成占位文案（说明没读到 canonical descriptor）').not.toContain('在哪 · 当前对象');
+
+  // 4) 有其它投影 → 真实「前往」并移动 camera；否则必须诚实空态（不假列表）
+  const go = focusWhereOpen.getByRole('button', { name: /前往/ });
+  if (await go.count() > 0) {
+    await go.first().click();
+    await expect.poll(async () => await readCamera(page), { timeout: 25_000 }).not.toBe(cameraBefore);
+    await expect(focusWhereOpen, '前往成功后必须收起').toHaveCount(0, { timeout: 10_000 });
+  } else {
+    await expect(focusWhereOpen).toContainText(/在当前现场没有其它投影|跨现场位置读取失败|暂时无法/);
+    await page.keyboard.press('Escape');
+    await expect(focusWhereOpen).toHaveCount(0, { timeout: 10_000 });
+  }
+});
