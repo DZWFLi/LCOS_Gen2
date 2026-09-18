@@ -156,3 +156,18 @@ test('B6-R1: an edge-band dwell still cancels when the pointer leaves the band a
   const left = advanceDropIntent(dwell, { x: 400, y: 400 }, BOUNDS, now() + 100, false);
   assert.equal(left.status, 'tracking');
 });
+
+test('R1 pin: a bare Canvas destination accepts a CENTRE drop — the 56px edge band is not a precondition', () => {
+  // 冻结语义钉死：裸 Canvas 本身就是有效注册 destination 时，画布中央的 drop 必须成立。
+  // 边带（dwellBand）只是「没有目标也在画布上停一下」的锚点，不是允许 drop 的前提。
+  const centre = { x: 600, y: 400 };
+  assert.equal(anchoringAt(centre, BOUNDS), null, '中央点不在任何边带内');
+  const dwell = advanceDropIntent(trackingState() as never, centre, BOUNDS, now(), true);
+  assert.equal(dwell.status, 'dwell');
+  const dest: DropDestination = { targetId: 'canvas:main', previewPoint: centre };
+  const preview = completeDropDwell(dwell, dest, now() + DROP_INTENT_TOKENS.dwellMs);
+  assert.equal(preview.status, 'preview');
+  if (preview.status !== 'preview') return;
+  assert.equal(preview.destination.targetId, 'canvas:main');
+  assert.deepEqual(preview.destination.previewPoint, centre);
+});

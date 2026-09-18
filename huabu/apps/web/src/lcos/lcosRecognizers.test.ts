@@ -10,6 +10,8 @@
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
+import { DROP_INTENT_TOKENS } from '@local-creative-os/web-gen2';
+
 import { useLcosDropStore } from './lcosDropState';
 import { createReferencePickRecognizer, createDropRecognizer, acquireDrop } from './lcosRecognizers';
 import { useLcosReferenceStore } from './lcosReferenceState';
@@ -298,5 +300,37 @@ describe('semantic-drop recognizer (A06)', () => {
     recognizer.observe?.onDown?.(fakeEvent(), dropCtx);
     recognizer.observe?.onMove?.(fakeEvent({ clientX: 400, clientY: 795 }), dropCtx);
     expect(useLcosDropStore.getState().state.status).toBe('idle');
+  });
+
+  it('R1 pin: 裸 Canvas 目标在画布中央也驻足→预览，且 placementPoint 是真实落点（边带不是前提）', async () => {
+    const target: DropTargetRegistration = {
+      targetId: 'canvas:main',
+      kind: 'canvas',
+      label: 'Main',
+      rect: { left: 0, top: 0, width: 1200, height: 800 },
+      priority: 10,
+      enabled: true,
+      semantic: { kind: 'canvas', targetRef: { kind: 'main' } },
+    };
+    useLcosDropStore.getState().registerTarget(target);
+    acquireDrop({ kind: 'object', entityType: 'artifact', entityId: 'a1' });
+    const { advanceDropAtScreenPoint } = await import('./lcosRecognizers');
+    // (600,400) 在画布中央，距左/下边带都很远：边带不参与本次判定。
+    const point = { clientX: 600, clientY: 400 };
+    advanceDropAtScreenPoint(point, dropCtxWithInstance, 1_000);
+    expect(useLcosDropStore.getState().state.status, '中央点必须能驻足').toBe('dwell');
+    advanceDropAtScreenPoint(point, dropCtxWithInstance, 1_000 + DROP_INTENT_TOKENS.dwellMs);
+    const store = useLcosDropStore.getState();
+    expect(store.state.status).toBe('preview');
+    expect(store.resolution).toMatchObject({
+      status: 'ready',
+      intent: {
+        kind: 'assembly-apply',
+        targetId: 'canvas:main',
+        targetRef: { kind: 'main' },
+        // placementPoint 是真实落点（屏幕坐标交给 instance.screenToFlowPosition），不是边带锚点。
+        placementPoint: { x: 600, y: 400 },
+      },
+    });
   });
 });
