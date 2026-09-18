@@ -14,11 +14,15 @@ import {
   coreJson,
   enterProject,
   glyphIndexByTitle,
+  mainWorkspaceId,
   openWorkView,
   openWorkViewByTitle,
   readCamera,
   readGlyths,
+  readProjectRunReviews,
+  readRunInputRequest,
   revealGlyth,
+  runThroughRuntime,
   seedReceiverConversations,
   titleOfGlyph,
   type ReceiverSeed,
@@ -265,4 +269,106 @@ test('H2. 外部 file/text/url 失败关闭：无规范捕获/导入 owner 时�
   expect(await page.locator('[data-lcos-window-region-id]').count()).toBe(regionsBefore);
   expect(await readCamera(page)).toBe(camera);
   expect(page.url()).toBe(url);
+});
+// ─────────────── B3/B4 正路径：canonical owner 建真实 pending 状态 ───────────────
+
+test('E2. Waiting Input 正路径：canonical pending input → needs_user → 用户真实回答 → canonical 完成 → projection 更新', async ({ page }) => {
+  const workspaceId = await mainWorkspaceId(PROJECT_ID);
+  const runId = await runThroughRuntime(PROJECT_ID, {
+    instruction: '__E2E_WAITING_INPUT__ 请确认本轮节奏',
+    connectedConversationId: seed.conv1,
+    workspaceId,
+  });
+  const pending = await readRunInputRequest(runId);
+  expect(pending.ok, 'canonical 链路必须真的建出 pending input request').toBe(true);
+  expect(String(pending.value.runId)).toBe(runId);
+  expect(pending.value.status).toBe('pending');
+  const question = String(pending.value.question);
+
+  await enterProject(page);
+  await openWorkViewByTitle(page, seed.label1);
+  const waiting = page.locator('[data-lcos-waiting-input]').first();
+  await expect(waiting, 'Core pending input 必须投影成 Waiting Input UI').toBeVisible({ timeout: 25_000 });
+  expect(await waiting.innerText()).toContain(question);
+  await expect(page.locator('[data-lcos-conversation-user-state]').first()).toContainText('等你回应', { timeout: 20_000 });
+
+  // 用户真实回答：点选项 + 填自由文本 + 点「提交回答」
+  const option = waiting.locator('[data-lcos-waiting-option]').first();
+  if (await option.count() > 0) await option.click();
+  await waiting.getByLabel('回答待输入问题').fill('按稳妥节奏走（e2e）');
+  await waiting.getByRole('button', { name: '提交回答' }).click();
+
+  // canonical：request 被完成
+  await expect.poll(async () => (await readRunInputRequest(runId)).status, { timeout: 30_000 }).toBe(404);
+  // projection 更新：不再是 needs_user / 不再有待输入区
+  await expect
+    .poll(async () => (await page.locator('[data-lcos-conversation-user-state]').first().textContent()) ?? '', { timeout: 30_000 })
+    .not.toContain('等你回应');
+  expect(await page.locator('[data-lcos-waiting-input]').count()).toBe(0);
+});
+
+test('F2. Review 正路径：canonical pending return → 复核面 → 真实 accept → return 状态改变 → UI 更新', async ({ page }) => {
+  const workspaceId = await mainWorkspaceId(PROJECT_ID);
+  const runId = await runThroughRuntime(PROJECT_ID, {
+    instruction: '__E2E_REVIEW__ 产出一份待复核草稿',
+    connectedConversationId: seed.conv2,
+    workspaceId,
+  });
+  const seeded = await readProjectRunReviews(PROJECT_ID);
+  const seededReview = seeded.find((row) => String(row.run.id) === runId);
+  expect(seededReview, 'canonical 链路必须落出该 Run 的 review').toBeTruthy();
+  const pendingReturn = (seededReview?.returns ?? []).find((row) => row.status === 'pending_review');
+  expect(pendingReturn, 'review 必须有一个 pending_review return').toBeTruthy();
+  const returnId = String(pendingReturn!.id);
+
+  await enterProject(page);
+  await openWorkViewByTitle(page, seed.label2);
+  const section = page.locator('[data-lcos-artifact-return]').first();
+  await expect(section, 'Core pending return 必须投影成复核面').toBeVisible({ timeout: 25_000 });
+  const row = page.locator(`[data-lcos-review-return="${returnId}"]`);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  const accept = row.locator('[data-lcos-return-accept]');
+  await expect(accept, 'accept 必须可用（capability.enabled）').toBeEnabled({ timeout: 10_000 });
+  await accept.click();
+
+  await expect.poll(async () => {
+    const after = await readProjectRunReviews(PROJECT_ID);
+    const review = after.find((item) => String(item.run.id) === runId);
+    return (review?.returns ?? []).find((item) => String(item.id) === returnId)?.status ?? 'missing';
+  }, { timeout: 30_000 }).not.toBe('pending_review');
+
+  await expect(page.locator(`[data-lcos-review-return="${returnId}"]`), '复核面必须随真值更新消失').toHaveCount(0, { timeout: 30_000 });
+});
+test('G2. Recovery 正路径 = BLOCKED_BY_C2（诚实登记，不冒充 PASS）', async ({ page }) => {
+  // 结论与依据（本轮实测）：
+  //   recovery.state='recoverable' 的唯一输入是 continuation operation 的 step/status = outcome_unknown。
+  //   该状态只能由 agentlet transport 返回「不确定回执」产生。隔离栈里唯一可用的 transport 是
+  //   DEV-ONLY 的 DevFakeAgentletTransportV1（LCOS_RECOVERY_TRANSPORT=fake），它只会成功 spawn；
+  //   唯一的怀疑注入钩子 failNextSpawnOnce() 是进程内方法，没有 env / HTTP 面，
+  //   也没有 canonical Core 路由能直写 continuation step = outcome_unknown。
+  //   → canonical owner 无法建出真实可恢复状态；注入面属于 C2 / R5 hard runtime 施工范围。
+  const submitted = await coreJson('POST', `/projects/${PROJECT_ID}/conversation-continuations`, {
+    operationId: `e2e-recovery-${Date.now()}`,
+    mode: 'continue_existing',
+    contextInheritance: 'inherit',
+    checkout: 'shared',
+    provider: 'codex',
+    connectedConversationId: seed.conv1,
+  });
+  expect(submitted.ok, `canonical continuation submit 必须可达：${submitted.status} ${JSON.stringify(submitted.value)}`).toBe(true);
+  const listed = await coreJson('GET', `/projects/${PROJECT_ID}/conversation-continuations`);
+  const operations = (listed.value ?? []) as Array<{ status?: string; allowedActions?: readonly string[] }>;
+  expect(operations.length).toBeGreaterThan(0);
+  expect(
+    operations.filter((op) => op.status === 'outcome_unknown'),
+    '本栈没有 outcome_unknown 注入面 → 不得出现「可恢复」状态（若出现，本 BLOCKED 结论必须重估）',
+  ).toHaveLength(0);
+
+  // 诚实负路径仍在：Diagnostics 暴露 recovery 段，但普通首屏不泄漏 raw T6（与 G1 同源）
+  await enterProject(page);
+  await openWorkViewByTitle(page, seed.label1);
+  const firstScreen = (await page.locator('[data-lcos-conversation-work-view]').first().textContent()) ?? '';
+  expect(firstScreen).not.toMatch(/external_create|core_bind|outcome_unknown|retry_attach|retry_projection/);
+  await page.locator('[data-lcos-diagnostics-toggle]').first().click();
+  await expect(page.locator('[data-lcos-recovery-section]').first()).toBeVisible({ timeout: 15_000 });
 });

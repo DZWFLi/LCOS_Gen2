@@ -45,6 +45,9 @@ for (const dir of [coreRoot, CORE_DEV_WORKSPACE_ROOT, CORE_MVP_SAMPLE_ROOT, HUAB
 const CORE_PORT = process.env.E2E_CORE_PORT ?? '43121';
 const API_PORT = process.env.E2E_HUABU_PORT ?? '3001';
 const WEB_PORT = process.env.E2E_WEB_PORT ?? '5173';
+// DEV-ONLY fake Light Bridge（T7 provider transport double，见 e2e/fake-bridge/server.mjs）。
+// 独立端口，避免与开发态真实 bridge 抢 43122；Core 通过 LCOS_BRIDGE_URL 指向本次 run 的实例。
+const BRIDGE_PORT = process.env.E2E_BRIDGE_PORT ?? '43123';
 // Core 的写请求 Origin 白名单默认只含 dev 5173；隔离 profile 显式声明自己的 origin。
 const CORE_ALLOWED_ORIGINS = `http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}`;
 // 仅本地 e2e 用的常量 token（Core 与 Huabu web 共用），不是机密。
@@ -77,6 +80,16 @@ export default defineConfig({
   },
   webServer: [
     {
+      // DEV-ONLY fake provider bridge：让 Runtime dispatch/ingest 能在隔离环境里真实跑完
+      // （Waiting Input / Artifact Return 正路径需要 provider 结果；真实 transport 仍是 EXTERNAL_GAP）。
+      command: 'node e2e/fake-bridge/server.mjs',
+      cwd: join(REPO_ROOT, 'huabu', 'apps', 'web'),
+      port: Number(BRIDGE_PORT),
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { FAKE_BRIDGE_PORT: BRIDGE_PORT },
+    },
+    {
       command: 'npx tsx src/index.ts',
       cwd: LOCAL_CORE_ROOT,
       port: Number(CORE_PORT),
@@ -91,6 +104,7 @@ export default defineConfig({
         LOCAL_CORE_E2E_FIXTURE: '1',
         LOCAL_CORE_API_TOKEN: E2E_TOKEN,
         LOCAL_CORE_ALLOWED_ORIGINS: CORE_ALLOWED_ORIGINS,
+        LCOS_BRIDGE_URL: `http://127.0.0.1:${BRIDGE_PORT}`,
         LCOS_RECOVERY_TRANSPORT: 'fake',
       },
     },
