@@ -8,6 +8,9 @@ import {
   CoreConversationClient,
   CoreAssemblyClient,
   CoreRailwayClient,
+  CoreCaptureSpaceClient,
+  CoreResourceClient,
+  CoreSkillCatalogClient,
   HttpClient,
   type CoreEnvelopeError,
 } from '@local-creative-os/web-gen2';
@@ -22,6 +25,12 @@ export interface LcosCoreSession {
   readonly conversations: CoreConversationClient;
   readonly assembly: CoreAssemblyClient;
   readonly railway: CoreRailwayClient;
+  /** R4 Assembly Source Bay：系统级 Capture Space 只读（capture 路）。 */
+  readonly captureSpace: CoreCaptureSpaceClient;
+  /** R4 Assembly Source Bay：既有 Resource 路由（sources 路）。 */
+  readonly resources: CoreResourceClient;
+  /** R4 Assembly Source Bay：分层 Skill catalog 只读（skills 路）。 */
+  readonly skills: CoreSkillCatalogClient;
 }
 
 export interface LcosCoreSessionOptions {
@@ -45,6 +54,9 @@ export function createLcosCoreSession(
     conversations: new CoreConversationClient(http),
     assembly: new CoreAssemblyClient(http),
     railway: new CoreRailwayClient(http),
+    captureSpace: new CoreCaptureSpaceClient(http),
+    resources: new CoreResourceClient(http),
+    skills: new CoreSkillCatalogClient(http),
   };
 }
 

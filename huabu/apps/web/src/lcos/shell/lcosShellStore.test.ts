@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { useLcosShellStore } from './lcosShellStore';
 
@@ -292,21 +292,59 @@ it('does not show a previously opened artifact when the next target is missing',
   expect(useLcosShellStore.getState().windows.find((window) => window.active)?.target).toBe('artifact-a');
 });
 
-it('keeps two Assembly destinations independently selectable and closable in the same millisecond', () => {
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(123);
-  try {
-    const store = useLcosShellStore.getState();
-    store.clear();
-    store.openAssembly({ kind: 'conversation', id: 'a' });
-    store.openAssembly({ kind: 'conversation', id: 'b' });
-    const [first, second] = useLcosShellStore.getState().windows;
-    if (!first || !second) throw new Error('Both destinations must exist');
-    expect(first.id).not.toBe(second.id);
-    store.activateWindow(first.id);
-    expect(useLcosShellStore.getState().windows.filter((window) => window.active)).toHaveLength(1);
-    store.closeWindow(first.id);
-    expect(useLcosShellStore.getState().windows).toEqual([{ ...second, active: true }]);
-  } finally {
-    clock.mockRestore();
-  }
+it('keeps ONE shared Assembly per project and only updates its live targetRef', () => {
+  const store = useLcosShellStore.getState();
+  store.clear();
+  // C1-3 冻结语义：一个 Project 一个共享 Assembly region，target 不编码进 regionId。
+  store.openAssembly({ kind: 'main' });
+  expect(useLcosShellStore.getState().windows).toHaveLength(1);
+  expect(useLcosShellStore.getState().windowRegions).toHaveLength(1);
+  expect(useLcosShellStore.getState().windowRegions[0]?.id).toBe('region-assembly');
+
+  store.openAssembly({ kind: 'conversation', id: 'conv-a' });
+  const afterConversation = useLcosShellStore.getState();
+  expect(afterConversation.windows, '换 target 不得新建第二个 Assembly').toHaveLength(1);
+  expect(afterConversation.windowRegions, '换 target 不得新建 region').toHaveLength(1);
+  expect(afterConversation.windowRegions[0]?.id).toBe('region-assembly');
+  expect(afterConversation.windows[0]?.assemblyTargetRef).toEqual({ kind: 'conversation', id: 'conv-a' });
+  expect(afterConversation.windows.filter((window) => window.active)).toHaveLength(1);
+
+  // 再切 target：仍是同一窗口、同一区域，只有 targetRef / title 变。
+  store.openAssembly({ kind: 'workflow', id: 'ws-1' }, 'Assembly');
+  const afterWorkflow = useLcosShellStore.getState();
+  expect(afterWorkflow.windows).toHaveLength(1);
+  expect(afterWorkflow.windowRegions).toHaveLength(1);
+  expect(afterWorkflow.windows[0]?.assemblyTargetRef).toEqual({ kind: 'workflow', id: 'ws-1' });
+
+  // 关闭后重开：仍然只有一个 Assembly（region 重建，但绝不并存两个）。
+  const assemblyId = afterWorkflow.windows[0]!.id;
+  store.closeWindow(assemblyId);
+  expect(useLcosShellStore.getState().windows).toHaveLength(0);
+  store.openAssembly({ kind: 'main' });
+  expect(useLcosShellStore.getState().windows).toHaveLength(1);
+  expect(useLcosShellStore.getState().windowRegions).toHaveLength(1);
+});
+
+it('preserves the shared Assembly region geometry and group topology across target switches', () => {
+  const store = useLcosShellStore.getState();
+  store.clear();
+  store.openWindow('reader', '材料 A', 'artifact-a');
+  store.openAssembly({ kind: 'main' });
+  const assemblyRegion = useLcosShellStore.getState().windowRegions.find((region) => region.id === 'region-assembly');
+  if (!assemblyRegion) throw new Error('assembly region must exist');
+  // 用户把 Assembly 拖到固定几何并停靠
+  store.setWindowRegionRect(assemblyRegion.id, { x: 120, y: 150, width: 700, height: 520 });
+  store.setWindowRegionLayout(assemblyRegion.id, 'docked-right');
+  const readerRegion = useLcosShellStore.getState().windowRegions.find((region) => region.id !== assemblyRegion.id)!;
+  // 把 Reader 并进 Assembly 所在区域（source=reader，target=assembly）
+  store.groupWindowRegions(readerRegion.id, assemblyRegion.id);
+
+  store.openAssembly({ kind: 'context', id: 'ctx-1' });
+  const after = useLcosShellStore.getState();
+  expect(after.windows).toHaveLength(2);
+  expect(after.windowRegions, 'target 变化不得改变 group 拓扑').toHaveLength(1);
+  expect(after.windowRegions[0]?.windowIds).toHaveLength(2);
+  expect(after.windowRegions[0]?.activeWindowId).toBe('assembly');
+  expect(after.windows.find((window) => window.bodyKey === 'assembly')?.assemblyTargetRef)
+    .toEqual({ kind: 'context', id: 'ctx-1' });
 });

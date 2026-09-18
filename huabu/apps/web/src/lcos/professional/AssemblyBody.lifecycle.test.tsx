@@ -8,28 +8,51 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   warehouse: vi.fn(),
+  apply: vi.fn(),
+  captureSnapshot: vi.fn(),
+  capturePreview: vi.fn(),
+  resourceList: vi.fn(),
+  resourceDescriptor: vi.fn(),
+  skillList: vi.fn(),
+  skillRead: vi.fn(),
   workspaces: vi.fn(),
   openWindow: vi.fn(),
   navigate: vi.fn(),
   beginChildNavigation: vi.fn(),
 }));
 
-vi.mock('@local-creative-os/web-gen2', () => ({
-  CoreAssemblyClient: class {
-    getWarehouse = mocks.warehouse;
-    apply = vi.fn();
-  },
-  HttpError: class HttpError extends Error {},
-}));
+// R4：AssemblyBody 现在消费 web-gen2 的 AssemblySourceBayController / assemblyCardView，
+// 以及 lcosDropState 的 idleDrop——必须 partial mock，否则整棵模块图会拿到 undefined。
+vi.mock('@local-creative-os/web-gen2', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@local-creative-os/web-gen2')>();
+  return {
+    ...actual,
+    CoreAssemblyClient: class {
+      getWarehouse = mocks.warehouse;
+      queryWarehouse = mocks.warehouse;
+      apply = mocks.apply;
+    },
+  };
+});
 vi.mock('../app/lcosCoreClient', () => ({
   createLcosCoreSession: () => ({
     http: {},
     projects: { getWorkspaces: mocks.workspaces },
+    assembly: { getWarehouse: mocks.warehouse, queryWarehouse: mocks.warehouse, apply: mocks.apply },
+    captureSpace: { snapshot: mocks.captureSnapshot, preview: mocks.capturePreview },
+    resources: { list: mocks.resourceList, descriptor: mocks.resourceDescriptor },
+    skills: { list: mocks.skillList, read: mocks.skillRead },
   }),
 }));
-vi.mock('../lcosReferenceState', () => ({
-  useLcosReferenceStore: { getState: () => ({ addEntityToDraft: vi.fn() }) },
-}));
+vi.mock('../lcosReferenceState', () => {
+  const state = {
+    draft: { orderedEntityRefs: [] as readonly { entityType: string; entityId: string }[] },
+    addEntityToDraft: () => {},
+  };
+  const store = (selector?: (value: typeof state) => unknown) =>
+    selector === undefined ? state : selector(state);
+  return { useLcosReferenceStore: Object.assign(store, { getState: () => state }) };
+});
 vi.mock('../shell/lcosShellStore', () => ({
   useLcosShellStore: (
     select: (state: {
@@ -132,6 +155,13 @@ beforeEach(() => {
   document.body.append(host);
   root = createRoot(host);
   mocks.warehouse.mockReset();
+  mocks.apply.mockReset();
+  mocks.captureSnapshot.mockReset();
+  mocks.capturePreview.mockReset();
+  mocks.resourceList.mockReset();
+  mocks.resourceDescriptor.mockReset();
+  mocks.skillList.mockReset();
+  mocks.skillRead.mockReset();
   mocks.workspaces.mockReset();
   mocks.openWindow.mockReset();
   mocks.navigate.mockReset();

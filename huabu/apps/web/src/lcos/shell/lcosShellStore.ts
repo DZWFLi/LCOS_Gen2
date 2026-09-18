@@ -293,30 +293,25 @@ export const useLcosShellStore = create<LcosShellUiState>((set) => ({
     }),
   openAssembly: (assemblyTargetRef, title = 'Assembly') =>
     set((s) => {
-      const sameTarget = (window: LcosWindow): boolean =>
-        window.bodyKey === 'assembly' &&
-        window.assemblyTargetRef?.kind === assemblyTargetRef.kind &&
-        ('id' in assemblyTargetRef
-          ? window.assemblyTargetRef !== undefined &&
-            'id' in window.assemblyTargetRef &&
-            window.assemblyTargetRef.id === assemblyTargetRef.id
-          : window.assemblyTargetRef !== undefined &&
-            !('id' in window.assemblyTargetRef));
-      const existing = s.windows.find(sameTarget);
-      if (existing) {
+      // R4 / C1-3：一个 Project 只有一个共享 Assembly region。
+      // target 不编码进 regionId —— 换 target 只 live 更新同一 instance 的
+      // assemblyTargetRef/title 并激活它所在区域，绝不新建第二个 Assembly、也不重建 body。
+      const shared = s.windows.find((window) => window.bodyKey === 'assembly');
+      if (shared !== undefined) {
+        const hostRegion = s.windowRegions.find((region) => region.windowIds.includes(shared.id));
         return {
-          windows: s.windows.map((window) => ({
-            ...window,
-            active: window.id === existing.id,
-          })),
+          windows: s.windows.map((window) =>
+            window.id === shared.id
+              ? { ...window, title, assemblyTargetRef, active: true }
+              : { ...window, active: false }),
+          // 保留该 region 既有 geometry / dock / group topology，只把活动窗口指回 Assembly。
           windowRegions: s.windowRegions.map((region) =>
-            region.windowIds.includes(existing.id)
-              ? { ...region, activeWindowId: existing.id }
-              : region,
-          ),
+            hostRegion !== undefined && region.id === hostRegion.id
+              ? { ...region, activeWindowId: shared.id }
+              : region),
         };
       }
-      const id = `assembly-${crypto.randomUUID()}`;
+      const id = 'assembly';
       return {
         windows: [
           ...s.windows.map((window) => ({ ...window, active: false })),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { assemblyOpenTargetOf, assemblySourceRefOf, assemblyWindowOf, previewUrlOf } from './AssemblyBody';
+import { assemblyOpenTargetOf, assemblySourceRefOf, assemblyWindowOf, describeAssemblyApplyResultV1, previewUrlOf } from './AssemblyBody';
 
 import type { WarehouseItemV1 } from '@local-creative-os/contracts';
 import type { Workspace } from '@local-creative-os/domain';
@@ -67,5 +67,52 @@ describe('Assembly object entry mapping', () => {
   it('does not treat an opaque preview reference as an image URL', () => {
     expect(previewUrlOf({ ...item('artifact', 'artifact-1'), previewRef: 'preview-ref-1' })).toBeUndefined();
     expect(previewUrlOf({ ...item('artifact', 'artifact-1'), previewRef: 'https://example.test/preview.png' })).toBe('https://example.test/preview.png');
+  });
+});
+
+describe('Assembly apply outcome layering', () => {
+  const item = (
+    status: 'applied' | 'skipped' | 'failed',
+    channel: 'presentation-membership' | 'already-member' | 'unsupported' | 'error',
+    id = 'x-1',
+  ) => ({ sourceRef: { kind: 'artifactView' as const, id }, status, channel });
+
+  it('never reports all-success when HTTP 200 carried an unsupported source', () => {
+    const summary = describeAssemblyApplyResultV1({
+      schemaVersion: 1,
+      projectId: 'p1',
+      results: [item('applied', 'presentation-membership', 'a-1'), item('skipped', 'unsupported', 's-1')],
+      allApplied: true,
+    });
+    expect(summary.tone).toBe('partial');
+    expect(summary.headline).toContain('部分完成');
+    expect(summary.lines.map((line) => line.tone)).toEqual(['applied', 'unsupported']);
+  });
+
+  it('distinguishes already-member from a plain skip and from a failure', () => {
+    const summary = describeAssemblyApplyResultV1({
+      schemaVersion: 1,
+      projectId: 'p1',
+      results: [
+        item('skipped', 'already-member', 'a-1'),
+        item('failed', 'error', 'b-1'),
+      ],
+      allApplied: false,
+    });
+    expect(summary.lines[0]?.tone).toBe('already-member');
+    expect(summary.lines[1]?.tone).toBe('failed');
+    expect(summary.tone).toBe('failed');
+    expect(summary.headline).toContain('投放失败');
+  });
+
+  it('treats a fully landed apply as success and keeps the change set id visible', () => {
+    const summary = describeAssemblyApplyResultV1({
+      schemaVersion: 1,
+      projectId: 'p1',
+      results: [{ ...item('applied', 'presentation-membership'), changeSetId: 'cs-12345678' }],
+      allApplied: true,
+    });
+    expect(summary.tone).toBe('applied');
+    expect(summary.lines[0]?.changeSetId).toBe('cs-12345678');
   });
 });

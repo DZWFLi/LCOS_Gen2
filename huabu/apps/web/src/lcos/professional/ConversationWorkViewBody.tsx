@@ -13,7 +13,7 @@
 // B1：本组件不再访问 collaboration.conversations / .runs / .continuations。
 
 import { CoreCollaborationClient } from '@local-creative-os/web-gen2';
-import { CheckCheck, ChevronDown, ChevronRight, CircleHelp, Info, Loader, Play, User, XCircle } from 'lucide-react';
+import { Boxes, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Info, Loader, Play, User, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ArtifactReturnSection } from './ArtifactReturnSection';
@@ -70,6 +70,7 @@ export function ConversationWorkViewBody({
   const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
   const openComposer = useLcosShellStore((s) => s.openComposer);
   const closeComposer = useLcosShellStore((s) => s.closeComposer);
+  const openAssembly = useLcosShellStore((s) => s.openAssembly);
 
   // Gate 4：产品状态唯一来源 = Collaboration projection（SSE 驱动刷新）。
   const entry = useCollaborationSession(projectId, connectedConversationId ?? null);
@@ -145,6 +146,19 @@ export function ConversationWorkViewBody({
           >
             {userState === undefined ? '状态读取中…' : USER_STATE_LABEL[userState]}
           </span>
+          {/* R4 §7 target continuity：只把共享 Assembly 的 live targetRef 更新为当前会话，
+              不创建 ConversationAssembly，也不新开第二窗口。 */}
+          <button
+            type="button"
+            data-lcos-conversation-open-assembly
+            aria-label="打开 Assembly"
+            title="打开 Assembly（投放到当前会话）"
+            onClick={() => openAssembly({ kind: 'conversation', id: connectedConversationId }, 'Assembly · 当前会话')}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+            style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}
+          >
+            <Boxes className="h-3.5 w-3.5" aria-hidden />
+          </button>
         </div>
         {projection?.recovery !== undefined && projection.recovery.state !== 'none' && (
           <div className="text-[11px]" style={{ color: lcosTokens.color.pinAmber }}>
