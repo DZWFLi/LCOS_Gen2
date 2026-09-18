@@ -239,10 +239,14 @@ export function LcosRailway({
         });
         setError(undefined);
       })
-      .catch((cause: unknown) => {
+      .catch(async (cause: unknown) => {
         setSnapshot(previous);
         if ((cause as { status?: number }).status === 409) {
-          void refreshAfterConflict(previous);
+          // 409 的解锁条件必须是「fresh order + fresh graph 回读完成」。
+          // 若此处 fire-and-forget，finally 会先 setReordering(false)，用户在 fresh
+          // 投影回来前又能发起 reorder —— 那一次仍基于旧 version，要么再撞 409，
+          // 要么把并发期间新增的目的地顺序写坏。await 让 refresh 与解锁严格同序。
+          await refreshAfterConflict(previous);
           return;
         }
         setError(cause instanceof Error ? cause.message : 'Railway 顺序保存失败');
