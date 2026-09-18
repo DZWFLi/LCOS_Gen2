@@ -106,18 +106,22 @@ export function WindowChrome() {
   const macLeftPadding = isFullScreen ? 8 : LEFT_GUTTER_MAC_PX;
 
   // Pick the centre label based on the current route:
-  //   - On the canvas list ("/"): show the workspace folder name so the
-  //     user can see and switch their workspace right from the title
-  //     bar. This replaces the secondary "Huabu | Path: ..." strip that
-  //     CanvasListPage used to render below.
+  //   - On the LCOS project launcher ("/spaces"): show the workspace
+  //     folder name so the user can see and switch their workspace right
+  //     from the title bar.
   //   - Inside a canvas ("/canvas/:id"): show the live canvas title.
   //   - Anywhere else (setup, playgrounds, docs): fall back to APP_NAME
   //     so the bar never looks empty.
-  const onCanvasListRoute = location.pathname === '/spaces';
+  // Wave 1（正本 `04_逐Wave施工卡与验收.md` Wave 1「Electron `WindowChrome` 仅保留窗口机械；
+  // 产品入口不重复」+ `appendices\B`）：`/spaces` 已由 LCOS 项目启动页接管，产品入口由 LCOS
+  // 唯一渲染。此处不再在 `/spaces` 上挂 Huabu `AppMenu`——它的「新建/导入画布」属于 Huabu
+  // 独立画布模型，在 LCOS 项目入口上不适用，且会与 LCOS 启动页形成重复产品入口。
+  // 工作区切换仍作为标题栏的窗口级切换保留（LCOS 项目列表没有等价的 workspace 入口）。
+  const onLauncherRoute = location.pathname === '/spaces';
   const onWorkspaceSetupRoute = location.pathname === '/setup';
-  const showAppMenu = onCanvasListRoute || onWorkspaceSetupRoute;
+  const showAppMenu = onWorkspaceSetupRoute;
   const onCanvasRoute = location.pathname.startsWith('/canvas/');
-  const showWorkspaceSwitcher = onCanvasListRoute && !!workspaceLabel;
+  const showWorkspaceSwitcher = onLauncherRoute && !!workspaceLabel;
   const centerLabel = showWorkspaceSwitcher
     ? workspaceLabel
     : onCanvasRoute && canvasTitle
