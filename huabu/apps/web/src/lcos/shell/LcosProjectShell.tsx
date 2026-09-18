@@ -263,6 +263,7 @@ export function LcosProjectShell({
             surfaceByWorkspace={surfaceByWorkspace}
             ensureCanvas={ensureCanvas}
             ensureWorkspaceCanvas={ensureWorkspaceCanvas}
+            {...(childWorkspaceId === undefined ? {} : { childWorkspaceId })}
           />
 
           {/* 专业窗口舞台；Composer 由 canvas-local 明确命令挂载。 */}

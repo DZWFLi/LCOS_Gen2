@@ -11,15 +11,43 @@ const canvasNodes = vi.hoisted(() => [] as Array<{ id: string }>);
 const navigation = vi.hoisted(() => ({ switchWorksite: vi.fn(), wait: vi.fn() }));
 vi.mock('../app/useLcosWorksiteNav', () => ({ useLcosWorksiteNav: () => ({ switchWorksite: navigation.switchWorksite }) }));
 vi.mock('./waitForProjectedEntity', () => ({ waitForProjectedEntity: navigation.wait }));
-vi.mock('@local-creative-os/web-gen2', () => ({
-  CoreSearchClient: class { searchProject = search; },
-  HttpError: class extends Error {},
+// partial mock：只替换搜索客户端，其余导出（含 isCoreAbortError 等）保留真实实现，
+// 否则岛新增的 web-gen2 依赖会让整个 suite 在 import 期就崩掉（覆盖被静默清零）。
+vi.mock('@local-creative-os/web-gen2', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@local-creative-os/web-gen2')>();
+  return { ...actual, CoreSearchClient: class { searchProject = search; } };
+});
+vi.mock('../app/lcosCoreClient', () => ({
+  createLcosCoreSession: () => ({
+    http: {},
+    // R6 ColorPin：岛会订阅 canonical snapshot / graph truth（此处诚实为空真值）。
+    colorPins: {
+      snapshot: async () => ({ definitions: [], memberships: [] }),
+      assign: async () => ({ definition: {}, membership: {} }),
+      removeMembership: async () => ({ deleted: true, membershipId: '' }),
+    },
+    navigation: { resolveTarget: async () => ({ status: 'unresolved', reason: 'target-missing' }) },
+    projects: { getProjectGraph: async () => ({ scopes: [], workspaces: [] }) },
+  }),
 }));
-vi.mock('../app/lcosCoreClient', () => ({ createLcosCoreSession: () => ({ http: {} }) }));
 vi.mock('../lcosReferenceState', () => ({ useLcosReferenceStore: { getState: () => ({ nodeEntityRefs }) } }));
 vi.mock('../shell/lcosShellStore', () => ({
-  useLcosShellStore: (selector: (state: { activeSurface: string; requestLocate: typeof requestLocate }) => unknown) =>
-    selector({ activeSurface: 'main', requestLocate }),
+  useLcosShellStore: (selector: (state: {
+    activeSurface: string;
+    activeWorkspaceId: string | null;
+    openWindow: () => void;
+    windowEnvironment: undefined;
+    requestLocate: typeof requestLocate;
+    setActiveSurface: () => void;
+  }) => unknown) =>
+    selector({
+      activeSurface: 'main',
+      activeWorkspaceId: null,
+      openWindow: () => {},
+      windowEnvironment: undefined,
+      requestLocate,
+      setActiveSurface: () => {},
+    }),
 }));
 vi.mock('@/store/canvasStore', () => ({ default: { getState: () => ({ nodes: canvasNodes, canvasId: 'canvas-context' }) } }));
 

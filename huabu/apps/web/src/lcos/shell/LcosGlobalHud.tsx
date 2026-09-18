@@ -26,6 +26,8 @@ export interface LcosGlobalHudProps {
   readonly ensureWorkspaceCanvas: (
     workspaceId: string,
   ) => Promise<string | undefined>;
+  /** route ?workspaceId= —— 显式子工作现场（ColorPin target 用；不得用 activeWorkspaceId 冒充 root surface）。 */
+  readonly childWorkspaceId?: string;
 }
 
 export function LcosGlobalHud(props: LcosGlobalHudProps): React.JSX.Element {
@@ -70,6 +72,7 @@ export function LcosGlobalHud(props: LcosGlobalHudProps): React.JSX.Element {
         canvasBySurface={props.canvasBySurface}
         ensureCanvas={props.ensureCanvas}
         ensureWorkspaceCanvas={props.ensureWorkspaceCanvas}
+        {...(props.childWorkspaceId === undefined ? {} : { childWorkspaceId: props.childWorkspaceId })}
       />
       <LcosRailway
         projectId={props.projectId}
