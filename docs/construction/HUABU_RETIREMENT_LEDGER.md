@@ -54,3 +54,29 @@
 | 浏览器未覆盖的 Wave 1 条款 | 正本 Wave 1「back/forward 不丢 pending save」：本次只验证了 Shell/identity 不丢；**pending save drain** 由 `RootLayout` 的 `useBlocker` 承担，尚未在浏览器里制造真实脏改动来验证 | Wave 1 收口补测 / Wave 2 |
 
 旧文件物理保留（不动）作回滚/donor；整机稳定后单独清理 dead UI。任何旧 GUI 恢复必须通过 route composition 一次性切换，禁止新旧两棵树同时挂 production。
+## Wave 2 实测（2026-09-19，干净 e2e 环境；门禁 `scripts/e2e/wave2-kernel.mjs`）
+
+结论：**PARTIAL（未达成退出条件）**。退出条件是「LCOS Shell 下只有一份 Canvas、一份 selection、一份 camera、一份 history；换壳后手感不倒退」。
+
+### 已通过（真实浏览器，逐项有 evidence）
+
+- **只有一份 Canvas**：`.react-flow` 计数 = 1。
+- **LCOS mode 隐藏旧 Huabu chrome**：`.react-flow__controls` = 0、`.react-flow__minimap` = 0；除 React Flow **归属角标**（`react-flow__attribution`，许可证义务，必须保留）外无任何 `<Panel>` —— 即旧 `NodeToolbar` / `EdgeStyleToolbar` 未挂。
+- **LCOS 自有 camera**：`[data-lcos-camera-controls]` 存在；「放大」60% → 72% 生效（仍是唯一 Huabu camera）。
+- **selection**：click 单选；**Shift+click** 多选（2）；空区**左键拖框** box-select（3）—— 与 `Canvas.tsx` 冻结语法一致（`multiSelectionKeyCode={'Shift'}`、mouse+select 下 `selectionOnDrag` 真 / `panOnDrag=[1]`）。
+- **drag + undo**：节点 `translate(0px,0px)` → `translate(129px,59.5px)`；Ctrl+Z 回到 `0px`。
+- **pan**：中键拖改变 viewport transform（左键拖在空区是 box-select，不是 pan）。
+- **text input 优先**：Cmd/Ctrl+F 聚焦 LCOS 搜索输入（`[data-lcos-nav-part="input"]`）后输入 `abc` 落到输入框。
+- **reload**：chrome 仍隐藏、`.react-flow` 仍唯一。
+
+### 未通过 / 暴露的真实缺陷（Wave 2 阻塞项）
+
+| # | 现象 | 证据 | 可能归属 |
+|---|---|---|---|
+| B1 | **Ctrl+Shift+Z 重做未回到拖后几何**（Ctrl+Z 撤销正常） | 绑定本身正确（`config/shortcuts.ts` `edit.redo` = mod+shift+z；分发在 `hooks/shortcuts/useCanvasShortcuts.ts:371-377`，且在 shift guard 之前）→ 需查 undo 之后 redo 栈是否被重排/清空 | Wave 2 |
+| B2 | **401 `GET /lcos-core/projects/<id>/events`** | Core 事件流（SSE）请求未带 token | Wave 2（LCOS Core client 鉴权） |
+| B3 | **409 `PUT /api/canvas/<id>/nodes/<nodeId>/content`**（`NODE_CONTENT_CONFLICT`） | `canvas.route.ts` 自带注释记录过同类「spurious 409」；`store/canvasStore/save/structureSaveReconciliation.ts` 有 `isCoveredCanvasVersionConflict` 容忍逻辑 | Wave 2（写 owner / rev-CAS 协调） |
+| B4 | **节点数跨次加载增长 3 → 4 → 9** | 同一夹具反复 reload 后 `.react-flow__node` 计数递增 | Wave 2/3（reconcile 幂等性，疑似重复投影） |
+| B5 | 曾出现 `contentConflict` toast（`i18n/resources/zh-CN/common.json::contentConflict`「已在别处被修改」） | 该 toast `fixed z-9999` 会拦截 pointer，一次实测中直接挡住后续步骤 | Wave 2（同 B3：同一画布第二个写 owner） |
+
+> 注：B2/B3/B4/B5 与 Wave 1 的路由组合改动无关（都发生在 `useLcosCanvasProps` 驱动的 projection/reconcile 与 Huabu 客户端 autosave 之间），但都在 Wave 2「一位 owner、不倒退」的验收范围内，因此必须在本 Wave 内解决。
