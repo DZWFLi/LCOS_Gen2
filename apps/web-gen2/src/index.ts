@@ -182,7 +182,7 @@ export type { RendererFamily, PresentationSpecies, PresentationDescriptor, NodeC
 
 export { CoreConversationClient } from './backend/conversations.js';
 export { CoreCollaborationClient } from './backend/collaboration.js';
-export { CoreAssemblyClient } from './backend/assembly.js';
+export { CoreAssemblyClient, warehouseQueryStringV1 } from './backend/assembly.js';
 export { CoreRailwayClient } from './backend/railway.js';
 export type { RailwayOrderWriteInputV1 } from './backend/railway.js';
 export { railwayRefKeyV1, reorderRailwayRefV1, removeRailwayRefV1 } from './navigation/railwayOrder.js';
@@ -192,6 +192,10 @@ export { CoreRunClient } from './backend/runs.js';
 export type { CreateRunInputV1 } from './backend/runs.js';
 export { CoreDraftClient } from './backend/drafts.js';
 export { CoreCaptureClient } from './backend/captures.js';
+export { CoreCaptureSpaceClient } from './backend/captureSpace.js';
+export { CoreResourceClient } from './backend/resources.js';
+export type { ResourceSummaryV1 } from './backend/resources.js';
+export { CoreSkillCatalogClient } from './backend/skills.js';
 export { CoreConnectorClient } from './backend/connectors.js';
 export { CoreHealthClient } from './backend/health.js';
 
@@ -223,8 +227,8 @@ export type {
 export { createEmptyConversationWorkViewV1 } from './lcos/conversation/conversationWorkViewModel.js';
 export type { ConversationWorkViewSectionKindV1, ConversationWorkViewSectionStatusV1, ConversationWorkViewSectionStateV1, ConversationWorkViewStateV1 } from './lcos/conversation/conversationWorkViewModel.js';
 export { ConversationWorkViewController } from './lcos/conversation/conversationWorkViewController.js';
-export { AssemblySourceBayController } from './lcos/assembly/assemblySourceBayController.js';
-export type { AssemblySourceTabV1, AssemblySourceBayStateV1 } from './lcos/assembly/assemblySourceBayController.js';
+export { AssemblySourceBayController, ASSEMBLY_WAREHOUSE_PAGE_SIZE, dedupeWarehouseItems } from './lcos/assembly/assemblySourceBayController.js';
+export type { AssemblySourceTabV1, AssemblySourceBayStateV1, AssemblyPathStatusV1, AssemblySourceBayDepsV1, WarehouseItemLikeV1 } from './lcos/assembly/assemblySourceBayController.js';
 export { assemblyCardViewV1, referenceKeyForAssemblyItem } from './lcos/assembly/assemblyCardView.js';
 export type { AssemblyCardSpeciesV1, AssemblyCardViewStateV1 } from './lcos/assembly/assemblyCardView.js';
 export { CaptureInboxController } from './lcos/capture/captureInboxController.js';

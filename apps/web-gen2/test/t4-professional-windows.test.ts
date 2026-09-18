@@ -14,6 +14,9 @@ import {
 } from '../src/windows/professionalWindowLayout.js';
 import { CoreConversationClient } from '../src/backend/conversations.js';
 import { CoreAssemblyClient } from '../src/backend/assembly.js';
+import { CoreCaptureSpaceClient } from '../src/backend/captureSpace.js';
+import { CoreResourceClient } from '../src/backend/resources.js';
+import { CoreSkillCatalogClient } from '../src/backend/skills.js';
 import { CoreRunClient } from '../src/backend/runs.js';
 import { HttpClient } from '../src/backend/client.js';
 import { ConversationWorkViewController } from '../src/lcos/conversation/conversationWorkViewController.js';
@@ -234,7 +237,7 @@ test('CoreRunClient.answerInput posts requestId with the answer', async () => {
 test('assembly: warehouse loads and tab switching does not duplicate truth', async () => {
   const d = deferredHttp();
   const client = new CoreAssemblyClient(d.http);
-  const controller = new AssemblySourceBayController(client);
+  const controller = new AssemblySourceBayController({ assembly: client });
   controller.open('p1');
   controller.selectTab('capture');
   d.release('/warehouse', { schemaVersion: 1, projectId: 'p1', items: [], totalApprox: 0 });
@@ -248,9 +251,160 @@ test('assembly: warehouse loads and tab switching does not duplicate truth', asy
 test('assembly: target switch aborts stale read and keeps state consistent', async () => {
   const d = deferredHttp();
   const client = new CoreAssemblyClient(d.http);
-  const controller = new AssemblySourceBayController(client);
+  const controller = new AssemblySourceBayController({ assembly: client });
   controller.open('p1');
   controller.open('p2');
   controller.dispose();
   assert.equal(controller.read(), undefined);
+});
+
+// ---- R4 Assembly Source Bay residual：四路独立 / 分页去重 / query 重置 cursor / 迟到回包 ----
+
+function assemblyBay(d: ReturnType<typeof deferredHttp>): AssemblySourceBayController {
+  return new AssemblySourceBayController({
+    assembly: new CoreAssemblyClient(d.http),
+    captureSpace: new CoreCaptureSpaceClient(d.http),
+    resources: new CoreResourceClient(d.http),
+    skills: new CoreSkillCatalogClient(d.http),
+  });
+}
+
+function warehouseRow(kind: string, id: string): Record<string, unknown> {
+  return { schemaVersion: 1, entityRef: { type: kind, id }, kind, title: id, usageCount: 0 };
+}
+
+function captureSnapshot(ids: readonly string[]): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    items: ids.map((id) => ({
+      id, operationId: `op-${id}`, kind: 'web_page', payloadRef: `blob:${id}`,
+      source: { title: id }, suggestedProjects: [], capturedAt: '2026-09-18T00:00:00.000Z',
+    })),
+    pendingCount: ids.length,
+    presentation: { schemaVersion: 1, version: 1, views: [], regions: [], updatedAt: '2026-09-18T00:00:00.000Z' },
+  };
+}
+
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('assembly: each source path loads lazily and never couples with its siblings', async () => {
+  const d = deferredHttp();
+  const controller = assemblyBay(d);
+  controller.open('p1');
+  d.release('/warehouse', { schemaVersion: 1, projectId: 'p1', items: [warehouseRow('artifact', 'a1')], totalApprox: 1 });
+  await flush();
+  assert.equal(controller.read()?.warehouseStatus, 'loaded');
+  assert.equal(controller.read()?.captureStatus, 'idle');
+  assert.equal(controller.read()?.resourceStatus, 'idle');
+  assert.equal(controller.read()?.skillStatus, 'idle');
+
+  controller.selectTab('capture');
+  assert.equal(d.captured.length, 1); // 切 tab 本身不发请求
+  controller.loadTab('capture');
+  await flush();
+  assert.equal(d.captured.length, 2);
+  assert.ok(d.captured[1]?.url.includes('/runtime/capture-space'));
+  d.release('/runtime/capture-space', captureSnapshot(['c1']));
+  await flush();
+
+  assert.equal(controller.read()?.captureStatus, 'loaded');
+  assert.equal(controller.read()?.captureItems?.length, 1);
+  assert.equal(controller.read()?.warehouseStatus, 'loaded'); // 没有被牵连
+  assert.equal(controller.read()?.resourceStatus, 'idle');
+  assert.equal(controller.read()?.skillStatus, 'idle');
+});
+
+test('assembly: one failing source path never takes the whole Source Bay down', async () => {
+  const d = deferredHttp();
+  const controller = assemblyBay(d);
+  controller.open('p1');
+  d.release('/warehouse', { schemaVersion: 1, projectId: 'p1', items: [], totalApprox: 0 });
+  await flush();
+  controller.selectTab('capture');
+  controller.loadTab('capture');
+  await flush();
+  d.release('/runtime/capture-space', { message: 'capture space down' }, 500);
+  await flush();
+  assert.equal(controller.read()?.captureStatus, 'error');
+  assert.equal(controller.read()?.warehouseStatus, 'loaded');
+
+  controller.loadTab('skills');
+  await flush();
+  d.release('/skills', [{ id: 's1', source: 'system', name: 'S', description: '' }]);
+  await flush();
+  assert.equal(controller.read()?.skillStatus, 'loaded');
+  assert.equal(controller.read()?.skills?.length, 1);
+  // capture 仍然停留在自己的错误上，不被 skills 的恢复掩盖
+  assert.equal(controller.read()?.captureStatus, 'error');
+});
+
+test('assembly: warehouse pagination appends through nextCursor with canonical dedupe', async () => {
+  const d = deferredHttp();
+  const controller = assemblyBay(d);
+  controller.open('p1');
+  d.release('/warehouse', {
+    schemaVersion: 1, projectId: 'p1',
+    items: [warehouseRow('artifact', 'a1'), warehouseRow('artifact', 'b1')],
+    nextCursor: 'c1', totalApprox: 3,
+  });
+  await flush();
+  assert.equal(controller.read()?.warehouseNextCursor, 'c1');
+
+  controller.loadMoreWarehouse();
+  await flush();
+  assert.ok(d.captured.some((request) => request.url.includes('cursor=c1')));
+  d.release('/warehouse', {
+    schemaVersion: 1, projectId: 'p1',
+    items: [warehouseRow('artifact', 'b1'), warehouseRow('artifact', 'c1')],
+    totalApprox: 3,
+  });
+  await flush();
+  assert.deepEqual(
+    controller.read()?.warehouse?.items.map((item) => item.entityRef.id),
+    ['a1', 'b1', 'c1'],
+  );
+  assert.equal(controller.read()?.warehouseNextCursor, undefined); // 末页没有 cursor
+});
+
+test('assembly: changing the warehouse query resets the cursor and replaces the page', async () => {
+  const d = deferredHttp();
+  const controller = assemblyBay(d);
+  controller.open('p1');
+  d.release('/warehouse', {
+    schemaVersion: 1, projectId: 'p1', items: [warehouseRow('artifact', 'a1')],
+    nextCursor: 'c1', totalApprox: 5,
+  });
+  await flush();
+  assert.equal(controller.read()?.warehouseNextCursor, 'c1');
+
+  controller.setWarehouseSearch('needle');
+  assert.equal(controller.read()?.warehouseNextCursor, undefined); // 立刻丢弃旧游标
+  await flush();
+  const searched = d.captured.find((request) => request.url.includes('search=needle'));
+  assert.ok(searched);
+  assert.equal(searched.url.includes('cursor='), false);
+  d.release('/warehouse', { schemaVersion: 1, projectId: 'p1', items: [warehouseRow('artifact', 'z9')], totalApprox: 1 });
+  await flush();
+  assert.deepEqual(
+    controller.read()?.warehouse?.items.map((item) => item.entityRef.id),
+    ['z9'],
+  );
+});
+
+test('assembly: a late response from the previous project cannot land in the new Source Bay', async () => {
+  const d = deferredHttp();
+  const controller = assemblyBay(d);
+  controller.open('p1');
+  controller.selectTab('capture');
+  controller.loadTab('capture');
+  await flush();
+  controller.open('p2');
+  await flush();
+  assert.equal(controller.read()?.projectId, 'p2');
+  assert.equal(controller.read()?.captureStatus, 'idle');
+
+  d.release('/runtime/capture-space', captureSnapshot(['stale']));
+  await flush();
+  assert.equal(controller.read()?.captureStatus, 'idle');
+  assert.equal(controller.read()?.captureItems, undefined);
 });
