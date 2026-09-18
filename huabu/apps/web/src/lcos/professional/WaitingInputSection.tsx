@@ -5,6 +5,7 @@
 import { CircleHelp } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
+import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
@@ -78,6 +79,10 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
           setAnswerText('');
           setSelected([]);
           load();
+          // 动作回执后必须让共享投影失效重取（store.refresh 的既定契约）：
+          // 否则本区虽然消失，Work View 的 userState 仍停在答完前的 needs_user
+          // （表现为「已回答却一直显示等你回应」）。
+          void useCollaborationSessionStore.getState().refresh(projectId, conversationId);
         } else {
           setErrorDetail(result.error.userMessage);
         }

@@ -6,6 +6,7 @@
 import { CheckCheck, RotateCcw, ShieldQuestion, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
+import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { CollaborationReviewV1 } from '@local-creative-os/contracts';
@@ -73,6 +74,9 @@ export function ArtifactReturnSection({ collaboration, projectId, conversationId
               : '已按同一 Draft 重试（未新建 Run）',
         );
         load();
+        // 同 WaitingInputSection：复核回执后必须让共享投影失效重取，
+        // 否则 Work View 的 userState / capabilities 会停在复核前的状态。
+        void useCollaborationSessionStore.getState().refresh(projectId, conversationId);
       })
       .catch((error: unknown) => {
         setErrorDetail(error instanceof Error ? error.message : String(error));
