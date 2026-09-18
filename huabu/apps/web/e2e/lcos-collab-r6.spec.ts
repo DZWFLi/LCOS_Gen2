@@ -7,7 +7,17 @@
 
 import { expect, test } from '@playwright/test';
 
-import { coreJson, dismissCanvasConflictToast, enterProject, PROJECT_ID, readCamera } from './lcos-collab-harness';
+import {
+  coreJson,
+  dismissCanvasConflictToast,
+  enterAssemblyProject,
+  enterProject,
+  enterRailProject,
+  PROJECT_ID,
+  readCamera,
+  seedAssemblyFixture,
+  seedRailwayFixture,
+} from './lcos-collab-harness';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -16,19 +26,19 @@ interface ColorPinSnapshot {
   readonly memberships: ReadonlyArray<{
     readonly id: string;
     readonly colorPinId: string;
-    readonly targetRef: { readonly kind: string; readonly id: string };
+    readonly targetRef: { readonly projectId?: string; readonly kind: string; readonly id: string };
   }>;
 }
 
-async function colorPins(): Promise<ColorPinSnapshot> {
-  const read = await coreJson('GET', `/projects/${PROJECT_ID}/color-pins`);
+async function colorPins(projectId: string = PROJECT_ID): Promise<ColorPinSnapshot> {
+  const read = await coreJson('GET', `/projects/${projectId}/color-pins`);
   expect(read.ok, `color-pins 读取必须可达：${read.status}`).toBe(true);
   return read.value as ColorPinSnapshot;
 }
 
-async function clearColorPins(): Promise<void> {
-  for (const membership of (await colorPins()).memberships) {
-    const removed = await coreJson('DELETE', `/projects/${PROJECT_ID}/color-pins/memberships/${membership.id}`);
+async function clearColorPins(projectId: string = PROJECT_ID): Promise<void> {
+  for (const membership of (await colorPins(projectId)).memberships) {
+    const removed = await coreJson('DELETE', `/projects/${projectId}/color-pins/memberships/${membership.id}`);
     expect(removed.ok, `清理颜色组必须成功：${removed.status}`).toBe(true);
   }
 }
@@ -114,7 +124,13 @@ async function queryWithHits(): Promise<{ query: string; title: string }> {
   throw new Error('canonical search 对本 fixture 的候选词全部无命中——搜索索引不可用（诚实阻断，不是放宽断言）');
 }
 
-test('R6-2. Search/Focus/Locator：Ctrl+Cmd+F → Core 真值结果 → 抵达链收束 → 岛恢复静息', async ({ page }) => {
+// ---- R6 Search → Arrival：Ctrl/Cmd+F = Search ----
+//
+// 登记范围：本用例只证明 **Search→Arrival PASS**（Ctrl/Cmd+F → canonical search →
+// 抵达链收束 → 岛回静息）。`F = Focus/Where` 是另一条链（LcosFocusWhere），
+// 不在此关闭，也不得与 Ctrl/Cmd+F 合并。
+
+test('R6-2. Search→Arrival PASS：Ctrl+Cmd+F → Core 真值结果 → 抵达链收束 → 岛恢复静息（Focus/Where 不在本用例范围）', async ({ page }) => {
   await enterProject(page);
   await dismissCanvasConflictToast(page);
   const { query, title } = await queryWithHits();
@@ -147,4 +163,110 @@ test('R6-2. Search/Focus/Locator：Ctrl+Cmd+F → Core 真值结果 → 抵达�
     await expect.poll(async () => await readCamera(page), { timeout: 25_000 }).not.toBe(cameraBefore);
     await expect(input, '定位成功后搜索必须收起（岛回静息）').toHaveCount(0);
   }
+});
+// ---- R6 ColorPin semantic correction：target 必须来自 canonical surface ----
+
+/** 打开调色板（真实入口），返回 palette 面板 locator。 */
+async function openPalette(page: import('@playwright/test').Page) {
+  const palettePanel = page.locator('[data-lcos-color-pin-palette]').first();
+  if (await palettePanel.count() === 0) {
+    await page.locator('[data-lcos-navigator-island] [data-lcos-nav-part="pin-add"]').first().click();
+  }
+  await expect(palettePanel).toBeVisible({ timeout: 15_000 });
+  return palettePanel;
+}
+
+/** 真实点击 swatch 并等到 Core 真值出现该 membership；返回 canonical targetRef 文本。 */
+async function assignSwatch(
+  page: import('@playwright/test').Page,
+  projectId: string,
+  tone: 'violet' | 'teal' | 'amber',
+): Promise<string> {
+  const palettePanel = await openPalette(page);
+  await expect(palettePanel, 'target 未解析时不得提供 swatch').toHaveAttribute('data-lcos-color-pin-target-state', 'resolved', { timeout: 15_000 });
+  const target = (await palettePanel.getAttribute('data-lcos-color-pin-target')) ?? '';
+  const before = (await colorPins(projectId)).memberships.length;
+  await palettePanel.locator(`[data-lcos-color-pin-swatch="${tone}"]`).click();
+  await expect.poll(async () => (await colorPins(projectId)).memberships.length, { timeout: 20_000 }).toBe(before + 1);
+  return target;
+}
+
+test('R6-3. ColorPin target 必须是 canonical surface（main / scope:<exact>），且 many-to-many + 单条移除', async ({ page }) => {
+  test.slow();
+  const fixture = await seedAssemblyFixture();
+  await clearColorPins(fixture.projectId);
+  await enterAssemblyProject(page, fixture);
+  await dismissCanvasConflictToast(page);
+
+  // 1) root Main → 必须是 canonical `main`（不是 workspace:<activeWorkspaceId>）
+  const mainTarget = await assignSwatch(page, fixture.projectId, 'violet');
+  expect(mainTarget, 'root Main 必须映射为 canonical main').toBe('main');
+  const afterMain = await colorPins(fixture.projectId);
+  expect(afterMain.memberships[0]!.targetRef).toEqual({ projectId: fixture.projectId, kind: 'surface', id: 'main' });
+
+  // 2) many-to-many：同一 target 再标一个颜色，两个 membership 同时存在
+  const secondTarget = await assignSwatch(page, fixture.projectId, 'teal');
+  expect(secondTarget).toBe('main');
+  const both = await colorPins(fixture.projectId);
+  const mainMemberships = both.memberships.filter((m) => m.targetRef.id === 'main');
+  expect(mainMemberships, '同一 target 必须能同时属于两个颜色组').toHaveLength(2);
+  expect(new Set(mainMemberships.map((m) => m.colorPinId)).size).toBe(2);
+
+  // 已属的两色只标 assigned；第三种颜色仍可继续标记
+  const palettePanel = await openPalette(page);
+  await expect(palettePanel.locator('[data-lcos-color-pin-swatch="violet"]')).toHaveAttribute('data-lcos-color-pin-swatch-assigned', 'true');
+  await expect(palettePanel.locator('[data-lcos-color-pin-swatch="teal"]')).toHaveAttribute('data-lcos-color-pin-swatch-assigned', 'true');
+  await expect(palettePanel.locator('[data-lcos-color-pin-swatch="amber"]')).toHaveAttribute('data-lcos-color-pin-swatch-assigned', 'false');
+  await expect(palettePanel.locator('[data-lcos-color-pin-swatch="amber"]')).toBeEnabled();
+
+  // 3) 单条移除：移除一个后另一个仍在（many-to-many，不是「一个 target 只能一个 pin」）
+  await palettePanel.locator('[data-lcos-color-pin-remove-current]').first().click();
+  await expect.poll(async () => (await colorPins(fixture.projectId)).memberships.filter((m) => m.targetRef.id === 'main').length, { timeout: 20_000 }).toBe(1);
+  const remaining = await colorPins(fixture.projectId);
+  expect(remaining.memberships.filter((m) => m.targetRef.id === 'main')).toHaveLength(1);
+
+  // 4) root Context → 必须是 scope:<exact contextScopeId>
+  await page.locator('[data-lcos-surface="context"]').first().click();
+  await page.waitForTimeout(1500);
+  const contextTarget = await assignSwatch(page, fixture.projectId, 'violet');
+  expect(contextTarget, 'root Context 必须是 exact context scope').toBe(`scope:scope-assembly-context-${fixture.projectId}`);
+  expect(contextTarget).not.toContain('workspace:');
+
+  // 5) root Workflow → 必须是 scope:<exact workflowScopeId>
+  await page.locator('[data-lcos-surface="workflow"]').first().click();
+  await page.waitForTimeout(1500);
+  const workflowTarget = await assignSwatch(page, fixture.projectId, 'teal');
+  expect(workflowTarget, 'root Workflow 必须是 exact workflow scope').toBe(`scope:scope-assembly-workflow-${fixture.projectId}`);
+});
+
+test('R6-4. 显式子工作现场 → workspace:<exact>；root scope 不唯一时 fail closed（不选第一个 workspace）', async ({ page }) => {
+  test.slow();
+  // 显式子工作现场：Railway fixture 的 rail destination 是真实存在的 workspace
+  const fixture = await seedRailwayFixture();
+  await clearColorPins(fixture.projectId);
+  await enterRailProject(page, fixture);
+  await dismissCanvasConflictToast(page);
+
+  const childId = fixture.destIds[0]!;
+  await page.goto(`/projects/${fixture.projectId}/context?workspaceId=${encodeURIComponent(childId)}`);
+  await expect(page.locator('[data-lcos-project-shell]').first()).toBeVisible({ timeout: 45_000 });
+  await page.waitForTimeout(2500);
+  await dismissCanvasConflictToast(page);
+
+  const childTarget = await assignSwatch(page, fixture.projectId, 'amber');
+  expect(childTarget, '显式子工作现场必须映射为 exact workspace').toBe(`workspace:${childId}`);
+  const childMemberships = (await colorPins(fixture.projectId)).memberships;
+  expect(childMemberships[0]!.targetRef).toEqual({ projectId: fixture.projectId, kind: 'surface', id: `workspace:${childId}` });
+
+  // 同一项目回到 root Context：多个 context scope 无法唯一解析 → fail closed（不得取第一个）
+  await page.goto(`/projects/${fixture.projectId}/context`);
+  await expect(page.locator('[data-lcos-project-shell]').first()).toBeVisible({ timeout: 45_000 });
+  await page.waitForTimeout(2000);
+  await dismissCanvasConflictToast(page);
+  const palettePanel = await openPalette(page);
+  await expect(palettePanel, 'root scope 不唯一时必须 fail closed').toHaveAttribute('data-lcos-color-pin-target-state', 'unavailable', { timeout: 15_000 });
+  await expect(palettePanel.locator('[data-lcos-color-pin-swatch]')).toHaveCount(0);
+  const beforeUnavailable = (await colorPins(fixture.projectId)).memberships.length;
+  await page.waitForTimeout(800);
+  expect((await colorPins(fixture.projectId)).memberships.length, 'fail closed 时不得写入任何 membership').toBe(beforeUnavailable);
 });

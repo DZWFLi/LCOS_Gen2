@@ -169,11 +169,12 @@ test('R4-3. Source Bay 四路可浏览 / 预览 / 分页 / 投放；retry 不重
   await expect(receipt).toBeVisible({ timeout: 25_000 });
   await expect(receipt.locator('[data-lcos-assembly-outcome-line="applied"]')).toHaveCount(1, { timeout: 25_000 });
 
-  // retry：already-member（幂等，不重复创建 membership）
+  // retry：already-member（幂等，不重复创建 membership）；且**不得**报成「全部成功」
   await noteItem.hover();
   await noteItem.locator('[data-lcos-assembly-drop]').click();
   await expect(receipt.locator('[data-lcos-assembly-outcome-line="already-member"]')).toHaveCount(1, { timeout: 25_000 });
-  await expect(receipt).toHaveAttribute('data-lcos-assembly-outcome', 'applied');
+  await expect(receipt).toHaveAttribute('data-lcos-assembly-outcome', 'already-present');
+  await expect(receipt).toContainText('没有新增变更');
 
   // ---- Capture Space（system-level staging）----
   await selectAssemblySourceTab(page, 'capture');
