@@ -7,7 +7,7 @@
 export { HttpClient, HttpError } from './backend/client.js';
 export type { HttpClientConfig, RequestOptions, ResponseMode } from './backend/client.js';
 
-export { CoreApiError, coreRequest, coreEnvelope, unwrapCoreValue, toCoreApiError } from './backend/coreTypes.js';
+export { CoreApiError, coreRequest, coreEnvelope, unwrapCoreValue, toCoreApiError, isCoreAbortError } from './backend/coreTypes.js';
 export type { CoreEnvelope, CoreEnvelopeOk, CoreEnvelopeError } from './backend/coreTypes.js';
 
 export { CoreProjectClient } from './backend/projects.js';

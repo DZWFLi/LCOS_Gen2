@@ -86,6 +86,17 @@ export async function coreRequest<T>(
   }
 }
 
+/**
+ * 取消不是失败：HttpClient 把 abort 归一成 `HttpError(code: 'aborted')`，
+ * DOM 侧原始错误则是 `AbortError`。两者都必须被识别——否则「用户取消了读/写」
+ * 会被上层写成一个假的失败回执。
+ */
+export function isCoreAbortError(error: unknown): boolean {
+  if (error instanceof Error && error.name === 'AbortError') return true;
+  const code = (error as { code?: unknown } | undefined)?.code;
+  return code === 'aborted';
+}
+
 /** Request the Core JSON envelope and keep the ok envelope (value + meta). */
 export async function coreEnvelope<T>(
   http: HttpClient,
