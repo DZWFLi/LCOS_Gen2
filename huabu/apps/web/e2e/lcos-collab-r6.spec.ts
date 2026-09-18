@@ -15,8 +15,10 @@ import {
   enterRailProject,
   PROJECT_ID,
   readCamera,
+  readRailOrder,
   seedAssemblyFixture,
   seedRailwayFixture,
+  writeRailOrder,
 } from './lcos-collab-harness';
 
 test.describe.configure({ mode: 'serial' });
@@ -112,10 +114,10 @@ test('R6-1. ColorPin：真实入口标记当前现场 → canonical 落账 → �
 // ---- R6 Search / Focus / Locator：搜索 → 抵达链 ----
 
 /** 用 canonical search 反证：查询词必须真的命中 Core 真值（不靠猜标题）。 */
-async function queryWithHits(): Promise<{ query: string; title: string }> {
+async function queryWithHits(projectId: string = PROJECT_ID): Promise<{ query: string; title: string }> {
   const candidates = ['参考图', '项目定位', '施工纪律', '当前里程碑', '决策记录'];
   for (const query of candidates) {
-    const read = await coreJson('GET', `/projects/${PROJECT_ID}/search?q=${encodeURIComponent(query)}&limit=5`);
+    const read = await coreJson('GET', `/projects/${projectId}/search?q=${encodeURIComponent(query)}&limit=5`);
     if (!read.ok) continue;
     const hits = (read.value?.hits ?? []) as Array<{ title?: string | null }>;
     const hit = hits.find((item) => typeof item.title === 'string' && item.title.trim() !== '');
@@ -375,4 +377,183 @@ test('R6-7. 项目切换隔离：切到 B 后必须显示 B 自己的 pin，且 
   await expect(islandPins(page), 'B 自己的 pin 必须 hydrate').toHaveAttribute('data-lcos-pin-color', PIN_TEAL, { timeout: 30_000 });
   await expect(islandPins(page)).toHaveCount(1);
   await expect(islandPins(page), 'A 的 pin 不得覆盖 B').not.toHaveAttribute('data-lcos-pin-color', PIN_VIOLET);
+});
+// ---- R6 Locator / Camera / Arrival ----
+
+test('R6-8. Locator/Camera/Arrival：定位后目标真的进入视口、camera 静止、locator cue 只报诚实状态', async ({ page }) => {
+  test.slow();
+  await enterProject(page);
+  await dismissCanvasConflictToast(page);
+  const { query, title } = await queryWithHits();
+
+  const cameraBefore = await readCamera(page);
+  await page.keyboard.press('Control+f');
+  const island = page.locator('[data-lcos-navigator-island]').first();
+  const input = island.locator('[data-lcos-nav-part="input"]');
+  await expect(input).toBeVisible({ timeout: 15_000 });
+  await input.fill(query);
+  const first = page.locator('[data-lcos-navigator-results] button').first();
+  await expect(first).toBeVisible({ timeout: 20_000 });
+  await first.click();
+
+  // 抵达链收束（同 R6-2 的两种诚实结局）
+  await expect.poll(async () => {
+    if (await page.locator('[data-lcos-navigator-results]').count() === 0) return 'located';
+    const text = (await island.innerText()) ?? '';
+    return text.includes('前往并定位') || text.includes('位置暂不可打开') ? 'destination' : 'pending';
+  }, { timeout: 25_000 }).not.toBe('pending');
+
+  const located = await page.locator('[data-lcos-navigator-results]').count() === 0;
+  if (located) {
+    // 真实抵达：camera 变化后必须静下来（无漂移），且目标真的在视口内。
+    await expect.poll(async () => await readCamera(page), { timeout: 25_000 }).not.toBe(cameraBefore);
+    await page.waitForTimeout(1200);
+    const settled = await readCamera(page);
+    await page.waitForTimeout(1200);
+    expect(await readCamera(page), '抵达后 camera 必须静止（不得继续漂移）').toBe(settled);
+
+    const node = page.locator('.react-flow__node', { hasText: title.slice(0, 4) }).first();
+    if (await node.count() > 0) {
+      const box = await node.boundingBox();
+      const viewport = page.viewportSize()!;
+      expect(box, '抵达后目标节点必须有几何').not.toBeNull();
+      expect(box!.x, '抵达后目标必须在视口内（左）').toBeGreaterThan(-1);
+      expect(box!.y, '抵达后目标必须在视口内（上）').toBeGreaterThan(-1);
+      expect(box!.x, '抵达后目标必须在视口内（右）').toBeLessThan(viewport.width);
+      expect(box!.y, '抵达后目标必须在视口内（下）').toBeLessThan(viewport.height);
+    }
+  }
+
+  // locator cue 只允许诚实状态；抵达完成后不得留下残留 cue。
+  const cue = page.locator('[data-lcos-locator]');
+  if (await cue.count() > 0) {
+    const state = await cue.first().getAttribute('data-lcos-locator');
+    expect(['edge', 'near-edge', 'unavailable'], `locator cue 不得报未知状态：${state}`).toContain(state);
+  }
+  await expect.poll(async () => await cue.count(), { timeout: 15_000 }).toBe(0);
+});
+
+// ---- R6 Spatial Navigator：不假定位 / 不假前往 ----
+
+test('R6-9. Spatial Navigator：点击结果只能「真抵达」或「给真实目的地」，绝不假前往', async ({ page }) => {
+  test.slow();
+  await enterProject(page);
+  await dismissCanvasConflictToast(page);
+  const { query } = await queryWithHits();
+
+  const cameraBefore = await readCamera(page);
+  await page.keyboard.press('Control+f');
+  const island = page.locator('[data-lcos-navigator-island]').first();
+  const input = island.locator('[data-lcos-nav-part="input"]');
+  await expect(input).toBeVisible({ timeout: 15_000 });
+  await input.fill(query);
+  const first = page.locator('[data-lcos-navigator-results] button').first();
+  await expect(first).toBeVisible({ timeout: 20_000 });
+  const urlBefore = page.url();
+  await first.click();
+
+  await expect.poll(async () => {
+    if (await page.locator('[data-lcos-navigator-results]').count() === 0) return 'located';
+    const text = (await island.innerText()) ?? '';
+    return text.includes('前往并定位') || text.includes('位置暂不可打开') || text.includes('尚无可定位的位置') ? 'destination' : 'pending';
+  }, { timeout: 25_000 }).not.toBe('pending');
+
+  const located = await page.locator('[data-lcos-navigator-results]').count() === 0;
+  if (located) {
+    await expect.poll(async () => await readCamera(page), { timeout: 25_000 }).not.toBe(cameraBefore);
+    return;
+  }
+
+  // 没有真抵达 → 必须留在原地（不得假前往），且只能给真实目的地或诚实说明。
+  expect(page.url(), '未真抵达时不得静默改变路由').toBe(urlBefore);
+  const travel = island.getByRole('button', { name: '前往并定位' });
+  if (await travel.count() > 0) {
+    await expect(travel.first()).toBeEnabled();
+    const cameraBeforeTravel = await readCamera(page);
+    await travel.first().click();
+    // 诚实不变量：点击必须产生真实后果（真切换/真抵达）或明确说明，绝不静默无果。
+    await expect.poll(async () => {
+      if (page.url() !== urlBefore) return 'navigated';
+      if ((await readCamera(page)) !== cameraBeforeTravel) return 'located';
+      const text = (await island.innerText()) ?? '';
+      return /无法|尚未就绪|暂时|失败|没有可用画布/.test(text) ? 'honest' : 'pending';
+    }, { timeout: 30_000, message: '点击「前往并定位」不得静默无果' }).not.toBe('pending');
+  } else {
+    await expect(island).toContainText(/位置暂不可打开|尚无可定位的位置|投影尚未就绪/);
+  }
+});
+
+// ---- R6 Railway residual：版本真值跟随 ----
+
+test('R6-10. Railway residual：显示的 order version 必须等于 canonical 真值', async ({ page }) => {
+  test.slow();
+  const fixture = await seedRailwayFixture();
+  await enterRailProject(page, fixture);
+  await dismissCanvasConflictToast(page);
+
+  const rail = page.locator('[data-lcos-railway]').first();
+  await expect(rail).toBeVisible({ timeout: 30_000 });
+  const canonical = await readRailOrder(fixture.projectId);
+  await expect(rail, 'Railway 必须显示 canonical order version（不得自造版本）')
+    .toHaveAttribute('data-lcos-railway-version', String(canonical.version), { timeout: 20_000 });
+
+  // canonical 真值前进 → 显示必须跟随（不是本地自增）
+  const advanced = await writeRailOrder(fixture.projectId, canonical.refs.map((ref) => ({ kind: ref.kind, viewId: ref.viewId })), canonical.version);
+  expect(advanced.ok, `写入 order 必须成功：${advanced.status}`).toBe(true);
+  const next = await readRailOrder(fixture.projectId);
+  expect(next.version).toBeGreaterThan(canonical.version);
+  await page.reload();
+  await expect(page.locator('[data-lcos-railway]').first()).toHaveAttribute('data-lcos-railway-version', String(next.version), { timeout: 30_000 });
+});
+
+// ---- R6 visual / motion：semantic zoom LOD 与 reduced-motion ----
+
+test('R6-11. visual/motion：semantic zoom LOD 真实收放（缩小时 body 收起，不是假渲染）', async ({ page }) => {
+  test.slow();
+  await enterProject(page);
+  await dismissCanvasConflictToast(page);
+
+  const glyphBody = page.locator('[data-lcos-glyth-body]').first();
+  await expect(glyphBody).toBeAttached({ timeout: 60_000 });
+  // 冻结规则：默认缩放下注释类节点渲染最小占位符，body 不参与命中。
+  const collapsedAtRest = !(await glyphBody.isVisible());
+
+  // 真实 Ctrl+滚轮进入 full LOD，body 必须真的出现（不是靠合成事件伪装）
+  await page.keyboard.down('Control');
+  const box0 = await glyphBody.boundingBox();
+  if (box0 !== null) {
+    await page.mouse.move(box0.x + box0.width / 2, box0.y + box0.height / 2);
+    for (let i = 0; i < 8; i += 1) {
+      await page.mouse.wheel(0, -200);
+      await page.waitForTimeout(180);
+      if (await glyphBody.isVisible()) break;
+    }
+  }
+  await page.keyboard.up('Control');
+  await expect(glyphBody, '进入 full LOD 后 body 必须真的可见').toBeVisible({ timeout: 15_000 });
+  expect(collapsedAtRest, '默认缩放下应处于收起态（否则本用例失去对照）').toBe(true);
+
+  // 再缩回去：body 必须重新收起（LOD 是双向真实的）
+  await page.keyboard.down('Control');
+  const box1 = await glyphBody.boundingBox();
+  if (box1 !== null) {
+    await page.mouse.move(box1.x + box1.width / 2, box1.y + box1.height / 2);
+    for (let i = 0; i < 12 && await glyphBody.isVisible(); i += 1) {
+      await page.mouse.wheel(0, 240);
+      await page.waitForTimeout(180);
+    }
+  }
+  await page.keyboard.up('Control');
+  await expect(glyphBody, '缩回后 body 必须重新收起').not.toBeVisible({ timeout: 15_000 });
+});
+
+test('R6-12. motion：prefers-reduced-motion 下应用仍然可用（不 brick）', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await enterProject(page);
+  await dismissCanvasConflictToast(page);
+  await page.keyboard.press('Control+f');
+  await expect(page.locator('[data-lcos-navigator-island] [data-lcos-nav-part="input"]'), '减少动效不得让搜索不可用')
+    .toBeVisible({ timeout: 15_000 });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-lcos-glyth-body]').first()).toBeAttached({ timeout: 30_000 });
 });
