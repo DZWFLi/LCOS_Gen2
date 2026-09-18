@@ -7,7 +7,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { coreJson, dismissCanvasConflictToast, enterProject, PROJECT_ID } from './lcos-collab-harness';
+import { coreJson, dismissCanvasConflictToast, enterProject, PROJECT_ID, readCamera } from './lcos-collab-harness';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -98,4 +98,53 @@ test('R6-1. ColorPin：真实入口标记当前现场 → canonical 落账 → �
   await page.locator('[data-lcos-color-pin-remove]').first().click();
   await expect.poll(async () => (await colorPins()).memberships.length, { timeout: 20_000 }).toBe(0);
   await expect(page.locator('[data-lcos-navigator-island] [data-lcos-nav-part="pin"]')).toHaveCount(0, { timeout: 20_000 });
+});
+// ---- R6 Search / Focus / Locator：搜索 → 抵达链 ----
+
+/** 用 canonical search 反证：查询词必须真的命中 Core 真值（不靠猜标题）。 */
+async function queryWithHits(): Promise<{ query: string; title: string }> {
+  const candidates = ['参考图', '项目定位', '施工纪律', '当前里程碑', '决策记录'];
+  for (const query of candidates) {
+    const read = await coreJson('GET', `/projects/${PROJECT_ID}/search?q=${encodeURIComponent(query)}&limit=5`);
+    if (!read.ok) continue;
+    const hits = (read.value?.hits ?? []) as Array<{ title?: string | null }>;
+    const hit = hits.find((item) => typeof item.title === 'string' && item.title.trim() !== '');
+    if (hit !== undefined) return { query, title: String(hit.title) };
+  }
+  throw new Error('canonical search 对本 fixture 的候选词全部无命中——搜索索引不可用（诚实阻断，不是放宽断言）');
+}
+
+test('R6-2. Search/Focus/Locator：Ctrl+Cmd+F → Core 真值结果 → 抵达链收束 → 岛恢复静息', async ({ page }) => {
+  await enterProject(page);
+  await dismissCanvasConflictToast(page);
+  const { query, title } = await queryWithHits();
+
+  const cameraBefore = await readCamera(page);
+  const island = page.locator('[data-lcos-navigator-island]').first();
+  await page.keyboard.press('Control+f');
+  const input = island.locator('[data-lcos-nav-part="input"]');
+  await expect(input, 'Ctrl/Cmd+F 必须展开真实搜索输入').toBeVisible({ timeout: 15_000 });
+
+  await input.fill(query);
+  const results = page.locator('[data-lcos-navigator-results]').first();
+  await expect(results, '搜索必须有真实结果面板（loading/empty/error 也走同一面板）').toBeVisible({ timeout: 20_000 });
+  const first = results.locator('button').first();
+  await expect(first, '查询词必须命中 Core 真值内容').toBeVisible({ timeout: 20_000 });
+  await expect(first, '结果标题来自 canonical search，不是占位文案').toContainText(title.slice(0, 4));
+
+  await first.click();
+  // 抵达链只有两种诚实结局：同现场已投影 → 直接定位并收起搜索；
+  // 否则 → 给出「前往并定位」的目的地（不假定位）。
+  await expect.poll(async () => {
+    if (await page.locator('[data-lcos-navigator-results]').count() === 0) return 'located';
+    const text = (await island.innerText()) ?? '';
+    return text.includes('前往并定位') || text.includes('位置暂不可打开') ? 'destination' : 'pending';
+  }, { timeout: 25_000, message: '搜索结果必须收束到「已定位」或「给出可前往目的地」' }).not.toBe('pending');
+
+  const located = await page.locator('[data-lcos-navigator-results]').count() === 0;
+  if (located) {
+    // 同现场定位真的移动 camera，且搜索态必须收起（岛恢复静息，不残留覆盖抵达目标）
+    await expect.poll(async () => await readCamera(page), { timeout: 25_000 }).not.toBe(cameraBefore);
+    await expect(input, '定位成功后搜索必须收起（岛回静息）').toHaveCount(0);
+  }
 });
