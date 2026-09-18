@@ -119,3 +119,40 @@ test('anchoringAt and carry zone agree on the bottom band', () => {
   assert.equal(anchoringAt({ x: 400, y: 400 }, BOUNDS), null);
   assert.equal(inDropPreviewCarryZone({ x: 400, y: 200 }, BOUNDS, 'bottom'), false);
 });
+
+test('B6-R1: resting on a live registered destination dwells outside any edge band', () => {
+  // Canvas centre: no edge band applies (anchoringAt === null).
+  assert.equal(anchoringAt({ x: 400, y: 400 }, BOUNDS), null);
+  const s = advanceDropIntent(trackingState() as never, { x: 400, y: 400 }, BOUNDS, now(), true);
+  assert.equal(s.status, 'dwell');
+  if (s.status !== 'dwell') return;
+  assert.deepEqual(s.payload, PAYLOAD);
+  assert.equal(s.since, now());
+});
+
+test('B6-R1: a destination dwell completes to that exact destination and commits', () => {
+  const dwell = advanceDropIntent(trackingState() as never, { x: 400, y: 400 }, BOUNDS, now(), true);
+  assert.equal(dwell.status, 'dwell');
+  const dest: DropDestination = { targetId: 'glyth:node-1', previewPoint: { x: 400, y: 400 } };
+  assert.equal(completeDropDwell(dwell, dest, now() - DROP_INTENT_TOKENS.dwellMs + 1).status, 'dwell');
+  const preview = completeDropDwell(dwell, dest, now() + DROP_INTENT_TOKENS.dwellMs);
+  assert.equal(preview.status, 'preview');
+  if (preview.status !== 'preview') return;
+  assert.equal(preview.destination.targetId, 'glyth:node-1');
+  const committed = confirmDrop(preview, 'tx-glyth', { kind: 'collaboration-reference', targetId: 'glyth:node-1' });
+  assert.equal(committed.status, 'committing');
+});
+
+test('B6-R1: drifting off a destination dwell falls back to tracking (no phantom preview)', () => {
+  const dwell = advanceDropIntent(trackingState() as never, { x: 400, y: 400 }, BOUNDS, now(), true);
+  assert.equal(dwell.status, 'dwell');
+  const moved = advanceDropIntent(dwell, { x: 430, y: 400 }, BOUNDS, now() + 100, false);
+  assert.equal(moved.status, 'tracking');
+});
+
+test('B6-R1: an edge-band dwell still cancels when the pointer leaves the band and the target', () => {
+  const dwell = advanceDropIntent(trackingState() as never, { x: 400, y: 795 }, BOUNDS, now());
+  assert.equal(dwell.status, 'dwell');
+  const left = advanceDropIntent(dwell, { x: 400, y: 400 }, BOUNDS, now() + 100, false);
+  assert.equal(left.status, 'tracking');
+});

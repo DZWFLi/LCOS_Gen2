@@ -109,6 +109,18 @@ export function inDropPreviewCarryZone(point: SurfacePoint, bounds: DropBounds, 
 }
 
 /**
+ * Nominal edge anchor used purely as gesture hysteresis when the pointer rests
+ * on a live registered destination outside any edge band. It is never a
+ * destination identity — the destination is the registered target the host
+ * resolved under the pointer.
+ */
+export function nominalAnchorAt(point: SurfacePoint, bounds: DropBounds): 'left' | 'bottom' {
+  const toLeft = Math.abs(point.x - bounds.left);
+  const toBottom = Math.abs(bounds.bottom - point.y);
+  return toLeft <= toBottom ? 'left' : 'bottom';
+}
+
+/**
  * Pure reducer over pointer movement (screen-space px already transformed by
  * the caller's viewport transformer; placement only happens in world space at
  * commit time).
@@ -141,11 +153,29 @@ export function advanceDropIntent(
 
   if (state.status === 'tracking') {
     const anchor = anchoringAt(pointPx, bounds);
-    if (!anchor) return state;
-    return { status: 'dwell', payload: state.payload, anchor, originPx: pointPx, since: now };
+    // A live registered destination is itself a dwell host: resting on the
+    // target the user is pointing at expresses intent without any edge band
+    // (F-ROOT-05: drop is spatial placement — dropping where you point must
+    // use that target). The edge band remains the anchor for the bare-canvas
+    // case, where no destination has resolved yet.
+    if (anchor === null && !overDestination) return state;
+    return {
+      status: 'dwell',
+      payload: state.payload,
+      anchor: anchor ?? nominalAnchorAt(pointPx, bounds),
+      originPx: pointPx,
+      since: now,
+    };
   }
 
   // dwell
+  // Resting on a live destination keeps the dwell alive by stillness alone;
+  // edge geometry is not the intent in that case (the host owns the real
+  // target identity, and it has already been resolved under the pointer).
+  if (overDestination) {
+    const driftOnTarget = Math.hypot(pointPx.x - state.originPx.x, pointPx.y - state.originPx.y);
+    return driftOnTarget <= DROP_INTENT_TOKENS.dwellRadius ? state : { status: 'tracking', payload: state.payload };
+  }
   const anchorNow = anchoringAt(pointPx, bounds);
   if (!anchorNow || anchorNow !== state.anchor) return { status: 'tracking', payload: state.payload };
   const drift = Math.hypot(pointPx.x - state.originPx.x, pointPx.y - state.originPx.y);
