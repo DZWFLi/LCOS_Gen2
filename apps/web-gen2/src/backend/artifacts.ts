@@ -29,6 +29,24 @@ export interface ArtifactDetailProjection {
   revisions: ArtifactDetailRevision[];
 }
 
+/** R4：单行 diff（Core 只对可读文本给出 diff；不可读时整段缺席）。 */
+export interface RevisionCompareLineV1 {
+  readonly type: 'same' | 'add' | 'remove';
+  readonly text: string;
+}
+
+/**
+ * Route-specific projection of GET /projects/:projectId/revisions/compare。
+ * `contentAvailable` 为 false 时只有元数据可比 —— 呈现层必须如实说明，不得伪造 diff。
+ */
+export interface RevisionCompareResultV1 {
+  readonly base: { readonly revisionId: string; readonly contentHash: string; readonly size: number; readonly mimeType: string };
+  readonly head: { readonly revisionId: string; readonly contentHash: string; readonly size: number; readonly mimeType: string };
+  readonly changed: boolean;
+  readonly contentAvailable: boolean;
+  readonly diff?: readonly RevisionCompareLineV1[];
+}
+
 export class CoreArtifactClient {
   constructor(private readonly http: HttpClient) {}
 
@@ -81,6 +99,27 @@ export class CoreArtifactClient {
       this.http,
       'GET',
       `/projects/${encodeURIComponent(projectId)}/artifacts/search?q=${encoded}`,
+    );
+  }
+
+  /**
+   * R4 Reader：真实 revision 对比（canonical owner = Core RuntimeRevisionCompareService）。
+   * `GET /projects/:projectId/revisions/compare?base=&head=` → 元数据（hash/size/mime）+ changed
+   * + 可选逐行 diff。`contentAvailable=false` 时只有元数据可比，呈现层必须如实说明，
+   * 不得伪造行级差异。
+   */
+  compareRevisions(
+    projectId: string,
+    baseRevisionId: string,
+    headRevisionId: string,
+    signal?: AbortSignal,
+  ): Promise<RevisionCompareResultV1> {
+    const query = new URLSearchParams({ base: baseRevisionId, head: headRevisionId });
+    return coreRequest<RevisionCompareResultV1>(
+      this.http,
+      'GET',
+      `/projects/${encodeURIComponent(projectId)}/revisions/compare?${query.toString()}`,
+      { signal },
     );
   }
 }

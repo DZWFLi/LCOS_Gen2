@@ -14,7 +14,13 @@ export { CoreProjectClient } from './backend/projects.js';
 export type { ProjectListItem } from './backend/projects.js';
 
 export { CoreArtifactClient } from './backend/artifacts.js';
-export type { ArtifactDetailProjection, ArtifactDetailRevision, ArtifactRunRef } from './backend/artifacts.js';
+export type {
+  ArtifactDetailProjection,
+  ArtifactDetailRevision,
+  ArtifactRunRef,
+  RevisionCompareLineV1,
+  RevisionCompareResultV1,
+} from './backend/artifacts.js';
 
 export { CoreRelationClient } from './backend/relations.js';
 export type { RelationPutResult, RelationDeleteResult, RelationCreateInput, RelationCreateResult } from './backend/relations.js';
