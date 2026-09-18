@@ -13,10 +13,11 @@
 import {
   AssemblySourceBayController,
   assemblyCardViewV1,
+  isCoreAbortError,
   type AssemblySourceTabV1,
 } from '@local-creative-os/web-gen2';
 import { BookOpen, FileAudio, FileImage, FileText, FolderOpen, MessageCircle, PlusCircle, Search, Send } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSubmenu } from '@/components/Common/DropdownMenu';
@@ -160,10 +161,28 @@ export interface AssemblyOutcomeLineV1 {
   readonly changeSetId?: string;
 }
 
+/**
+ * 回执分层（presentation only，不建新 domain truth）：
+ * - applied        ：每一项都真的落地了新 canonical mutation
+ * - partial        ：有落地、也有 已存在/跳过/不支持/失败（applied-with-skip）
+ * - already-present：全部 already-member —— 没有新增变更，**不是「全部成功」**
+ * - unsupported    ：全部不支持投放（诚实 unsupported，不是成功）
+ * - skipped        ：全部因其它原因跳过（没有来源落地）
+ * - failed         ：有失败且没有任何落地
+ */
+export type AssemblyApplyToneV1 =
+  | 'applied'
+  | 'partial'
+  | 'already-present'
+  | 'unsupported'
+  | 'skipped'
+  | 'failed';
+
 export interface AssemblyApplySummaryV1 {
-  readonly tone: 'applied' | 'partial' | 'failed';
+  readonly tone: AssemblyApplyToneV1;
   readonly headline: string;
   readonly lines: readonly AssemblyOutcomeLineV1[];
+  readonly counts: Readonly<Record<AssemblyOutcomeToneV1, number>>;
 }
 
 const OUTCOME_LABEL: Readonly<Record<AssemblyOutcomeToneV1, string>> = {
@@ -182,7 +201,9 @@ export function assemblyOutcomeToneOf(result: AssemblyApplyItemResultV1): Assemb
   return 'skipped';
 }
 
-/** partial 的判定不信任 allApplied：unsupported 也是「没有全部成功」。 */
+const OUTCOME_TONES: readonly AssemblyOutcomeToneV1[] = ['applied', 'already-member', 'unsupported', 'skipped', 'failed'];
+
+/** 不信任 Core 的 allApplied：already-member / skipped / unsupported 都不是「全部成功」。 */
 export function describeAssemblyApplyResultV1(result: AssemblyApplyResultV1): AssemblyApplySummaryV1 {
   const lines: AssemblyOutcomeLineV1[] = result.results.map((item) => {
     const tone = assemblyOutcomeToneOf(item);
@@ -194,18 +215,46 @@ export function describeAssemblyApplyResultV1(result: AssemblyApplyResultV1): As
       ...(item.changeSetId === undefined ? {} : { changeSetId: item.changeSetId }),
     };
   });
-  const anyFailed = lines.some((line) => line.tone === 'failed');
-  const anyUnsupported = lines.some((line) => line.tone === 'unsupported');
-  const anyLanded = lines.some((line) => line.tone === 'applied');
-  const tone: AssemblyApplySummaryV1['tone'] = anyFailed
-    ? (anyLanded ? 'partial' : 'failed')
-    : anyUnsupported ? 'partial' : 'applied';
-  const headline = tone === 'applied'
-    ? '全部成功'
-    : tone === 'partial'
-      ? '部分完成 · 未成功或不支持的来源保留在原处'
-      : '投放失败 · 没有来源落地';
-  return { tone, headline, lines };
+
+  const counts = Object.fromEntries(OUTCOME_TONES.map((tone) => [tone, 0])) as Record<AssemblyOutcomeToneV1, number>;
+  for (const line of lines) counts[line.tone] += 1;
+  const total = lines.length;
+  const landed = counts.applied;
+
+  const rest = [
+    counts['already-member'] > 0 ? `已在目标中 ${counts['already-member']}` : undefined,
+    counts.skipped > 0 ? `跳过 ${counts.skipped}` : undefined,
+    counts.unsupported > 0 ? `不支持 ${counts.unsupported}` : undefined,
+    counts.failed > 0 ? `失败 ${counts.failed}` : undefined,
+  ].filter((part): part is string => part !== undefined).join(' · ');
+
+  let tone: AssemblyApplyToneV1;
+  if (total === 0) tone = 'skipped';
+  else if (counts.failed > 0) tone = landed > 0 ? 'partial' : 'failed';
+  else if (landed === total) tone = 'applied';
+  else if (landed > 0) tone = 'partial';
+  else if (counts['already-member'] === total) tone = 'already-present';
+  else if (counts.unsupported === total) tone = 'unsupported';
+  else tone = 'skipped';
+
+  const headline = ((): string => {
+    switch (tone) {
+      case 'applied':
+        return `全部成功 · ${landed} 项落地`;
+      case 'partial':
+        return `${landed} 项落地 · ${rest}`;
+      case 'already-present':
+        return '全部已在目标中 · 没有新增变更';
+      case 'unsupported':
+        return '这些来源不支持投放到当前目标 · 没有来源落地';
+      case 'skipped':
+        return total === 0 ? '没有可投放的来源' : `全部跳过 · 没有来源落地${rest === '' ? '' : `（${rest}）`}`;
+      case 'failed':
+        return `投放失败 · 没有来源落地${rest === '' ? '' : `（${rest}）`}`;
+    }
+  })();
+
+  return { tone, headline, lines, counts };
 }
 
 function targetLabel(target: AssemblyTargetRefV1): string {
@@ -236,6 +285,12 @@ function captureTitle(item: CaptureStagingItemV0): string {
   if (typeof localPath === 'string' && localPath.trim() !== '') return localPath;
   return item.kind;
 }
+
+/**
+ * 取消不是失败：HttpClient 把 abort 归一成 code 'aborted'，DOM 侧则是 name 'AbortError'。
+ * 两者都必须被识别，否则取消会被写成一条假的 error 回执/预览。共用 web-gen2 的实现。
+ */
+const isAbortLikeV1 = isCoreAbortError;
 
 type AssemblyPreviewKindV1 = 'text' | 'image' | 'url' | 'local_path' | 'descriptor' | 'skill' | 'unknown';
 
@@ -288,6 +343,25 @@ export function AssemblyBody({
   const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<AssemblyPreviewV1 | undefined>(undefined);
 
+  /**
+   * R4 preview correctness：local request generation。
+   * project 切换 / source tab 切换 / 新的 preview 都让旧 completion 失效——
+   * stale 的 Capture/Resource/Skill 预览绝不进入当前 Project/tab；Abort 也不得写 error 预览。
+   */
+  const previewGeneration = useRef(0);
+  const invalidatePreview = useCallback((): void => {
+    previewGeneration.current += 1;
+  }, []);
+
+  /**
+   * R4 apply correctness：local context generation。
+   * canonical mutation 一律用 invocation 时刻捕获的 projectId/targetRef 发出（已发出的写入
+   * 不因 Abort 假装没发生）；但回执只在「仍是当前 context」时才允许写 UI / 刷新 Source Bay。
+   */
+  const applyGeneration = useRef(0);
+  /** target 的稳定身份（targetRef 每次渲染都是新对象，不能直接做依赖）。 */
+  const targetKey = 'id' in targetRef ? `${targetRef.kind}:${targetRef.id}` : targetRef.kind;
+
   useEffect(() => {
     controller.open(projectId);
     return () => controller.dispose();
@@ -295,13 +369,23 @@ export function AssemblyBody({
 
   useEffect(() => {
     // Project 切换：清掉旧 Project 的选择 / 预览 / 回执，再加载新 Project 的现场信息。
+    invalidatePreview();
+    applyGeneration.current += 1;
     setApplyResult(null);
+    setApplyingKey(null);
     setPreview(undefined);
     setActiveItemKey(null);
     setSearchInput('');
     setWorkspaces([]);
     setWorkspaceError(false);
-  }, [projectId]);
+  }, [invalidatePreview, projectId]);
+
+  useEffect(() => {
+    // 目标变化：旧的回执不再属于当前 context（在飞 mutation 仍已在 Core 发生，不假装没发生）。
+    applyGeneration.current += 1;
+    setApplyResult(null);
+    setApplyingKey(null);
+  }, [targetKey]);
 
   useEffect(() => {
     let active = true;
@@ -325,6 +409,9 @@ export function AssemblyBody({
   const tab: AssemblySourceTabV1 = bay?.tab ?? 'project';
 
   const selectTab = (next: AssemblySourceTabV1): void => {
+    // 切 source tab：旧 tab 的预览完成不再属于当前上下文。
+    invalidatePreview();
+    setPreview(undefined);
     controller.selectTab(next);
     controller.loadTab(next);
   };
@@ -339,24 +426,35 @@ export function AssemblyBody({
   };
 
   const applySource = useCallback((sourceRef: AssemblySourceRefV1, refreshTab?: AssemblySourceTabV1): void => {
+    // canonical mutation 用 invocation 时刻捕获的 project/target 发出：已发出的写入
+    // 不会因为之后切了 project/target 就被 Abort 假装没发生（不做假的事务语义）。
+    const invocationProjectId = projectId;
+    const invocationTarget = targetRef;
+    applyGeneration.current += 1;
+    const generation = applyGeneration.current;
+    const isCurrentContext = (): boolean => applyGeneration.current === generation;
+
     setApplyingKey(`${sourceRef.kind}:${sourceRef.id}`);
     setApplyResult(null);
     void session.assembly
-      .apply(projectId, {
+      .apply(invocationProjectId, {
         schemaVersion: 1,
-        projectId,
+        projectId: invocationProjectId,
         sourceRefs: [sourceRef],
-        targetRef,
+        targetRef: invocationTarget,
       })
       .then((result) => {
+        // 旧 context 的回执不得写进当前 applyResult，也不得刷新当前 Source Bay。
+        if (!isCurrentContext()) return;
         setApplyResult(result);
         // canonical result refresh：只重读真的会被 apply 改变的那一路（Capture 物化后 resolved 变化）。
         if (refreshTab !== undefined) void controller.refreshApplied([refreshTab]);
       })
       .catch((error: unknown) => {
+        if (!isCurrentContext()) return;
         setApplyResult({
           schemaVersion: 1,
-          projectId,
+          projectId: invocationProjectId,
           results: [{
             sourceRef,
             status: 'failed',
@@ -366,7 +464,10 @@ export function AssemblyBody({
           allApplied: false,
         });
       })
-      .finally(() => setApplyingKey(null));
+      .finally(() => {
+        if (!isCurrentContext()) return;
+        setApplyingKey(null);
+      });
   }, [controller, projectId, session, targetRef]);
 
   const beginAssemblyDrag = (
@@ -416,15 +517,26 @@ export function AssemblyBody({
 
   // ---- 预览（transient read；不改 Source Bay 状态）----
 
+  /** 预览读的共同纪律：新的 preview 使旧 completion 失效；Abort 与 stale 都不得写 UI。 */
+  const beginPreview = (subjectKey: string, title: string, kind: AssemblyPreviewKindV1): number => {
+    previewGeneration.current += 1;
+    const generation = previewGeneration.current;
+    setPreview({ status: 'loading', subjectKey, title, kind });
+    return generation;
+  };
+  const isPreviewCurrent = (generation: number): boolean => previewGeneration.current === generation;
+
   const previewCapture = (item: CaptureStagingItemV0): void => {
     const subjectKey = `capture:${item.id}`;
-    setPreview({ status: 'loading', subjectKey, title: captureTitle(item), kind: 'unknown' });
+    const title = captureTitle(item);
+    const generation = beginPreview(subjectKey, title, 'unknown');
     void controller.previewCapture(item.id)
       .then((value) => {
+        if (!isPreviewCurrent(generation)) return;
         setPreview({
           status: 'ready',
           subjectKey,
-          title: captureTitle(item),
+          title,
           kind: value.type,
           ...(value.text === undefined ? {} : { text: value.text }),
           ...(value.dataUrl === undefined ? {} : { dataUrl: value.dataUrl }),
@@ -433,15 +545,18 @@ export function AssemblyBody({
         });
       })
       .catch((error: unknown) => {
-        setPreview({ status: 'error', subjectKey, title: captureTitle(item), kind: 'unknown', error: error instanceof Error ? error.message : String(error) });
+        // AbortError 不是「预览失败」——不得把取消写成 error 预览。
+        if (isAbortLikeV1(error) || !isPreviewCurrent(generation)) return;
+        setPreview({ status: 'error', subjectKey, title, kind: 'unknown', error: error instanceof Error ? error.message : String(error) });
       });
   };
 
   const previewResource = (resourceId: string, title: string): void => {
     const subjectKey = `resource:${resourceId}`;
-    setPreview({ status: 'loading', subjectKey, title, kind: 'descriptor' });
+    const generation = beginPreview(subjectKey, title, 'descriptor');
     void controller.readResourceDescriptor(resourceId)
       .then((descriptor: ResourceDescriptorV0) => {
+        if (!isPreviewCurrent(generation)) return;
         setPreview({
           status: 'ready',
           subjectKey,
@@ -459,18 +574,21 @@ export function AssemblyBody({
         });
       })
       .catch((error: unknown) => {
+        if (isAbortLikeV1(error) || !isPreviewCurrent(generation)) return;
         setPreview({ status: 'error', subjectKey, title, kind: 'descriptor', error: error instanceof Error ? error.message : String(error) });
       });
   };
 
   const previewSkill = (entry: SkillCatalogEntryV1): void => {
     const subjectKey = `skill:${entry.id}`;
-    setPreview({ status: 'loading', subjectKey, title: entry.name, kind: 'skill' });
+    const generation = beginPreview(subjectKey, entry.name, 'skill');
     void controller.readSkill(entry.id)
       .then((value) => {
+        if (!isPreviewCurrent(generation)) return;
         setPreview({ status: 'ready', subjectKey, title: entry.name, kind: 'skill', text: value.content });
       })
       .catch((error: unknown) => {
+        if (isAbortLikeV1(error) || !isPreviewCurrent(generation)) return;
         setPreview({ status: 'error', subjectKey, title: entry.name, kind: 'skill', error: error instanceof Error ? error.message : String(error) });
       });
   };
@@ -932,9 +1050,18 @@ export function AssemblyBody({
           data-lcos-assembly-outcome={summary.tone}
           className="rounded-xl px-3 py-2"
           style={{
-            background: summary.tone === 'applied' ? 'rgba(84,116,100,0.08)' : summary.tone === 'partial' ? 'rgba(176,138,72,0.10)' : 'rgba(194,91,78,0.08)',
-            color: summary.tone === 'applied' ? lcosTokens.color.accent : summary.tone === 'partial' ? lcosTokens.color.pinAmber : lcosTokens.color.danger,
-          }}
+                // 只有真正失败才用 danger；已存在/跳过/不支持是「没有落地」，不是错误。
+                background: summary.tone === 'applied'
+                  ? 'rgba(84,116,100,0.08)'
+                  : summary.tone === 'failed'
+                    ? 'rgba(194,91,78,0.08)'
+                    : 'rgba(176,138,72,0.10)',
+                color: summary.tone === 'applied'
+                  ? lcosTokens.color.accent
+                  : summary.tone === 'failed'
+                    ? lcosTokens.color.danger
+                    : lcosTokens.color.pinAmber,
+              }}
         >
           {summary.lines.map((line) => (
             <div key={line.key} data-lcos-assembly-outcome-line={line.tone} className="flex items-center justify-between gap-2 py-0.5 text-xs">

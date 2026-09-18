@@ -75,44 +75,81 @@ describe('Assembly apply outcome layering', () => {
     status: 'applied' | 'skipped' | 'failed',
     channel: 'presentation-membership' | 'already-member' | 'unsupported' | 'error',
     id = 'x-1',
-  ) => ({ sourceRef: { kind: 'artifactView' as const, id }, status, channel });
+    changeSetId?: string,
+  ) => ({
+    sourceRef: { kind: 'artifactView' as const, id },
+    status,
+    channel,
+    ...(changeSetId === undefined ? {} : { changeSetId }),
+  });
 
-  it('never reports all-success when HTTP 200 carried an unsupported source', () => {
-    const summary = describeAssemblyApplyResultV1({
-      schemaVersion: 1,
-      projectId: 'p1',
-      results: [item('applied', 'presentation-membership', 'a-1'), item('skipped', 'unsupported', 's-1')],
-      allApplied: true,
-    });
+  const summarize = (
+    results: ReadonlyArray<ReturnType<typeof item>>,
+    allApplied = true,
+  ) => describeAssemblyApplyResultV1({ schemaVersion: 1, projectId: 'p1', results, allApplied });
+
+  it('reports a full landing as applied and keeps the change set id visible', () => {
+    const summary = summarize([item('applied', 'presentation-membership', 'a-1', 'cs-12345678')]);
+    expect(summary.tone).toBe('applied');
+    expect(summary.lines[0]?.changeSetId).toBe('cs-12345678');
+    expect(summary.headline).toContain('全部成功');
+  });
+
+  it('never claims success when HTTP 200 carried an unsupported source', () => {
+    const summary = summarize([
+      item('applied', 'presentation-membership', 'a-1'),
+      item('skipped', 'unsupported', 's-1'),
+    ]);
     expect(summary.tone).toBe('partial');
-    expect(summary.headline).toContain('部分完成');
+    expect(summary.headline).not.toContain('全部成功');
+    expect(summary.counts.applied).toBe(1);
+    expect(summary.counts.unsupported).toBe(1);
     expect(summary.lines.map((line) => line.tone)).toEqual(['applied', 'unsupported']);
   });
 
-  it('distinguishes already-member from a plain skip and from a failure', () => {
-    const summary = describeAssemblyApplyResultV1({
-      schemaVersion: 1,
-      projectId: 'p1',
-      results: [
-        item('skipped', 'already-member', 'a-1'),
-        item('failed', 'error', 'b-1'),
-      ],
-      allApplied: false,
-    });
-    expect(summary.lines[0]?.tone).toBe('already-member');
-    expect(summary.lines[1]?.tone).toBe('failed');
-    expect(summary.tone).toBe('failed');
-    expect(summary.headline).toContain('投放失败');
+  it('does not call an all-already-member apply a success', () => {
+    const summary = summarize([item('skipped', 'already-member', 'a-1'), item('skipped', 'already-member', 'b-1')]);
+    expect(summary.tone).toBe('already-present');
+    expect(summary.tone).not.toBe('applied');
+    expect(summary.headline).toContain('没有新增变更');
   });
 
-  it('treats a fully landed apply as success and keeps the change set id visible', () => {
-    const summary = describeAssemblyApplyResultV1({
-      schemaVersion: 1,
-      projectId: 'p1',
-      results: [{ ...item('applied', 'presentation-membership'), changeSetId: 'cs-12345678' }],
-      allApplied: true,
-    });
-    expect(summary.tone).toBe('applied');
-    expect(summary.lines[0]?.changeSetId).toBe('cs-12345678');
+  it('does not call an all-skipped apply a success', () => {
+    const summary = summarize([item('skipped', 'presentation-membership', 'a-1')]);
+    expect(summary.tone).toBe('skipped');
+    expect(summary.headline).toContain('没有来源落地');
+  });
+
+  it('reports an all-unsupported apply as truthful unsupported', () => {
+    const summary = summarize([item('skipped', 'unsupported', 'a-1')]);
+    expect(summary.tone).toBe('unsupported');
+    expect(summary.headline).toContain('不支持');
+    expect(summary.headline).not.toContain('全部成功');
+  });
+
+  it('treats applied + already-member as partial (applied-with-skip)', () => {
+    const summary = summarize([
+      item('applied', 'presentation-membership', 'a-1'),
+      item('skipped', 'already-member', 'b-1'),
+    ]);
+    expect(summary.tone).toBe('partial');
+    expect(summary.headline).not.toContain('全部成功');
+    expect(summary.headline).toContain('已在目标中 1');
+  });
+
+  it('distinguishes a failure with no landing from a partial landing', () => {
+    const failed = summarize([item('skipped', 'already-member', 'a-1'), item('failed', 'error', 'b-1')], false);
+    expect(failed.tone).toBe('failed');
+    expect(failed.headline).toContain('投放失败');
+
+    const partial = summarize([item('applied', 'presentation-membership', 'a-1'), item('failed', 'error', 'b-1')], false);
+    expect(partial.tone).toBe('partial');
+    expect(partial.headline).toContain('1 项落地');
+  });
+
+  it('never reports success for an empty result set', () => {
+    const summary = summarize([]);
+    expect(summary.tone).not.toBe('applied');
+    expect(summary.headline).toContain('没有可投放的来源');
   });
 });
