@@ -6,8 +6,13 @@
 //   GET /projects → 逐个 GET /projects/:projectId/workspaces（workspace 带 stable canvasId）
 //   → 线性匹配 workspace.canvasId === canvasId。
 // 查不到归属时返回 `unbound`，由调用方诚实展示，不伪造项目、不回落到旧壳。
+//
+// 注意（实测教训）：**不要**用「已解析过就 early-return」的 ref 守卫。React StrictMode
+// 下 effect 会 mount→cleanup→mount，第一次的异步被 cleanup 取消，第二次若 early-return
+// 就永远不会发起查询 —— 表现是永久停在 `resolving`（Wave 1 浏览器验收实测到过）。
+// 查询是幂等只读，允许重复执行；正确性只由 `cancelled` 保证。
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { createLcosCoreSession } from './lcosCoreClient';
 
@@ -28,16 +33,11 @@ const SURFACE_KEYS: ReadonlySet<string> = new Set(['main', 'context', 'workflow'
 
 export function useLcosCanvasBinding(canvasId: string | undefined): LcosCanvasBinding {
   const [binding, setBinding] = useState<LcosCanvasBinding>({ kind: 'resolving' });
-  const resolvedFor = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (canvasId === undefined || canvasId === '') {
-      resolvedFor.current = undefined;
-      return;
-    }
-    if (resolvedFor.current === canvasId) return;
-    resolvedFor.current = canvasId;
+    if (canvasId === undefined || canvasId === '') return;
     let cancelled = false;
+    setBinding({ kind: 'resolving' });
 
     void (async () => {
       try {
