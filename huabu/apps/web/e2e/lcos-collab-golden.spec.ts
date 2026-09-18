@@ -243,6 +243,11 @@ test('H2. 外部 file/text/url 失败关闭：无规范捕获/导入 owner 时�
   await enterProject(page);
   const camera = await readCamera(page);
   const regionsBefore = await page.locator('[data-lcos-window-region-id]').count();
+  // LCOS 物种真值（species body）数量 —— 外部 payload 不得让它增长。
+  // 登记（非本轮修）：Huabu 原生 drop 会自行创建画布节点（实测 +3），那是 Huabu 的能力，
+  // 不是 LCOS Drop grammar 的 fake success；是否要把外部输入收口到规范 Capture/Import owner
+  // 属于 Capture 网关范围，交用户裁定。
+  const speciesBefore = await page.locator('[data-lcos-species-body]').count();
   const url = page.url();
   const payloads: Array<{ file?: { name: string; type: string; body: string }; text?: string }> = [
     { file: { name: 'note.txt', type: 'text/plain', body: 'hello' } },
@@ -267,6 +272,9 @@ test('H2. 外部 file/text/url 失败关闭：无规范捕获/导入 owner 时�
   expect(await page.locator('[data-lcos-composer]').count(), '外部 payload 不得打开 Composer').toBe(0);
   expect(await page.locator('[data-lcos-composer-ref]').count(), '外部 payload 不得写入草稿引用').toBe(0);
   expect(await page.locator('[data-lcos-window-region-id]').count()).toBe(regionsBefore);
+  // LCOS 层面仍然失败关闭：外部 payload 没有让任何 LCOS 物种真值增长
+  // （Huabu 原生的 drop-to-canvas 节点不属于 LCOS 真值，已登记见上）。
+  expect(await page.locator('[data-lcos-species-body]').count(), '外部 payload 不得新增 LCOS 物种真值').toBe(speciesBefore);
   expect(await readCamera(page)).toBe(camera);
   expect(page.url()).toBe(url);
 });

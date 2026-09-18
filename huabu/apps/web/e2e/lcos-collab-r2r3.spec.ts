@@ -74,7 +74,14 @@ test('R2-1. 两个独立窗口区域同时可见：id 不同、rect 不相交、
   }
   const disjoint = a!.x + a!.w <= b!.x || b!.x + b!.w <= a!.x || a!.y + a!.h <= b!.y || b!.y + b!.h <= a!.y;
   expect(disjoint, `两区域 rect 必须不相交: ${JSON.stringify(regions)}`).toBe(true);
-  expect(await page.locator('[data-lcos-window-icon-button]').count()).toBe(2);
+  // 每个区域各自持有完整的窗口动作集（R2-B：停靠 / 分组 / 取消分组 / 关闭）
+  for (const region of regions) {
+    const scope = page.locator(`[data-lcos-window-region-id="${region.id}"]`);
+    expect(await scope.locator('[data-lcos-window-dock-toggle]').count()).toBe(1);
+    expect(await scope.locator('[data-lcos-window-group]').count()).toBe(1);
+    expect(await scope.locator('[data-lcos-window-ungroup]').count()).toBe(1);
+    expect(await scope.locator('[data-lcos-window-icon-button][aria-label="关闭窗口"]').count()).toBe(1);
+  }
 });
 
 test('R2-2. 前景激活区域正确 + 真实鼠标点击背景区域即激活该区域', async ({ page }) => {
@@ -142,6 +149,245 @@ test('R2-6. 窗口打开/关闭不移动 Canvas camera', async ({ page }) => {
   await closeAllWindows(page);
   await page.waitForTimeout(500);
   expect(await readCamera(page)).toBe(before);
+});
+
+// ─────────────────────────── R2-B ───────────────────────────
+//
+// R2-B = 原 Professional Window 卡未完成的生产接线（非新增阶段）：
+// Move / Resize / Dock / Undock / Group / Ungroup / Restore / clamp / docked-right safeRect。
+// 几何真相只有一个：lcosShellStore.windowRegions[].rect / .dockWidth（body 不存 x/y/dock）。
+
+interface RegionBox2 { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+
+function regionLocator(page: import('@playwright/test').Page, regionId: string) {
+  return page.locator(`[data-lcos-window-region-id="${regionId}"]`);
+}
+
+async function regionRect(page: import('@playwright/test').Page, regionId: string): Promise<RegionBox2> {
+  const box = await regionLocator(page, regionId).boundingBox();
+  expect(box, `region ${regionId} 必须有几何`).not.toBeNull();
+  return { x: Math.round(box!.x), y: Math.round(box!.y), w: Math.round(box!.width), h: Math.round(box!.height) };
+}
+
+async function regionIdByTitle(page: import('@playwright/test').Page, titlePart: string): Promise<string> {
+  const titles = await page.locator('[data-lcos-window-region-id] [data-lcos-window-title]')
+    .evaluateAll((nodes) => nodes.map((node) => ({ title: node.textContent ?? '', region: (node.closest('[data-lcos-window-region-id]') as HTMLElement | null)?.dataset.lcosWindowRegionId ?? '' })));
+  const hit = titles.find((entry) => entry.title.includes(titlePart));
+  expect(hit, `未找到标题含「${titlePart}」的区域：${JSON.stringify(titles)}`).toBeTruthy();
+  return hit!.region;
+}
+
+/** 真实指针拖拽：from → +delta，多步移动（原生 pointermove 才会驱动手势）。 */
+async function dragBy(
+  page: import('@playwright/test').Page,
+  from: { readonly x: number; readonly y: number },
+  delta: { readonly dx: number; readonly dy: number },
+): Promise<void> {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + delta.dx / 3, from.y + delta.dy / 3, { steps: 4 });
+  await page.mouse.move(from.x + (delta.dx * 2) / 3, from.y + (delta.dy * 2) / 3, { steps: 4 });
+  await page.mouse.move(from.x + delta.dx, from.y + delta.dy, { steps: 6 });
+  await page.waitForTimeout(150);
+  await page.mouse.up();
+  await page.waitForTimeout(350);
+}
+
+test('R2B-1. Move：真实拖动标题栏移动区域，clamp 在浮动画布安全包围盒内，camera 不动', async ({ page }) => {
+  await enterProject(page);
+  await openTwoWindows(page);
+  const camera = await readCamera(page);
+  const readerId = await regionIdByTitle(page, '阅读');
+  const before = await regionRect(page, readerId);
+
+  // 自由横移（该区域此刻已占满可用高度，y 被 clamp 钉在 88 —— 见下方精确断言）
+  await dragBy(page, { x: before.x + 120, y: before.y + 24 }, { dx: -80, dy: 0 });
+  const moved = await regionRect(page, readerId);
+  expect(Math.abs(moved.x - (before.x - 80)), `x 应随拖拽位移（before=${before.x} moved=${moved.x}）`).toBeLessThanOrEqual(8);
+  expect(Math.abs(moved.w - before.w)).toBeLessThanOrEqual(2);
+  expect(Math.abs(moved.h - before.h)).toBeLessThanOrEqual(2);
+
+  // pointer clamp：拖到越过左边距 → 精确停在浮动画布包围盒的左边界；满高区域 y 恒为 88
+  await dragBy(page, { x: moved.x + 120, y: moved.y + 24 }, { dx: -moved.x, dy: 0 });
+  const clamped = await regionRect(page, readerId);
+  expect(clamped.x, '左 clamp 边界应为 floating bounds 的 x=24').toBe(24);
+  expect(clamped.y, '满高区域的 y 恒为 floating bounds 的 y=88').toBe(88);
+  expect(Math.abs(clamped.w - before.w)).toBeLessThanOrEqual(2);
+
+  expect(await readCamera(page), '窗口 move 不得移动 Canvas camera').toBe(camera);
+  expect(await readRegions(page), '另一个区域不被牵连').toHaveLength(2);
+});
+
+test('R2B-2. Resize：float 区 8 个手柄就位，真实拖拽 se 放大 / nw 收缩且守住 360×280 下限', async ({ page }) => {
+  await enterProject(page);
+  await openTwoWindows(page);
+  const camera = await readCamera(page);
+  const readerId = await regionIdByTitle(page, '阅读');
+
+  // 8 向手柄全部就位（纯数学已由 web-gen2 t4 覆盖；此处证明生产接线）
+  expect(await regionLocator(page, readerId).locator('[data-lcos-window-resize]').count()).toBe(8);
+
+  const start = await regionRect(page, readerId);
+  const seBox = await regionLocator(page, readerId).locator('[data-lcos-window-resize="se"]').boundingBox();
+  expect(seBox).not.toBeNull();
+  await dragBy(page, { x: seBox!.x + seBox!.width / 2, y: seBox!.y + seBox!.height / 2 }, { dx: 120, dy: 80 });
+  const grown = await regionRect(page, readerId);
+  expect(Math.abs(grown.w - (start.w + 120)), `宽度应放大 120（${start.w}→${grown.w}）`).toBeLessThanOrEqual(10);
+  // 该区域此刻已占满可用高度：高度不会超过 floating bounds 的高度（不再增长）
+  expect(grown.h, '高度已在上界，不得越界增长').toBe(start.h);
+  expect(Math.abs(grown.x - start.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(grown.y - start.y)).toBeLessThanOrEqual(2);
+
+  // se 向内收 → 守住最小 360×280（右下角不动 x/y）
+  const seBox2 = await regionLocator(page, readerId).locator('[data-lcos-window-resize="se"]').boundingBox();
+  expect(seBox2).not.toBeNull();
+  await dragBy(page, { x: seBox2!.x + seBox2!.width / 2, y: seBox2!.y + seBox2!.height / 2 }, { dx: -1200, dy: -900 });
+  const shrunk = await regionRect(page, readerId);
+  expect(shrunk.w, '最小宽度 360 必须成立').toBe(360);
+  expect(shrunk.h, '最小高度 280 必须成立').toBe(280);
+  expect(Math.abs(shrunk.x - grown.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(shrunk.y - grown.y)).toBeLessThanOrEqual(2);
+
+  // 缩小后窗口不再占满可用高度 → 纵向也能自由移动（证明 move 不止横向）
+  await dragBy(page, { x: shrunk.x + 60, y: shrunk.y + 24 }, { dx: 0, dy: 120 });
+  const shifted = await regionRect(page, readerId);
+  expect(Math.abs(shifted.y - (shrunk.y + 120)), `y 应随拖拽位移（${shrunk.y}→${shifted.y}）`).toBeLessThanOrEqual(10);
+  expect(Math.abs(shifted.h - shrunk.h)).toBeLessThanOrEqual(2);
+
+  // nw 向内收：x/y 前进、尺寸收缩，几何仍然合法（≥ 最小尺寸、不越出包围盒）
+  const nwBox = await regionLocator(page, readerId).locator('[data-lcos-window-resize="nw"]').boundingBox();
+  expect(nwBox).not.toBeNull();
+  await dragBy(page, { x: nwBox!.x + nwBox!.width / 2, y: nwBox!.y + nwBox!.height / 2 }, { dx: 40, dy: 40 });
+  const afterNw = await regionRect(page, readerId);
+  expect(afterNw.w).toBeGreaterThanOrEqual(360);
+  expect(afterNw.h).toBeGreaterThanOrEqual(280);
+  expect(afterNw.x).toBeGreaterThanOrEqual(shifted.x);
+  expect(afterNw.y).toBeGreaterThanOrEqual(shifted.y);
+  expect(afterNw.x + afterNw.w).toBeLessThanOrEqual(page.viewportSize()!.width - 20);
+  expect(await readCamera(page), 'resize 不得移动 Canvas camera').toBe(camera);
+});
+
+test('R2B-3. Dock / Undock：显式停靠贴右缘满高（仅左缘手柄），取消停靠留在原地', async ({ page }) => {
+  await enterProject(page);
+  await openTwoWindows(page);
+  const camera = await readCamera(page);
+  const viewport = page.viewportSize()!;
+  const assemblyId = await regionIdByTitle(page, 'Assembly');
+
+  await regionLocator(page, assemblyId).locator('[data-lcos-window-dock-toggle]').click();
+  await page.waitForTimeout(500);
+  await expect(regionLocator(page, assemblyId)).toHaveAttribute('data-lcos-window-layout', 'docked-right');
+  const docked = await regionRect(page, assemblyId);
+  expect(docked.y).toBeLessThanOrEqual(2);
+  expect(docked.h).toBeGreaterThanOrEqual(viewport.height - 4);
+  expect(docked.x + docked.w).toBeGreaterThanOrEqual(viewport.width - 4);
+  // 停靠区只有左缘 resize
+  const dockHandles = await regionLocator(page, assemblyId).locator('[data-lcos-window-resize]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-lcos-window-resize')));
+  expect(dockHandles).toEqual(['w']);
+  // 拖左缘加宽
+  const wBox = await regionLocator(page, assemblyId).locator('[data-lcos-window-resize="w"]').boundingBox();
+  expect(wBox).not.toBeNull();
+  await dragBy(page, { x: wBox!.x + wBox!.width / 2, y: wBox!.y + wBox!.height / 2 }, { dx: -140, dy: 0 });
+  const wider = await regionRect(page, assemblyId);
+  expect(wider.w).toBeGreaterThan(docked.w + 100);
+  expect(wider.x + wider.w).toBeGreaterThanOrEqual(viewport.width - 4);
+
+  // 取消停靠：回到 floating，几何留在原处（不跳走）
+  await regionLocator(page, assemblyId).locator('[data-lcos-window-dock-toggle]').click();
+  await page.waitForTimeout(500);
+  await expect(regionLocator(page, assemblyId)).toHaveAttribute('data-lcos-window-layout', 'floating');
+  const undocked = await regionRect(page, assemblyId);
+  expect(Math.abs(undocked.x - wider.x)).toBeLessThanOrEqual(10);
+  expect(Math.abs(undocked.w - wider.w)).toBeLessThanOrEqual(10);
+  expect(await regionLocator(page, assemblyId).locator('[data-lcos-window-resize]').count()).toBe(8);
+  expect(await readCamera(page), 'dock/undock 不得移动 Canvas camera').toBe(camera);
+});
+
+test('R2B-4. Group / Ungroup：显式分组为 tab（切 tab 换 body），取消分组回两个区域', async ({ page }) => {
+  await enterProject(page);
+  await openTwoWindows(page);
+  expect(await page.locator('[data-lcos-window-tab]').count()).toBe(0);
+  const assemblyId = await regionIdByTitle(page, 'Assembly');
+
+  await regionLocator(page, assemblyId).locator('[data-lcos-window-group]').click();
+  await page.waitForTimeout(600);
+  expect(await readRegions(page), '显式分组后应只剩一个区域').toHaveLength(1);
+  const tabs = page.locator('[data-lcos-window-tab]');
+  await expect(tabs).toHaveCount(2);
+  await expect(page.locator('[data-lcos-family="window-chrome"]').first()).toHaveAttribute('data-lcos-variant', '分组');
+
+  // 真实切换 tab：被点的 tab 成为当前，body 随之切换
+  const otherTab = tabs.nth(1);
+  await otherTab.click();
+  await page.waitForTimeout(500);
+  await expect(otherTab).toHaveAttribute('data-lcos-variant', 'selected');
+
+  await page.locator('[data-lcos-window-ungroup]').first().click();
+  await page.waitForTimeout(600);
+  expect(await readRegions(page), '取消分组后应回到两个独立区域').toHaveLength(2);
+  expect(await page.locator('[data-lcos-window-tab]').count()).toBe(0);
+});
+
+test('R2B-5. Restore：用户几何在区域集合变化（关窗→重开）重新派生后保持', async ({ page }) => {
+  await enterProject(page);
+  await openTwoWindows(page);
+  const readerId = await regionIdByTitle(page, '阅读');
+  const assemblyId = await regionIdByTitle(page, 'Assembly');
+  const derivedAssembly = await regionRect(page, assemblyId);
+  const before = await regionRect(page, readerId);
+  await dragBy(page, { x: before.x + 120, y: before.y + 24 }, { dx: -140, dy: 0 });
+  const moved = await regionRect(page, readerId);
+  expect(Math.abs(moved.x - (before.x - 140))).toBeLessThanOrEqual(8);
+
+  // 关掉另一个窗口：2 区域 → 1 区域，placements 重新派生（单区域走 CSS 默认路径）
+  await regionLocator(page, assemblyId).locator('[data-lcos-window-icon-button][aria-label="关闭窗口"]').click();
+  await expect(page.locator('[data-lcos-window-region-id]')).toHaveCount(1, { timeout: 15_000 });
+  await page.waitForTimeout(500);
+  const afterClose = await regionRect(page, readerId);
+  expect(Math.abs(afterClose.x - moved.x), '关窗后用户几何必须保持').toBeLessThanOrEqual(4);
+  expect(Math.abs(afterClose.w - moved.w)).toBeLessThanOrEqual(4);
+
+  // 重新打开 Assembly 窗口：1 区域 → 2 区域，placements 再次派生
+  await page.locator('[data-lcos-assembly-entry]').first().click();
+  await expect(page.locator('[data-lcos-window-region-id]')).toHaveCount(2, { timeout: 25_000 });
+  await page.waitForTimeout(600);
+
+  const after = await regionRect(page, readerId);
+  expect(Math.abs(after.x - moved.x), '重开窗口不得重置已移动窗口的几何').toBeLessThanOrEqual(4);
+  expect(Math.abs(after.y - moved.y)).toBeLessThanOrEqual(4);
+  expect(Math.abs(after.w - moved.w)).toBeLessThanOrEqual(4);
+  // 新开的区域拿到派生摆放，而不是复用了用户的几何
+  const reopenedAssembly = await regionRect(page, await regionIdByTitle(page, 'Assembly'));
+  expect(Math.abs(reopenedAssembly.x - derivedAssembly.x)).toBeLessThanOrEqual(30);
+});
+
+test('R2B-6. docked-right safeRect：停靠区不收缩 Canvas，且 HUD 岛不得被窗口盖住', async ({ page }) => {
+  await enterProject(page);
+  await openTwoWindows(page);
+  const canvasBefore = await page.locator('.react-flow__viewport').boundingBox();
+  const assemblyId = await regionIdByTitle(page, 'Assembly');
+  await regionLocator(page, assemblyId).locator('[data-lcos-window-dock-toggle]').click();
+  await page.waitForTimeout(600);
+
+  const docked = await regionRect(page, assemblyId);
+  const canvasAfter = await page.locator('.react-flow__viewport').boundingBox();
+  // 停靠只占右缘，Canvas 不被整块收缩
+  expect(canvasAfter!.width).toBe(canvasBefore!.width);
+  expect(docked.x).toBeGreaterThan(page.viewportSize()!.width / 2);
+
+  // HUD safe-edge：可见 HUD 岛不得与停靠区重叠（窗口不该挡住 HUD）
+  const hudIds = ['[data-lcos-surface-dock]', '[data-lcos-navigator-island]'];
+  const overlaps: string[] = [];
+  for (const selector of hudIds) {
+    const hud = page.locator(selector).first();
+    if (await hud.count() === 0) continue;
+    const box = await hud.boundingBox();
+    if (box === null) continue;
+    const hit = box.x < docked.x + docked.w && box.x + box.width > docked.x
+      && box.y < docked.y + docked.h && box.y + box.height > docked.y;
+    if (hit) overlaps.push(`${selector} ${JSON.stringify({ x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.width), h: Math.round(box.height) })}`);
+  }
+  expect(overlaps, `停靠区盖住了 HUD：${overlaps.join(' | ')}（docked=${JSON.stringify(docked)}）`).toEqual([]);
 });
 
 // ─────────────────────────── R3 ───────────────────────────
