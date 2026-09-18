@@ -322,6 +322,10 @@ export function ensureRealDevProject(repository: SqliteMetadataRepository, works
     createdAt,
     updatedAt: createdAt,
   }
+  // 注意：这里刻意**不预设** `canvasId`。Core 是 Project 的唯一 truth，Huabu 才是 Canvas
+  // 的唯一 truth；Core 无法（也不应该）代 Huabu 创建画布。此前这里写死了 `canvas-lcos-main`
+  // / `-context` / `-workflow` 三个并不存在于 Huabu 的画布 id —— 干净数据目录下首屏必然 404，
+  // 现场加载失败。缺省 `canvasId` 时 LCOS 舞台走真实建立路径（createCanvas + 回写 workspace）。
   const workspaces: readonly Workspace[] = [
     {
       id: 'workspace-real-main' as Workspace['id'],
@@ -334,7 +338,6 @@ export function ensureRealDevProject(repository: SqliteMetadataRepository, works
       visibleLayers: ['core', 'process'],
       contextPolicy: 'workspace-related',
       preferredSurface: 'main',
-      canvasId: 'canvas-lcos-main',
       updatedAt: createdAt,
     },
     {
@@ -348,7 +351,6 @@ export function ensureRealDevProject(repository: SqliteMetadataRepository, works
       visibleLayers: ['core', 'process'],
       contextPolicy: 'workspace-related',
       preferredSurface: 'context',
-      canvasId: 'canvas-lcos-context',
       updatedAt: createdAt,
     },
     {
@@ -362,7 +364,6 @@ export function ensureRealDevProject(repository: SqliteMetadataRepository, works
       visibleLayers: ['core', 'process'],
       contextPolicy: 'workspace-related',
       preferredSurface: 'workflow',
-      canvasId: 'canvas-lcos-workflow',
       updatedAt: createdAt,
     },
   ]

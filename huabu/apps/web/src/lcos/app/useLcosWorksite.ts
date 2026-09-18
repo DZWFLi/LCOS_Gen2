@@ -112,11 +112,13 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
       try {
         const created = await createCanvas();
         const updated = await session.projects.updateWorkspaceCanvasId(projectId, workspaceId, created.canvasId);
-        setWorkspaces((current) => {
-          const next = current.map((candidate) => String(candidate.id) === workspaceId ? updated : candidate);
-          setSurfaceCanvasMap(buildSurfaceCanvasMap(next));
-          return next;
-        });
+        // 不要在上游 updater 里再 setState：React 会在 render 阶段执行 updater，
+        // 于是变成 "Cannot update a component while rendering a different component"
+        // （干净数据目录下首次建立现场画布时实测到）。这里按闭包里的当前 workspaces 计算，
+        // 两个 setter 各自独立调用。
+        const next = workspaces.map((candidate) => String(candidate.id) === workspaceId ? updated : candidate);
+        setWorkspaces(next);
+        setSurfaceCanvasMap(buildSurfaceCanvasMap(next));
         return created.canvasId;
       } catch (error) {
         setStatusDetail(error instanceof Error ? error.message : String(error));
