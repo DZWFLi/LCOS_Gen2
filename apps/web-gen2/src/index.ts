@@ -196,6 +196,9 @@ export { CoreCaptureSpaceClient } from './backend/captureSpace.js';
 export { CoreResourceClient } from './backend/resources.js';
 export type { ResourceSummaryV1 } from './backend/resources.js';
 export { CoreSkillCatalogClient } from './backend/skills.js';
+export { CoreColorPinClient } from './backend/colorPins.js';
+export type { ColorPinAssignInputV1, ColorPinMutationReceiptV1, ColorPinRemoveReceiptV1 } from './backend/colorPins.js';
+export { CoreNavigationClient } from './backend/navigation.js';
 export { CoreConnectorClient } from './backend/connectors.js';
 export { CoreHealthClient } from './backend/health.js';
 
