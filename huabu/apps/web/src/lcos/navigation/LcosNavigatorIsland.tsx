@@ -183,12 +183,24 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
       });
   }, [projectId, session]);
 
-  const reloadPins = useCallback((): void => {
+  /**
+   * 初次 mount / project 切换：**同一处**完成「取新 generation → 清旧 Project 的 UI → 发 initial snapshot」。
+   *
+   * 必须合并：若 init snapshot 与 reset 拆成两个 effect，reset 的 generation bump 会把刚发出的
+   * snapshot 判成 stale —— 项目本来已有 ColorPin 时首屏就不显示（只有之后 assign/remove 触发
+   * 新的 loadPins 才把旧 pin 带回来）。同时 reset 保证 A 的迟到回包写不进 B。
+   */
+  useEffect(() => {
     pinGeneration.current += 1;
-    loadPins(pinGeneration.current);
-  }, [loadPins]);
-
-  useEffect(() => { reloadPins(); }, [reloadPins]);
+    const generation = pinGeneration.current;
+    setPinSnapshot(undefined);
+    setPinNote(undefined);
+    setPinPaletteOpen(false);
+    setOpenPinId(undefined);
+    setPinBusy(false);
+    setGraphTruth(undefined);
+    loadPins(generation);
+  }, [loadPins, projectId]);
 
   // project graph truth（scopes/workspaces）：只读，用于解出 canonical surface target。
   useEffect(() => {
@@ -205,17 +217,6 @@ export function LcosNavigatorIsland(_props: NavigatorIslandProps): React.JSX.Ele
       .catch(() => { if (active) setGraphTruth(undefined); });
     return () => { active = false; };
   }, [projectId, session]);
-
-  // project 切换：清掉旧 Project 的颜色组视图态（不把 A 的 snapshot/回执留在 B）。
-  useEffect(() => {
-    pinGeneration.current += 1;
-    setPinSnapshot(undefined);
-    setPinNote(undefined);
-    setPinPaletteOpen(false);
-    setOpenPinId(undefined);
-    setPinBusy(false);
-    setGraphTruth(undefined);
-  }, [projectId]);
 
   /** canonical surface target（pure helper；graph 未就绪时诚实为 undefined）。 */
   const surfaceTarget = graphTruth === undefined

@@ -318,3 +318,61 @@ test('R6-5. Focus/Where（F）：已知对象「在哪」真实枚举 + 前往�
     await expect(focusWhereOpen).toHaveCount(0, { timeout: 10_000 });
   }
 });
+// ---- R6 ColorPin initial hydration + project isolation（薄修 bug 的 focused 证据） ----
+//
+// bug：岛把 init snapshot 与 project reset 拆成两个 effect，reset 的 generation bump 把刚发出的
+// snapshot 判成 stale → 项目本来已有 ColorPin 时首屏不显示，只有后续 assign/remove 才带回来。
+// 下面两条在真实浏览器 / 真实 Core 上钉死修好后的行为。
+
+const PIN_VIOLET = '#6371DD';
+const PIN_TEAL = '#238E86';
+
+async function seedSurfacePin(projectId: string, color: string): Promise<void> {
+  const made = await coreJson('POST', `/projects/${projectId}/color-pins/memberships`, {
+    targetRef: { projectId, kind: 'surface', id: 'main' },
+    color,
+  });
+  expect(made.ok, `seed color pin 必须成功：${made.status} ${JSON.stringify(made.value)}`).toBe(true);
+}
+
+function islandPins(page: import('@playwright/test').Page) {
+  return page.locator('[data-lcos-navigator-island] [data-lcos-nav-part="pin"]');
+}
+
+test('R6-6. 项目本来已有 ColorPin：初次 mount 不做任何操作就必须显示（hydration）', async ({ page }) => {
+  await clearColorPins();
+  // 关键：pin 在「进入项目之前」就已存在于 canonical truth。
+  await seedSurfacePin(PROJECT_ID, PIN_VIOLET);
+
+  await enterProject(page);
+  await dismissCanvasConflictToast(page);
+
+  // 不做任何点击 / assign / remove：岛必须自己把已有 pin 读出来。
+  const pins = islandPins(page);
+  await expect(pins, '已有 ColorPin 必须在首屏自动 hydrate（不得等用户操作）').toHaveCount(1, { timeout: 25_000 });
+  await expect(pins).toHaveAttribute('data-lcos-pin-color', PIN_VIOLET);
+  await expect(pins).toHaveAttribute('data-lcos-pin-count', '1');
+});
+
+test('R6-7. 项目切换隔离：切到 B 后必须显示 B 自己的 pin，且 A 的 pin 不得残留/覆盖', async ({ page }) => {
+  test.slow();
+  const assembly = await seedAssemblyFixture();
+  // A（当前项目）与 B（另一个项目）各自有不同颜色的 ColorPin。
+  await clearColorPins();
+  await clearColorPins(assembly.projectId);
+  await seedSurfacePin(PROJECT_ID, PIN_VIOLET);
+  await seedSurfacePin(assembly.projectId, PIN_TEAL);
+
+  await enterProject(page);
+  await expect(islandPins(page), 'A 自己的 pin 必须显示').toHaveAttribute('data-lcos-pin-color', PIN_VIOLET, { timeout: 25_000 });
+
+  // 真实 SPA 切换项目（不经整页 reload）：壳上的项目胶囊 → 项目列表 → 点目标项目。
+  await page.locator('[data-lcos-project-shell] a[href="/projects"]').first().click();
+  await expect(page.locator('[data-lcos-launcher]').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /LCOS Assembly E2E/ }).first().click();
+
+  // B 的 pin 必须出现；A 的 pin（另一个颜色）不得残留。
+  await expect(islandPins(page), 'B 自己的 pin 必须 hydrate').toHaveAttribute('data-lcos-pin-color', PIN_TEAL, { timeout: 30_000 });
+  await expect(islandPins(page)).toHaveCount(1);
+  await expect(islandPins(page), 'A 的 pin 不得覆盖 B').not.toHaveAttribute('data-lcos-pin-color', PIN_VIOLET);
+});
