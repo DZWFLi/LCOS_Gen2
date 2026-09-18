@@ -616,3 +616,19 @@ export async function selectAssemblySourceTab(
   }
   await expect(page.locator(`[data-lcos-assembly-source-panel="${tab}"] [data-lcos-assembly-preview]`)).toHaveCount(0);
 }
+/**
+ * 真实用户动作：Huabu 原生「节点内容冲突」浮层（top-center, z-9999）会盖住
+ * LCOS 导航岛（同为 top-center, z-40），在解决前岛不可点。
+ * LCOS 不接管 Huabu 的通知 owner —— 验收里按用户的方式裁决（保留我的版本），
+ * 而不是 force click 绕过（那会点到浮层自身上）。
+ *
+ * 记录（非 LCOS 所有，只登记）：两个 owner 争用同一个 top-center 锚点。
+ */
+export async function dismissCanvasConflictToast(page: Page): Promise<void> {
+  const keepMine = page.getByRole('button', { name: /Keep mine|保留我/ });
+  for (let attempt = 0; attempt < 3 && await keepMine.count() > 0; attempt += 1) {
+    await keepMine.first().click();
+    await page.waitForTimeout(700);
+  }
+  await page.waitForTimeout(400);
+}
