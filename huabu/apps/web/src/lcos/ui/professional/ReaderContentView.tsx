@@ -1,9 +1,11 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+
+import { MilkdownPreview } from '@/components/Milkdown';
+import { Button } from '@/components/Common/Button';
 
 import { PreviewHeaderSlotContext } from '@/components/Nodes/PreviewHeaderSlot';
 
 import { Gen1ImageZoomStage } from './donor/Gen1ImageZoomStage';
-import { Gen1TextDocument } from './donor/Gen1TextDocument';
 import './donor/gen1-reader.css';
 import './professional-reading.css';
 
@@ -16,7 +18,7 @@ const readOnlyHeader = { el: null };
 
 /** The owning Reader supplies revision bytes. No loading, URL or revision owner lives here. */
 export type ReaderVisibleContent =
-  | { readonly kind: 'text'; readonly value: string }
+  | { readonly kind: 'text'; readonly value: string; readonly viewKey?: string; readonly mimeType?: string }
   | { readonly kind: 'image' | 'pdf' | 'video' | 'audio'; readonly url: string; readonly mimeType: string; readonly viewKey?: string }
   | null;
 
@@ -37,6 +39,8 @@ export interface ReaderContentViewProps {
   readonly fileName: string;
   readonly contentRef?: Ref<HTMLDivElement>;
   readonly onScroll?: UIEventHandler<HTMLDivElement>;
+  /** Content has rendered, not merely arrived from the file service. */
+  readonly onContentReady?: (content: NonNullable<ReaderVisibleContent>) => void;
   /** The owner keeps the reader's continuity/zoom state; this view only presents it. */
   readonly zoom?: number;
   readonly loading?: boolean;
@@ -56,6 +60,7 @@ export function ReaderContentView({
   fileName,
   contentRef,
   onScroll,
+  onContentReady,
   zoom = 100,
   loading = false,
   error,
@@ -84,25 +89,9 @@ export function ReaderContentView({
   }
 
   if (content?.kind === 'text') {
-    return (
-      <div
-        ref={contentRef}
-        onScroll={onScroll}
-        data-lcos-reader-content="text"
-        data-figma-node-id="5388:27484"
-        className="lcos-reader-page"
-      >
-        <div className="lcos-reader-measure">
-          {renderedText === undefined ? (
-            kind === 'markdown' ? <div data-lcos-reader-text-scale style={{ zoom: zoom / 100 }}><Gen1TextDocument text={content.value} /></div> :
-              <pre className="lcos-reader-plaintext" style={{ fontSize: `${0.875 * zoom / 100}rem` }}>{content.value}</pre>
-          ) : (
-            <div className="lcos-reader-richtext" style={{ zoom: zoom / 100 }}>{renderedText}</div>
-          )}
-        </div>
-        {feedback}
-      </div>
-    );
+    return <ReaderTextContent key={content.viewKey ?? fileName} content={content} kind={kind}
+      contentRef={contentRef} onScroll={onScroll} onContentReady={onContentReady}
+      zoom={zoom} renderedText={renderedText} feedback={feedback} />;
   }
 
   if (content?.kind === 'pdf' || content?.kind === 'video' || content?.kind === 'audio') {
@@ -129,7 +118,7 @@ export function ReaderContentView({
         className="lcos-reader-media-page"
       >
         <figure className="lcos-reader-figure">
-          <Gen1ImageZoomStage key={content.url} src={content.url} alt={fileName} />
+          <Gen1ImageZoomStage key={content.viewKey ?? content.url} src={content.url} alt={fileName} {...(onRetry === undefined ? {} : { onRetry })} />
           <figcaption className="lcos-reader-media-caption">{fileName}</figcaption>
         </figure>
         <span className="lcos-professional-sr-only">{content.mimeType}</span>
@@ -148,4 +137,48 @@ export function ReaderContentView({
       ) : feedback}
     </div>
   );
+}
+
+/** Reuse the same parser/schema as the canvas document and editor. The owner
+ * continues to supply immutable revision bytes; this surface never fetches Current. */
+function ReaderTextContent({ content, kind, contentRef, onScroll, onContentReady, zoom, renderedText, feedback }: {
+  content: Extract<ReaderVisibleContent, { kind: 'text' }>;
+  kind: string;
+  contentRef: ReaderContentViewProps['contentRef'];
+  onScroll: ReaderContentViewProps['onScroll'];
+  onContentReady: ReaderContentViewProps['onContentReady'];
+  zoom: number;
+  renderedText: ReactNode;
+  feedback: ReactNode;
+}): React.JSX.Element {
+  const [renderError, setRenderError] = useState<string>();
+  const [attempt, setAttempt] = useState(0);
+  const [showSource, setShowSource] = useState(false);
+  const latest = useRef({ content, onContentReady });
+  latest.current = { content, onContentReady };
+  const rich = renderedText === undefined && !showSource
+    && (kind === 'markdown' || content.mimeType?.split(';')[0] === 'text/markdown');
+  const ready = useCallback(() => {
+    const { content: current, onContentReady: notify } = latest.current;
+    notify?.(current);
+  }, []);
+  const failed = useCallback((error: Error) => setRenderError(error.message), []);
+  useEffect(() => { if (!rich) ready(); }, [rich, content, renderedText, ready]);
+  return <div ref={contentRef} onScroll={onScroll} data-lcos-reader-content="text"
+    data-figma-node-id="5388:27484" className="lcos-reader-page">
+    <div className="lcos-reader-measure">
+      {rich ? <div data-lcos-reader-text-scale style={{ zoom: zoom / 100 }}>
+        <MilkdownPreview key={attempt} markdown={content.value} enableBlockDrag={false}
+          ariaLabel="正文（只读）" className="lcos-reader-richtext lcos-reader-markdown"
+          onRendered={ready} onError={failed} />
+      </div> : renderedText !== undefined ? <div className="lcos-reader-richtext" style={{ zoom: zoom / 100 }}>{renderedText}</div>
+        : <pre className="lcos-reader-plaintext" style={{ fontSize: `${16 * zoom / 100}px` }}>{content.value}</pre>}
+      {renderError && !showSource && <div role="alert" data-lcos-reader-render-error>
+        <p>此版本正文已读取，但格式预览未能载入：{renderError}</p>
+        <Button size="sm" variant="ghost" onClick={() => { setRenderError(undefined); setAttempt(n => n + 1); }}>重试格式预览</Button>
+        <Button size="sm" variant="ghost" onClick={() => setShowSource(true)}>查看同一版本原文</Button>
+      </div>}
+    </div>
+    {feedback}
+  </div>;
 }

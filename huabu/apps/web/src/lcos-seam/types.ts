@@ -130,6 +130,8 @@ export type CanvasHostRecognizer = PointerRecognizer<
  * All fields optional; an absent extension leaves Huabu 100% stock.
  */
 export interface CanvasHostExtension {
+  /** Optional release policy. Movement/history remain native; no domain knowledge here. */
+  readonly nodeDragPolicy?: import('./nodeDragPolicy').CanvasNodeDragPolicy;
   /** Optional host adapter for native multi-selection mechanics. */
   readonly multiSelectionToolbar?: ReactNode;
   /** Host node renderers, merged OVER (never replacing) Huabu built-ins. */

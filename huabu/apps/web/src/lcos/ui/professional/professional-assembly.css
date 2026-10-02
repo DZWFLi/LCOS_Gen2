@@ -53,8 +53,20 @@
 .lcos-assembly-result-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 32px; min-block-size:44px; flex:0 0 auto; color:var(--gen2-muted); font-size:11px; }
 .lcos-assembly-result-meta .lcos-btn { color:var(--gen2-muted); }
 .lcos-assembly-scroll { flex:1; min-block-size:0; min-inline-size:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding:6px 24px 12px 32px; }
-.lcos-assembly-masonry { column-width:248px; column-gap:24px; inline-size:100%; }
-.lcos-assembly-item { display:inline-grid; grid-template-columns:minmax(0,1fr); vertical-align:top; position:relative; min-inline-size:0; inline-size:100%; gap:8px; padding:8px 6px 0; margin-block-end:24px; break-inside:avoid; border:1px solid transparent; border-radius:16px; color:var(--gen2-text); transition:background 150ms ease,border-color 150ms ease,box-shadow 150ms ease; }
+.lcos-assembly-masonry { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--assembly-item-width,248px)),1fr)); column-gap:24px; grid-auto-rows:1px; align-items:start; inline-size:100%; }
+.lcos-assembly-cell { min-inline-size:0; grid-row-end:span 300; }
+.lcos-assembly-cell > [data-assembly-cell-content] { display:flow-root; min-inline-size:0; }
+.lcos-assembly-setting { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-block-start:16px; font-size:12px; }
+.lcos-assembly-setting select { max-width:65%; min-height:36px; border:1px solid var(--gen2-border); border-radius:8px; padding:4px 8px; background:var(--gen2-surface); color:var(--gen2-text); font:inherit; }
+.lcos-assembly-setting input[type='range'] { width:62%; min-width:0; accent-color:var(--gen2-accent); }
+.lcos-assembly-preview-trigger { position:absolute; right:8px; top:60px; opacity:0; z-index:3; --oreo-fill:var(--gen2-surface); }
+.lcos-assembly-item:is(:hover,:focus-within) .lcos-assembly-preview-trigger { opacity:1; }
+@media (hover:none) { .lcos-assembly-preview-trigger { opacity:1; } }
+.lcos-assembly-preview-content :is(video,audio) { display:block; max-width:100%; width:100%; border-radius:12px; }
+.lcos-assembly-preview-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.lcos-assembly-refresh-error { padding:8px 0; color:var(--gen2-muted); font-size:12px; }
+.lcos-assembly-receipt-retry { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.lcos-assembly-item { display:inline-grid; grid-template-columns:minmax(0,1fr); vertical-align:top; position:relative; min-inline-size:0; inline-size:100%; gap:8px; padding:8px 6px 0; margin-block-end:0; border:1px solid transparent; border-radius:16px; color:var(--gen2-text); transition:background 150ms ease,border-color 150ms ease,box-shadow 150ms ease; }
 .lcos-assembly-item:hover,.lcos-assembly-item:focus-within,.lcos-assembly-item[data-visual-active='true'] { border-color:var(--gen2-border); background:color-mix(in srgb,var(--gen2-raised) 34%,transparent); box-shadow:0 4px 12px color-mix(in srgb,var(--gen2-text) 4%,transparent); }
 .lcos-assembly-item[data-selected='true'] { border-color:var(--gen2-accent); box-shadow:0 0 0 1px var(--gen2-accent); }
 .lcos-assembly-item[draggable='true'] .lcos-assembly-item-object { cursor:grab; }
@@ -150,7 +162,7 @@
 .lcos-assembly-receipt li { display:flex; flex-direction:column; gap:4px; margin:6px 0; overflow-wrap:anywhere; font-size:11px; }
 .lcos-assembly-receipt small { color:var(--gen2-muted); font-size:10px; }
 .lcos-assembly-apply-feedback { padding:8px 24px; }
-.lcos-assembly-body [data-lcos-assembly-composer] { flex:0 0 auto; max-height:45%; overflow:auto; padding:8px 24px; }
+.lcos-assembly-body [data-lcos-assembly-composer]:not(.lcos-assembly-input-pane) { flex:0 0 auto; max-height:45%; overflow:auto; padding:8px 24px; }
 /* Body scroll is owned once. Stage still owns geometry/docking/grouping and all resize handles. */
 [data-lcos-window-body='assembly'] { min-height:0 !important; overflow:hidden; display:flex; flex-direction:column; }
 @keyframes lcos-assembly-enter { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
@@ -163,7 +175,7 @@
  .lcos-assembly-filter-popover { right:16px; width:calc(100% - 32px); }
  .lcos-assembly-result-meta { padding-inline:16px; }
  .lcos-assembly-scroll { padding-inline:16px; }
- .lcos-assembly-masonry { column-count:1; column-width:auto; }
+ .lcos-assembly-masonry { column-gap:16px; }
  .lcos-assembly-item { display:grid; width:100%; margin-inline:auto; }
  .lcos-assembly-item[data-object-only='true'] { width:min(290px,100%); }
  .lcos-assembly-browse-hint { padding-inline:16px; }
@@ -206,4 +218,17 @@
  .lcos-assembly-browse-hint { display:none; }
  .lcos-assembly-filter-popover { position:fixed; top:auto; right:16px; width:min(340px,calc(100% - 32px)); }
  .lcos-assembly-selection-bar { position:sticky; bottom:0; }
+}
+
+/* The existing Composer stays beside the shared Source Bay during an explicit material detour. */
+.lcos-assembly-journey-layout { display:flex; flex:1; min-height:0; min-width:0; overflow:hidden; }
+.lcos-assembly-material-bay { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; overflow:hidden; }
+.lcos-assembly-input-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 24px; }
+.lcos-assembly-input-header strong { font-size:16px; } .lcos-assembly-input-header p { font-size:12px; opacity:.7; margin-top:4px; overflow-wrap:anywhere; }
+.lcos-assembly-input-pane { flex:0 0 38%; min-width:260px; max-width:400px; min-height:0; overflow:auto; padding:4px 18px 12px 24px; border-right:1px solid var(--lcos-border-subtle,rgba(30,40,40,.08)); margin-right:14px; }
+.lcos-assembly-input-pane .lcos-composer-view { width:100%; max-width:100%; }
+.lcos-assembly-reference-notice { font-size:12px; line-height:1.5; padding:8px 4px; overflow-wrap:anywhere; }
+@container lcos-assembly (max-width: 680px) {
+  .lcos-assembly-journey-layout { flex-direction:column; }
+  .lcos-assembly-input-pane { flex:0 0 auto; max-height:42%; min-width:0; max-width:none; width:100%; border-right:0; border-bottom:1px solid rgba(30,40,40,.08); margin:0 0 8px; padding:0 16px 8px; }
 }

@@ -94,6 +94,7 @@ function speciesFor(entity: CoreEntityRefLoose): {
   if (entity.type === 'skill') {
     return { species: 'skill', family: 'lcos/instrument' };
   }
+  if (entity.type === 'result-slot') return { species: 'run', family: 'lcos/instrument' };
   if (entity.type === 'run') {
     return { species: 'run', family: 'lcos/instrument' };
   }

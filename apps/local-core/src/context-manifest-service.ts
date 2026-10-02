@@ -23,13 +23,13 @@ import type {
 import { SqliteMetadataRepository } from './metadata-repository.js'
 import { extractAgentNodePreview } from './node-ref.js'
 
-const BUILDER_VERSION = '0.1.1'
+const BUILDER_VERSION = '0.1.2'
 const MAX_ITEM_CHARACTERS = 32_000
 const MAX_TOTAL_CHARACTERS = 128_000
 const TEXT_MIME_TYPES = new Set(['text/markdown', 'text/plain'])
 
-function hash(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex')
+function hash(value: string | Uint8Array): string {
+  return createHash('sha256').update(value).digest('hex')
 }
 
 function byIdentity<Value extends { readonly id: unknown }>(left: Value, right: Value): number {
@@ -52,15 +52,23 @@ function artifactRef(
   }
 }
 
-async function readTextExcerpt(fileRecord: FileRecord): Promise<{ readonly content?: string; readonly truncated: boolean }> {
+async function readTextExcerpt(fileRecord: FileRecord, expectedRevisionHash?: string): Promise<{ readonly content?: string; readonly truncated: boolean }> {
   if (!TEXT_MIME_TYPES.has(fileRecord.mimeType) || fileRecord.availability === 'missing' || fileRecord.availability === 'unreadable') {
     return { truncated: false }
   }
+  if (expectedRevisionHash !== undefined && String(fileRecord.observedHash) !== expectedRevisionHash) throw new Error('引用文件与已记录版本不一致。')
   const file = await open(fileRecord.observedPath, 'r')
   try {
     const buffer = Buffer.alloc(MAX_ITEM_CHARACTERS * 4 + 4)
     const { bytesRead } = await file.read(buffer, 0, buffer.byteLength, 0)
-    const value = buffer.subarray(0, bytesRead).toString('utf8')
+    const bytes = buffer.subarray(0, bytesRead)
+    const value = bytes.toString('utf8')
+    if (expectedRevisionHash !== undefined) {
+      // Reuse the existing Revision/FileRecord hash rule used by continuation.
+      // Verify these exact read bytes before saving a manifest, not a second file read.
+      if ((await file.stat()).size > bytesRead) return { content: value.slice(0, MAX_ITEM_CHARACTERS), truncated: true }
+      if (hash(bytes) !== expectedRevisionHash) throw new Error('引用文件已在磁盘变化，不能冒充所选历史版本。')
+    }
     if (value.length <= MAX_ITEM_CHARACTERS) return { content: value, truncated: false }
     return { content: value.slice(0, MAX_ITEM_CHARACTERS), truncated: true }
   } finally {
@@ -138,6 +146,30 @@ export class ContextManifestService {
     const targetFile = targetRevision === undefined ? undefined : fileRecordById.get(String(targetRevision.fileRecordId))
     const targetRef = target && targetRevision && targetFile ? artifactRef(target, targetRevision, targetFile) : null
 
+    // Resolve explicit references before the legacy implicit-context fallback. A reference
+    // with a revision must not silently turn into the Artifact's current revision.
+    const viewById = new Map(graph.artifactViews.map((view) => [String(view.id), view]))
+    const seenOrders = new Set<number>()
+    const explicitReferences = [...(input.orderedReferences ?? [])].sort((a, b) => a.order - b.order).map((item) => {
+      if (!Number.isSafeInteger(item.order) || item.order < 0 || seenOrders.has(item.order)) throw new Error('引用顺序无效或重复。')
+      seenOrders.add(item.order)
+      if (item.mode !== undefined && item.mode !== 'full') throw new Error('此任务暂只支持完整材料引用；摘要／结构引用请使用已支持的会话通道。')
+      const ref = item.ref
+      if (ref.type !== 'artifact' && ref.type !== 'view') throw new Error(`当前任务尚不支持 ${ref.type} 引用的内容展开；未创建任务，也未丢弃引用。`)
+      const view = ref.type === 'view' ? viewById.get(ref.viewId) : undefined
+      if (ref.type === 'view' && view === undefined) throw new Error(`引用视图已缺失：${ref.viewId}`)
+      const id = ref.type === 'artifact' ? ref.artifactId : String(view!.artifactId)
+      const artifact = artifactById.get(id)
+      if (!artifact || String(artifact.projectId) !== String(projectId)) throw new Error(`引用材料已缺失或不属于当前项目：${id}`)
+      const selectedRevision = ref.type === 'artifact' ? ref.revisionId : view?.revisionId
+      const revisionId = selectedRevision === undefined ? artifact.currentRevisionId : selectedRevision
+      const revision = revisionId === undefined ? undefined : revisionById.get(String(revisionId))
+      if (!revision || String(revision.artifactId) !== id) throw new Error(`引用版本已缺失或不属于所选材料：${String(revisionId)}`)
+      if (!fileRecordById.has(String(revision.fileRecordId))) throw new Error(`引用版本的文件已缺失：${String(revision.id)}`)
+      return { artifact, revisionId: String(revision.id), order: item.order }
+    })
+    const explicitArtifactIds = new Set(explicitReferences.map((entry) => String(entry.artifact.id)))
+
     const related = [...graph.relations].sort(byIdentity)
     const referenceArtifacts = related
       .filter((relation) => relation.kind === 'reference' && relation.sourceEntityType === 'artifact')
@@ -193,6 +225,7 @@ export class ContextManifestService {
       revisionOverrideId?: string,
       identityOverride?: string,
       sourceAnchorOverride?: string,
+      strictReference = false,
     ): Promise<ContextManifestArtifactRefV0 | null> => {
       const revisionId = revisionOverrideId ?? (artifact.currentRevisionId === undefined ? undefined : String(artifact.currentRevisionId))
       if (revisionId === undefined) return null
@@ -202,10 +235,13 @@ export class ContextManifestService {
       if (fileRecord === undefined) return null
       let excerpt: { readonly content?: string; readonly truncated: boolean } = { truncated: false }
       try {
-        excerpt = await readTextExcerpt(fileRecord)
-      } catch {
+        excerpt = await readTextExcerpt(fileRecord, strictReference ? String(revision.contentHash) : undefined)
+      } catch (error) {
+        if (strictReference) throw new Error(`引用版本无法读取：${String(revision.id)}`, { cause: error })
         excerpt = { content: '[unreadable]', truncated: false }
       }
+      if (strictReference && !excerpt.content?.trim()) throw new Error(`引用版本暂无可读取的文本：${String(revision.id)}；未创建任务。`)
+      if (strictReference && (excerpt.truncated || (excerpt.content?.length ?? 0) > remainingCharacters)) throw new Error('本次引用超过任务文本额度；请减少材料，未自动截断已选择的版本。')
       if (excerpt.truncated) truncatedItemIds.push(String(artifact.id))
       if (excerpt.content) lockedSource.push(excerpt.content)
       const boundedContent = excerpt.content?.slice(0, Math.max(0, remainingCharacters))
@@ -254,10 +290,23 @@ export class ContextManifestService {
         stableArtifactIds.add(String(artifact.id))
       }
     }
-    if (target) await appendArtifact(target, 'target')
-    const references = (await Promise.all(referenceArtifacts.sort(byIdentity).map((artifact) => appendArtifact(artifact, 'reference'))))
-      .filter((value): value is ContextManifestArtifactRefV0 => value !== null)
+    if (target) await appendArtifact(target, 'target', targetRevision === undefined ? undefined : String(targetRevision.id))
+    const references: ContextManifestArtifactRefV0[] = []
+    for (const item of explicitReferences) {
+      const identity = `reference:${item.order}:${String(item.artifact.id)}:${item.revisionId}`
+      const result = await appendArtifact(item.artifact, 'reference', item.revisionId, identity, undefined, true)
+      if (result === null) throw new Error(`引用版本无法解析：${item.revisionId}`)
+      references.push(result)
+    }
+    // appendArtifact updates the shared character budget and item order: run sequentially.
+    // An explicit historical reference wins over an implicit current-version suggestion.
+    for (const artifact of referenceArtifacts.sort(byIdentity)) {
+      if (explicitArtifactIds.has(String(artifact.id))) continue
+      const result = await appendArtifact(artifact, 'reference')
+      if (result !== null) references.push(result)
+    }
     for (const artifact of feedbackArtifacts.sort(byIdentity)) {
+      if (explicitArtifactIds.has(String(artifact.id))) continue
       await appendArtifact(artifact, 'feedback')
       const item = orderedItems.at(-1)
       feedback.push({
@@ -273,6 +322,7 @@ export class ContextManifestService {
       ...referenceArtifacts.map((artifact) => String(artifact.id)),
       ...feedbackArtifacts.map((artifact) => String(artifact.id)),
       ...stableArtifactIds,
+      ...explicitArtifactIds,
     ])
     for (const artifact of explicitContextArtifacts) {
       if (alreadyIncluded.has(String(artifact.id))) continue

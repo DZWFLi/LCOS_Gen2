@@ -245,3 +245,5 @@ export {
   findTombstonesAfter,
   type StampInput,
 } from './provenance/noteProvenance.js';
+
+export { planNodeFramePlacement, type NodeFramePlacement } from "./commands/planNodeFramePlacement.js";

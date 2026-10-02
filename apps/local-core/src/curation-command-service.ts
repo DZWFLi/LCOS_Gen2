@@ -1,3 +1,4 @@
+import { saveCanvasText, type CanvasTextWrite } from './canvas-text-service.js'
 import { createHash, randomUUID } from 'node:crypto'
 
 import type {
@@ -69,6 +70,12 @@ export class CurationCommandService {
       }
     }
     return result
+  }
+
+  async saveCanvasText(projectId: string, input: CanvasTextWrite) {
+    const saved = await saveCanvasText(this.deps.repository, projectId, input)
+    if (this.deps.semantic !== undefined) await this.deps.semantic.reindexArtifact(projectId, saved.artifactId)
+    return saved
   }
 
   /**

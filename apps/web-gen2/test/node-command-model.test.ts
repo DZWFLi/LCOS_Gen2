@@ -67,16 +67,16 @@ test('R2 命令模型：note + 已绑定 Core 的近场主入口是打开/Compos
   assert.equal(byId(commands, 'open')?.label, '在阅读器打开');
   assert.equal(byId(commands, 'open')?.disabledReason, undefined);
   assert.equal(byId(commands, 'reference')?.disabledReason, undefined);
-  assert.equal(byId(commands, 'reference')?.capability, 'reference');
+  assert.equal(byId(commands, 'reference'), undefined, 'Reference Pick belongs to the current input, never an Arc command');
   assert.equal(byId(commands, 'auto-height')?.label, '自动高度');
   assert.equal(byId(commands, 'compose')?.label, '围绕此对象工作');
   assert.equal(byId(commands, 'color-pin')?.label, '标为颜色组');
   assert.equal(byId(commands, 'assembly'), undefined, 'Assembly 保持独立项目级入口');
 
-  const primary = primaryNodeCommands(commands);
+  const primary = primaryNodeCommands(commands, 2);
   assert.deepEqual(
     primary.map((c) => c.id),
-    ['open', 'compose', 'reference'],
+    ['open', 'compose'],
   );
   for (const command of primary) assert.equal(command.disabledReason, undefined);
 
@@ -91,7 +91,7 @@ test('R2 命令模型：note + 已绑定 Core 的近场主入口是打开/Compos
   assert.equal(byId(unbound, 'color-pin'), undefined);
 });
 
-test('R2 命令模型：note 近场顺序受 引用能力 影响（不支持引用时给真实 reason）', () => {
+test('R12 命令模型：引用能力不再给 Arc 增加另一入口', () => {
   const commands = buildLcosNodeCommands({
     nodeType: 'note',
     entityType: 'artifact',
@@ -99,7 +99,7 @@ test('R2 命令模型：note 近场顺序受 引用能力 影响（不支持引�
     capabilities: ['place', 'edit'],
     referenced: false,
   });
-  assert.equal(byId(commands, 'reference')?.disabledReason, '该 Core 物种不支持引用');
+  assert.equal(byId(commands, 'reference'), undefined);
   // 空 capabilities（未取到 descriptor）不算"不支持"
   const noDescriptor = buildLcosNodeCommands({
     nodeType: 'note',
@@ -109,7 +109,7 @@ test('R2 命令模型：note 近场顺序受 引用能力 影响（不支持引�
     referenced: true,
   });
   assert.equal(byId(noDescriptor, 'reference')?.disabledReason, undefined);
-  assert.equal(byId(noDescriptor, 'reference')?.label, '取消引用');
+  assert.equal(byId(noDescriptor, 'reference'), undefined);
 });
 
 test('R2 命令模型：image 只有旧工具条真有的控件（无文本/笔记互转、无自动高度）', () => {
@@ -178,7 +178,7 @@ test('Core-bound text uses the Arc command surface while unbound text stays nati
   });
   assert.equal(byId(commands, 'open')?.label, '在阅读器打开');
   assert.equal(byId(commands, 'compose')?.label, '围绕此对象工作');
-  assert.equal(byId(commands, 'reference')?.label, '加入引用');
+  assert.equal(byId(commands, 'reference'), undefined);
   assert.equal(byId(commands, 'size')?.label, '尺寸 W/H');
   assert.equal(byId(commands, 'convert-note'), undefined);
 });
@@ -215,7 +215,7 @@ test('Glyth management preserves conversation actions without native note conver
   for (const id of ['convert-text', 'convert-note', 'auto-height', 'accent', 'open-large']) {
     assert.equal(byId(commands, id), undefined, `Glyth must not expose native note handler ${id}`);
   }
-  for (const id of ['open', 'reference', 'color-pin', 'size', 'fit']) assert.ok(byId(commands, id));
+  for (const id of ['open', 'color-pin', 'size', 'fit']) assert.ok(byId(commands, id));
   assert.equal(byId(commands, 'move-space')?.disabledReason, '当前对象还不能跨现场移动');
   const native = buildLcosNodeCommands(base);
   for (const id of ['convert-text', 'auto-height', 'accent', 'open-large']) assert.ok(byId(native, id));

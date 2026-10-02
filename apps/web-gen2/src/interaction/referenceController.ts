@@ -11,7 +11,7 @@
 // (no Set-based round-trips).
 //
 // The controller is generic over the entity-ref shape: it only ever compares
-// `entityType` + `entityId`. The canonical CoreEntityRef (domain's closed
+// canonical type/id plus an explicit draft revision. CoreEntityRef (domain's closed
 // RelationEntityType union) is the default; host apps whose refs carry a
 // wider entityType (e.g. the Huabu bridge's structural string view) pass
 // their own minimal shape.
@@ -22,11 +22,32 @@ import type { CoreEntityRef } from '../spatial/relationProjection.js';
 export interface EntityRefLike {
   readonly entityType: string;
   readonly entityId: string;
+  /** Draft address only; never an extra canonical entity or projection identity. */
+  readonly revisionId?: string;
+  readonly artifactId?: string;
+  readonly artifactViewId?: string;
+  /** Displayed file facts for early feedback only; Core still validates at submission. */
+  readonly mimeType?: string;
+  readonly presentationId?: string;
+  readonly mode?: 'full' | 'summary' | 'structure';
 }
 
 /** Identity comparison for entity refs (type + id, nothing else). */
 export function sameEntityRef<T extends EntityRefLike>(a: T, b: T): boolean {
   return a.entityType === b.entityType && a.entityId === b.entityId;
+}
+
+/** Reference equality must not collapse two explicitly selected historical revisions. */
+export function draftReferenceKey(ref: EntityRefLike): string {
+  const artifactId = ref.entityType === 'artifact' ? ref.entityId : ref.artifactId;
+  if (artifactId && ref.revisionId) return JSON.stringify(['artifact', artifactId, ref.revisionId, ref.mode ?? 'full']);
+  if (ref.entityType === 'artifactView' || ref.entityType === 'view') return JSON.stringify(['view', ref.entityId, ref.mode ?? 'full']);
+  if (ref.entityType === 'artifact' && ref.artifactViewId) return JSON.stringify(['view', ref.artifactViewId, ref.mode ?? 'full']);
+  return JSON.stringify([ref.entityType, ref.entityId, ref.presentationId ?? null, ref.mode ?? 'full']);
+}
+
+export function sameDraftReference(a: EntityRefLike, b: EntityRefLike): boolean {
+  return draftReferenceKey(a) === draftReferenceKey(b);
 }
 
 /** State of one composer's reference list. */
@@ -50,7 +71,7 @@ export function toggleReference<T extends EntityRefLike>(
   state: ReferenceControllerState<T>,
   ref: T,
 ): ReferenceControllerState<T> {
-  const at = state.orderedEntityRefs.findIndex((x) => sameEntityRef(x, ref));
+  const at = state.orderedEntityRefs.findIndex((x) => sameDraftReference(x, ref));
   if (at >= 0) {
     return {
       ...state,
@@ -72,7 +93,7 @@ export function removeReference<T extends EntityRefLike>(
   return {
     ...state,
     orderedEntityRefs: state.orderedEntityRefs.filter(
-      (x) => !sameEntityRef(x, ref),
+      (x) => !sameDraftReference(x, ref),
     ),
   };
 }

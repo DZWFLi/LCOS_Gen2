@@ -127,6 +127,7 @@ export class RuntimeApplicationService {
       ...(input.targetArtifactId === undefined ? {} : { targetArtifactId: input.targetArtifactId }),
       ...(input.targetRevisionId === undefined ? {} : { targetRevisionId: input.targetRevisionId }),
       ...(input.contextArtifactIds === undefined ? {} : { contextArtifactIds: input.contextArtifactIds }),
+      ...(input.orderedReferences === undefined ? {} : { orderedReferences: input.orderedReferences }),
       ...(input.savedContextId === undefined ? {} : { savedContextId: input.savedContextId }),
       ...(stableContextItems.length === 0 ? {} : { stableContextItems }),
       promptRouteId: `runtime.${outputIntent}@v1`,
@@ -174,7 +175,10 @@ export class RuntimeApplicationService {
       createdAt: timestamp,
       updatedAt: timestamp,
     }
-    this.repository.createRunWithDispatch(run, dispatch)
+    if (input.receiverRef !== undefined && this.repository.getConnectedConversation(String(projectId), input.receiverRef.connectedConversationId) === undefined) {
+      throw new Error('ReceiverRef resolved to no connected conversation (fail-close).')
+    }
+    this.repository.createRunWithDispatch(run, dispatch, input.resultSlotId)
     // ---- F6 P0-D（20260828）：Composer 三列落地（receiver / ordered refs / result slot）----
     // P0-D1：receiverRef 由 Core 解析——linked 的 ConnectedConversation 提供 canonical session；
     // 未 link = fail-close（不伪造 session，不回退猜测）。receiverRef 与显式 sessionId 并存时后者优先。

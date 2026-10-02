@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises'
+import { RailwayDestinationService } from '../railway-destination-service.js'
+import type { ProjectEventHub } from '../project-events/project-event-hub.js'
 import type {
   CommandDraftV1,
   ContractError,
@@ -29,6 +31,7 @@ export interface ProjectsRouteContext extends RouteHttpContext {
   readonly createProjectIdFn: (name: string) => string
   /** T6 continuation journal（composer submit projection 读取）。 */
   readonly continuation?: ConversationContinuationService
+  readonly projectEvents?: ProjectEventHub
 }
 
 /**
@@ -39,6 +42,33 @@ export interface ProjectsRouteContext extends RouteHttpContext {
 export async function handleProjectsRoute(ctx: ProjectsRouteContext): Promise<boolean> {
   const { method, pathname, request, response, controller, url, catalog, allowedRoot, maxDocumentPreviewBytes, createProjectIdFn } = ctx
   const { sendJson, failure, readJsonBody, withAbort, statusForError, isRecord, isStringArray } = ctx.helpers
+
+  const railwayMatch = /^\/projects\/([^/]+)\/railway$/.exec(pathname)
+  if (railwayMatch && (method === 'GET' || method === 'PUT')) {
+    const metadata = routeRequireMetadata(ctx); if (!metadata) return true
+    const projectId = decodeURIComponent(railwayMatch[1]!)
+    if (!routeRequireProject(projectId, {metadata, response, helpers: ctx.helpers})) return true
+    const service = new RailwayDestinationService(metadata)
+    if (method === 'GET') {
+      sendJson(response, 200, {ok:true, value:service.read(projectId)}); return true
+    }
+    let input: unknown
+    try { input = await readJsonBody(request, controller.signal) } catch {
+      sendJson(response, 400, failure('INVALID_ARGUMENT', '目的地更新内容无法读取。')); return true
+    }
+    if (!isRecord(input) || input.schemaVersion !== 1 || input.projectId !== projectId || !Array.isArray(input.orderedRefs)
+      || !Number.isSafeInteger(input.expectedVersion) || Number(input.expectedVersion) < 0
+      || Object.keys(input).some((key) => !['schemaVersion','projectId','orderedRefs','expectedVersion'].includes(key))) {
+      sendJson(response, 400, failure('INVALID_ARGUMENT', '目的地身份、项目或版本无效。')); return true
+    }
+    try {
+      if (controller.signal.aborted) return true
+      const value = service.save(projectId, input.orderedRefs, Number(input.expectedVersion))
+      ctx.projectEvents?.publish(projectId, {channel:'presentation',type:'railway.changed',payload:{action:'order_changed',version:value.order.version}})
+      sendJson(response, 200, {ok:true,value})
+    } catch (error) { sendJson(response,409,failure('CONFLICT',error instanceof Error ? error.message : '目的地更新失败。')) }
+    return true
+  }
 
   if (method === 'GET' && pathname === '/projects') {
     const result = ctx.metadata === undefined
@@ -221,10 +251,12 @@ export async function handleProjectsRoute(ctx: ProjectsRouteContext): Promise<bo
     const metadata = routeRequireMetadata(ctx); if (metadata === undefined) return true
     const projectId = decodeURIComponent(railOrderMatch[1] ?? '')
     if (routeRequireProject(projectId, { metadata, response, helpers: ctx.helpers }) === undefined) return true
+    const raw = metadata.getRailwayOrderRecord(projectId)?.orderedRefs
+    if (raw !== undefined && !Array.isArray(raw)) {
+      sendJson(response,409,failure('CONFLICT','目的地已迁移，请使用新版导航读取。')); return true
+    }
     const stored = metadata.getProjectViewRailOrder(projectId)
-    const workspaceIds = new Set(metadata.getWorkspaces(projectId).map((workspace) => String(workspace.id)))
-    const scopeIds = new Set(metadata.getScopes(projectId).map((scope) => String(scope.id)))
-    const orderedRefs = (stored?.orderedRefs ?? []).filter((ref) => workspaceIds.has(ref.viewId) || scopeIds.has(ref.viewId))
+    const orderedRefs = stored?.orderedRefs ?? []
     sendJson(response, 200, {
       ok: true,
       value: {

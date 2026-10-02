@@ -9,9 +9,10 @@ import { PortalPreviewBody } from './PortalPreviewBody';
 import type { SpacePreviewSceneSnapshot } from '@/store/spacePreviewSceneCache';
 import type { GetSpacePreviewSceneResponse } from '@huabu/shared';
 
-const mocks = vi.hoisted(() => ({ preview: vi.fn(), retry: vi.fn(), camera: vi.fn() }));
+const mocks = vi.hoisted(() => ({ preview: vi.fn(), retry: vi.fn(), camera: vi.fn(), target:vi.fn() }));
 vi.mock('@/store/spacePreviewSceneCache', () => ({ useSpacePreviewScene: mocks.preview }));
-vi.mock('@/store/canvasStore', () => ({ default: (select: (s: { canvasId: string; setViewport: typeof mocks.camera }) => unknown) => select({ canvasId: 'canvas-main', setViewport: mocks.camera }) }));
+vi.mock('@/store/canvasStore', () => ({ default: Object.assign((select: (s: { canvasId: string; setViewport: typeof mocks.camera }) => unknown) => select({ canvasId: 'canvas-main', setViewport: mocks.camera }),{getState:()=>({canvasId:'canvas-main'})}) }));
+vi.mock('../app/lcosCoreClient',()=>({createLcosCoreSession:()=>({railway:{portalTarget:mocks.target}})}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 const scene: GetSpacePreviewSceneResponse = {
@@ -23,6 +24,7 @@ const scene: GetSpacePreviewSceneResponse = {
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  mocks.target.mockResolvedValue({key:'w',ref:{kind:'worksite',projectId:'p',worksiteId:'workspace-target'},available:true,label:'目标现场',canvasId:'canvas-target',surface:'context'});
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {
@@ -30,7 +32,7 @@ afterEach(async () => {
 });
 async function render(snapshot: SpacePreviewSceneSnapshot) {
   mocks.preview.mockReturnValue({ ...snapshot, retry: mocks.retry });
-  await act(async () => root.render(<PortalPreviewBody projectId="p" target="canvas-target" targetKind="canvas" />));
+  await act(async () => root.render(<PortalPreviewBody projectId="p" target="canvas-target" targetKind="canvas" workspaceId="workspace-target" />));
 }
 function variant() { return host.querySelector('[data-lcos-family="portal-preview"]')?.getAttribute('data-lcos-variant'); }
 
@@ -54,13 +56,14 @@ it('renders the existing viewport and zooms locally without moving Main', async 
 });
 
 it('opens the exact resolved Workspace target and delegates zoom to the local preview viewport', async () => {
-  const open = vi.fn();
+  const open = vi.fn().mockResolvedValue(true);
   await render({ scene, loading: false, stale: false, error: null });
   await act(async () => root.render(
     <PortalPreviewBody
       projectId="p"
       target="canvas-target"
       targetKind="canvas"
+      workspaceId="workspace-target"
       portalTargetResolution={{ canvasId: 'canvas-target', workspaceId: 'workspace-target', targetSurface: 'context' }}
       onOpenPortalTarget={open}
     />,
@@ -69,7 +72,7 @@ it('opens the exact resolved Workspace target and delegates zoom to the local pr
   if (!openButton) throw new Error('Portal open action missing');
   await act(async () => openButton.click());
   expect(open).toHaveBeenCalledOnce();
-  expect(open).toHaveBeenCalledWith({ canvasId: 'canvas-target', workspaceId: 'workspace-target', targetSurface: 'context' });
+  expect(open).toHaveBeenCalledWith({ canvasId: 'canvas-target', workspaceId: 'workspace-target', targetSurface: 'context' },expect.any(AbortSignal));
   const viewport = host.querySelector('[aria-label="spacePreview.viewport"]');
   const svg = viewport?.querySelector('svg');
   const before = svg?.getAttribute('viewBox');
@@ -90,9 +93,8 @@ it('keeps entering the target disabled when the Core Workspace identity is unava
     />,
   ));
   const openButton = host.querySelector<HTMLButtonElement>('.lcos-portal-open');
-  if (!openButton) throw new Error('Portal disabled action missing');
-  expect(openButton.disabled).toBe(true);
-  expect(host.textContent).toContain('Workspace');
+  expect(openButton).toBeNull();
+  expect(host.textContent).toContain('原工作现场身份尚未确认');
 });
 
 it('derives loading, partial, cached, failure and missing states from the donor snapshot', async () => {

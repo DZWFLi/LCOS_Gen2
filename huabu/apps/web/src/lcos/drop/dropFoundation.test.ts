@@ -42,14 +42,14 @@ describe('R1 target registry', () => {
     expect(registry.hitTest({ x: 10, y: 10 })?.targetId).toBe('canvas:main');
   });
 
-  it('does not hit disabled or ineligible targets', () => {
+  it('returns the disabled receiver so the resolver can explain rejection', () => {
     const registry = new DropTargetRegistry();
     registry.register({
       ...canvasTarget,
       enabled: false,
       ineligibleReason: '现场未就绪',
     });
-    expect(registry.hitTest({ x: 10, y: 10 })).toBeUndefined();
+    expect(registry.hitTest({ x: 10, y: 10 })?.enabled).toBe(false);
   });
 });
 
@@ -191,7 +191,7 @@ describe('R1 commit router', () => {
       reference: { entityType: 'artifact' as const, entityId: 'a-1' },
     };
     const ok = await router.commit(intent, 'tx-collab', {
-      applyAssembly: vi.fn(),
+      projectId: 'p', applyAssembly: vi.fn(),
       addComposerReference: vi.fn(),
       addConversationReference,
     });
@@ -199,7 +199,7 @@ describe('R1 commit router', () => {
     expect(addConversationReference).not.toHaveBeenCalled();
 
     const fail = await router.commit(intent, 'tx-collab-2', {
-      applyAssembly: vi.fn(),
+      projectId: 'p', applyAssembly: vi.fn(),
       addComposerReference: vi.fn(),
       // 无 owner → fail-close
     });
@@ -217,7 +217,7 @@ describe('R1 commit router', () => {
         payload: { kind: 'url', value: 'https://example.com' },
       },
       'tx-import',
-      { applyAssembly: vi.fn(), addComposerReference: vi.fn() },
+      { projectId: 'p', applyAssembly: vi.fn(), addComposerReference: vi.fn() },
     );
     expect(receipt).toMatchObject({
       status: 'failed',
@@ -234,7 +234,7 @@ describe('R1 commit router', () => {
       memberRef: { type: 'artifact' as const, id: 'a-1' },
     };
     const commit = (receipt: unknown) => router.commit(intent, `tx-${Math.random()}`, {
-      applyAssembly: vi.fn(),
+      projectId: 'p', applyAssembly: vi.fn(),
       addComposerReference: vi.fn(),
       addCollectionMember: vi.fn(async () => receipt as never),
     });

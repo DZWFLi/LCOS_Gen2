@@ -22,7 +22,7 @@ const dismissStack: EscapeDismissEntry[] = [];
 let listenerInstalled = false;
 
 function dispatchEscape(event: KeyboardEvent): void {
-  if (event.key !== 'Escape' || event.defaultPrevented) return;
+  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
   const topmost = dismissStack.at(-1);
   if (topmost === undefined) return;
   event.preventDefault();

@@ -43,14 +43,51 @@ function isValidBindingKey(value: Record<string, unknown>): value is Record<stri
  */
 export async function handleSpatialBindingsRoute(ctx: SpatialBindingsRouteContext): Promise<boolean> {
   const match = /^\/projects\/([^/]+)\/spatial\/bindings$/.exec(ctx.pathname)
-  if (match === null) return false
+  const materializeMatch = /^\/projects\/([^/]+)\/spatial\/result-slots\/([^/]+)\/materialize$/.exec(ctx.pathname)
+  const portalMatch = /^\/projects\/([^/]+)\/spatial\/portals\/([^/]+)$/.exec(ctx.pathname)
+  if (match === null && materializeMatch === null && portalMatch === null) return false
   if (ctx.metadata === undefined) {
     ctx.helpers.sendJson(ctx.response, 503, ctx.helpers.failure('UNAVAILABLE', 'Metadata repository is not configured.'))
     return true
   }
   const metadata: SqliteMetadataRepository = ctx.metadata
-  const projectId = decodeURIComponent(match[1] ?? '')
+  const projectId = decodeURIComponent(match?.[1] ?? materializeMatch?.[1] ?? portalMatch?.[1] ?? '')
   if (routeRequireProject(projectId, { metadata, response: ctx.response, helpers: ctx.helpers }) === undefined) return true
+
+  if (portalMatch !== null) {
+    if (ctx.method !== 'POST') return false
+    try {
+      const body = await ctx.helpers.readJsonBody(ctx.request,ctx.controller.signal)
+      if (!ctx.helpers.isRecord(body) || !isNonEmptyString(body.canvasId) || !isNonEmptyString(body.spatialId)
+        || !isNonEmptyString(body.expectedCanvasId) || Object.keys(body).some((k) => !['canvasId','spatialId','expectedCanvasId'].includes(k))) {
+        ctx.helpers.sendJson(ctx.response,400,ctx.helpers.failure('INVALID_ARGUMENT','需要准确的来源、节点与目标画布。'))
+        return true
+      }
+      if (ctx.controller.signal.aborted) throw new Error('入口绑定已取消。')
+      const value = metadata.claimWorkspacePortalBinding(projectId,decodeURIComponent(portalMatch[2]!),body.canvasId,body.spatialId,body.expectedCanvasId)
+      ctx.helpers.sendJson(ctx.response,200,{ok:true,value})
+    } catch (error) {
+      ctx.helpers.sendJson(ctx.response,409,ctx.helpers.failure('CONFLICT',error instanceof Error ? error.message : '入口绑定未确认。'))
+    }
+    return true
+  }
+
+  if (materializeMatch !== null) {
+    if (ctx.method !== 'POST') return false
+    try {
+      const body = await ctx.helpers.readJsonBody(ctx.request, ctx.controller.signal)
+      if (!ctx.helpers.isRecord(body) || !isNonEmptyString(body.canvasId) || !isNonEmptyString(body.spatialId)
+        || Object.keys(body).some((key) => key !== 'canvasId' && key !== 'spatialId')) {
+        ctx.helpers.sendJson(ctx.response, 400, ctx.helpers.failure('INVALID_ARGUMENT', 'Expected canvasId and spatialId only.'))
+        return true
+      }
+      const value = metadata.materializeResultSlotBinding(projectId, decodeURIComponent(materializeMatch[2] ?? ''), body.canvasId, body.spatialId)
+      ctx.helpers.sendJson(ctx.response, 200, { ok: true, value })
+    } catch (error) {
+      ctx.helpers.sendJson(ctx.response, 409, ctx.helpers.failure('CONFLICT', error instanceof Error ? error.message : 'Projection identity could not be materialized.'))
+    }
+    return true
+  }
 
   if (ctx.method === 'GET') {
     ctx.helpers.sendJson(ctx.response, 200, { ok: true, value: metadata.getProjectionBindings(projectId) })

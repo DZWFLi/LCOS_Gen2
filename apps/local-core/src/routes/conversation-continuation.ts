@@ -1,3 +1,5 @@
+import { parseOrderedReferences } from './ordered-references.js'
+export { parseOrderedReferences } from './ordered-references.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type {
   ContinuationExternalEvidenceV1,
@@ -87,31 +89,6 @@ function parseSubmit(raw: unknown): { readonly input: Omit<ContinuationSubmitReq
     ...(inputRaw.connectedConversationId === undefined ? {} : { connectedConversationId: inputRaw.connectedConversationId }),
   }
   return { input, origin }
-}
-
-const REF_TYPES = ['artifact', 'view', 'scope', 'workspace', 'conversation', 'component'] as const
-
-/** 最小运行时校验：orderedReferences 数组 → OrderedRunReferenceV2（非法项整体拒绝，不静默丢弃）。 */
-export function parseOrderedReferences(raw: unknown): { readonly value: readonly import('@local-creative-os/contracts').OrderedRunReferenceV2[] } | { readonly error: string } {
-  if (!Array.isArray(raw)) return { error: 'orderedReferences must be an array.' }
-  const value: import('@local-creative-os/contracts').OrderedRunReferenceV2[] = []
-  for (const [index, entry] of raw.entries()) {
-    if (!isRecord(entry) || !isRecord(entry.ref) || typeof entry.order !== 'number') {
-      return { error: `orderedReferences[${index}] must be { ref, order }.` }
-    }
-    const ref = entry.ref as Record<string, unknown>
-    const type = ref.type
-    if (!REF_TYPES.some((candidate) => candidate === type)) {
-      return { error: `orderedReferences[${index}].ref.type is invalid.` }
-    }
-    const idKey = type === 'view' ? 'viewId' : type === 'artifact' ? 'artifactId' : type === 'scope' ? 'scopeId' : type === 'workspace' ? 'workspaceId' : type === 'conversation' ? 'conversationSessionId' : 'componentId'
-    if (typeof ref[idKey] !== 'string' || String(ref[idKey]).length < 1) {
-      return { error: `orderedReferences[${index}].ref.${idKey} is required.` }
-    }
-    const refValue = { type, [idKey]: ref[idKey] } as never
-    value.push({ ref: refValue, order: entry.order })
-  }
-  return { value }
 }
 
 function parseAdvance(raw: unknown): { readonly input: Omit<ContinuationStepAdvanceRequestV1, never>; readonly origin: ReturnType<typeof parseProjectEventOrigin> } | { readonly error: string } {

@@ -25,7 +25,7 @@ export function ContextCollectionView({
   members,
   onRemoveMember,
   spaceAction,
-  memberSummary,
+  memberSummary, primaryPreview, secondaryPreview, memberControls,
   hideEmptyPreviews,
   organization,
   rendition = '总览',
@@ -65,7 +65,7 @@ export function ContextCollectionView({
         {...(legacyAtlasKind === undefined ? {} : { 'data-lcos-atlas-card': legacyAtlasKind })}
         data-lcos-context-collection
         data-atlas-kind={atlasVisualKind}
-        data-empty-preview-suppressed={hideEmptyPreviews || (!previewUrl && !secondaryPreviewUrl) ? 'true' : undefined}
+        data-empty-preview-suppressed={hideEmptyPreviews || (!previewUrl && !secondaryPreviewUrl && !primaryPreview && !secondaryPreview) ? 'true' : undefined}
         data-organization={organization}
         data-active={active ? 'true' : undefined}
         data-disabled={disabled ? 'true' : undefined}
@@ -77,7 +77,7 @@ export function ContextCollectionView({
         whileHover={reducedMotion || disabled ? undefined : { y: -8, scale: 1.025 }}
         transition={reducedMotion ? { duration: 0 } : PRESENTATION_SPRING}
       >
-        <ContextCollectionFace title={title} active={active} organization={organization} atlasVisualKind={atlasVisualKind} rendition={rendition}
+        <ContextCollectionFace primaryPreview={primaryPreview} secondaryPreview={secondaryPreview} memberControls={memberControls} title={title} active={active} organization={organization} atlasVisualKind={atlasVisualKind} rendition={rendition}
           {...(sourceLabel === undefined ? {} : { sourceLabel })}
           {...(memberLabels === undefined ? {} : { memberLabels })}
           {...(members === undefined ? {} : { members })}

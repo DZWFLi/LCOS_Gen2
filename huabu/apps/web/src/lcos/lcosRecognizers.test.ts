@@ -316,6 +316,18 @@ describe('semantic-drop recognizer (A06)', () => {
     expect(useLcosDropStore.getState().state.status).toBe('committing');
   });
 
+  it('leaves native Assembly drag lifecycle to drop/dragend, including browser pointercancel', () => {
+    acquireDrop({ kind: 'assembly', itemId: 'a1', sourceRef: { kind: 'artifactView', id: 'view-a1' }, entityRef: { type: 'artifact', id: 'a1' } });
+    const recognizer = createDropRecognizer();
+    const acquired = useLcosDropStore.getState().state;
+    recognizer.observe?.onDown?.(fakeEvent(), dropCtxWithInstance);
+    recognizer.observe?.onMove?.(fakeEvent({ clientX: 400, clientY: 795 }), dropCtxWithInstance);
+    recognizer.observe?.onCancel?.(fakeEvent(), dropCtxWithInstance);
+    recognizer.observe?.onUp?.(fakeEvent(), dropCtxWithInstance);
+    expect(useLcosDropStore.getState().state).toBe(acquired);
+    expect(useLcosDropStore.getState().state.status).toBe('tracking');
+  });
+
   it('ignores movement when no drop is in flight (idle observer is passive)', () => {
     const recognizer = createDropRecognizer();
     recognizer.observe?.onDown?.(fakeEvent(), dropCtx);

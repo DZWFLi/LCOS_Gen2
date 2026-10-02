@@ -29,6 +29,8 @@ import { useEffect, useRef, useState } from 'react';
 import useCanvasStore from '@/store/canvasStore';
 import { useCanvasSyncStore } from '@/store/canvasSyncStore';
 
+import { createNativeCanvasDropHost } from './drop/nativeCanvasDropHost';
+
 import { LcosCameraMotionPolicy } from './host/LcosCameraMotionPolicy';
 import { useLcosHostStore } from './host/lcosHostState';
 import { createLcosRuntime, readLcosHostConfig } from './lcosHost';
@@ -59,6 +61,7 @@ export interface LcosCanvasProps {
 
 export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
   const runtimeRef = useRef<LcosHostRuntime | null>(null);
+  const nativeDropRef = useRef<ReturnType<typeof createNativeCanvasDropHost> | null>(null);
   const suppressorDisposeRef = useRef<(() => void) | null>(null);
   const [hostExtension, setHostExtension] = useState<CanvasHostExtension | undefined>(undefined);
 
@@ -74,6 +77,9 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
   useEffect(() => {
     const current = runtimeRef.current;
     if (current && current.projectId === projectId) return;
+    nativeDropRef.current?.dispose();
+    const nativeDrop = createNativeCanvasDropHost(projectId);
+    nativeDropRef.current = nativeDrop;
     current?.dispose();
     runtimeRef.current = null;
 
@@ -124,12 +130,15 @@ export function useLcosCanvasProps(projectId: string): LcosCanvasProps {
     setHostExtension({
       ...hostExtensionFromSeam(seam) as CanvasHostExtension,
       multiSelectionToolbar: <LcosMultiSelectToolbar />,
+      nodeDragPolicy: nativeDrop,
     });
   }, [projectId]);
 
   // 2) 卸载时必须清 reconciler timer（审计 P0-1）。
   useEffect(() => {
     return () => {
+      nativeDropRef.current?.dispose();
+      nativeDropRef.current = null;
       runtimeRef.current?.dispose();
       runtimeRef.current = null;
       useLcosHostStore.getState().setHost(null);

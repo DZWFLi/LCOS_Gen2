@@ -16,7 +16,7 @@ beforeEach(() => {
   });
 });
 async function store() { return (await import('./collaborationSessionStore')).useCollaborationSessionStore.getState(); }
-async function settle() { await Promise.resolve(); await Promise.resolve(); }
+async function settle() { await new Promise((resolve) => setTimeout(resolve, 0)); }
 describe('shared conversation subscription consumer lifetime', () => {
   it('closing one of Glyth/WorkView/Composer preserves remaining consumers and refreshes once per event', async () => {
     const state = await store();
@@ -27,7 +27,7 @@ describe('shared conversation subscription consumer lifetime', () => {
     state.unwatch('project', 'conversation');
     expect(subscription.close).not.toHaveBeenCalled();
     mocks.readSession.mockClear(); subscription.event(); await settle();
-    expect(mocks.readSession).toHaveBeenCalledExactlyOnceWith('project', 'conversation');
+    expect(mocks.readSession).toHaveBeenCalledExactlyOnceWith('project', 'conversation', expect.any(AbortSignal));
     state.unwatch('project', 'conversation'); expect(subscription.close).not.toHaveBeenCalled();
     state.unwatch('project', 'conversation'); expect(subscription.close).toHaveBeenCalledTimes(1);
     state.unwatch('project', 'conversation'); expect(subscription.close).toHaveBeenCalledTimes(1);
@@ -37,7 +37,7 @@ describe('shared conversation subscription consumer lifetime', () => {
     const subscription = mocks.subscriptions.get('project')!;
     expect(mocks.subscribe).toHaveBeenCalledTimes(1);
     state.unwatch('project', 'a'); mocks.readSession.mockClear(); subscription.event(); await settle();
-    expect(mocks.readSession).toHaveBeenCalledExactlyOnceWith('project', 'b'); expect(subscription.close).not.toHaveBeenCalled();
+    expect(mocks.readSession).toHaveBeenCalledExactlyOnceWith('project', 'b', expect.any(AbortSignal)); expect(subscription.close).not.toHaveBeenCalled();
     state.unwatch('project', 'b'); expect(subscription.close).toHaveBeenCalledTimes(1);
   });
   it('keeps Artifact Reader invalidation on the same SSE until its final consumer releases', async () => {
@@ -62,7 +62,7 @@ describe('shared conversation subscription consumer lifetime', () => {
     expect(artifactHostRefresh).toHaveBeenCalledTimes(1);
     await settle();
     expect(railwayRefresh).toHaveBeenCalledTimes(1);
-    expect(mocks.readSession).toHaveBeenCalledExactlyOnceWith('project', 'conversation');
+    expect(mocks.readSession).toHaveBeenCalledExactlyOnceWith('project', 'conversation', expect.any(AbortSignal));
     stopArtifact(); stopRailway(); state.unwatch('project', 'conversation');
   });
   it('can remount after final cleanup and isolates identical conversation ids in different projects', async () => {

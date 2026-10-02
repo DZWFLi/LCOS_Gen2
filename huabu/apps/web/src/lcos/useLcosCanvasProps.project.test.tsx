@@ -98,6 +98,16 @@ vi.mock('./lcosHost', () => ({
   createLcosRuntime: vi.fn(({ projectId }: { projectId: string }) => mocks.runtimeFor(projectId)),
   readLcosHostConfig: vi.fn(() => ({})),
 }));
+// This suite isolates async project/binding ownership. The native drag policy
+// has its own controller/command tests; do not instantiate live subscriptions
+// against this suite's deliberately non-subscribing canvas stub.
+vi.mock('./drop/nativeCanvasDropHost', () => ({
+  createNativeCanvasDropHost: vi.fn(() => ({
+    onStart: vi.fn(), onMove: vi.fn(() => false), onStop: vi.fn(() => false),
+    filterChanges: <T,>(changes: T[]) => changes,
+    cancel: vi.fn(), dispose: vi.fn(),
+  })),
+}));
 vi.mock('./lcosRecognizers', () => ({ createLcosRecognizers: vi.fn(() => []) }));
 vi.mock('./nodes/createLcosNodePresentationSeam', () => ({ createLcosNodePresentationSeam: vi.fn(() => ({})) }));
 vi.mock('./nodes/stageProjectedSources', () => ({ stageProjectedSources: mocks.stage }));

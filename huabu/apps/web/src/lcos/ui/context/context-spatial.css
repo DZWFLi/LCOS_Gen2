@@ -88,7 +88,15 @@
 .lcos-temporal-empty-copy { position:absolute; right:8px; top:50%; width:54px; transform:translateY(-50%); text-align:right; color:var(--gen2-muted); font-size:9px; line-height:13px; }
 
 /* Portal: only this chrome is styled; Huabu SpacePreviewViewport keeps its controls. */
-.lcos-portal-preview-view { position:relative; width:440px; max-width:100%; min-width:0; container:lcos-portal / inline-size; color:var(--lcos-text-primary); }
+/* The adopted frame owns the 440×360 carrier. Do not stack the older generic
+   family padding/fixed height around it: that shrinks the frame and leaves its
+   absolute footer buttons outside, overlapping the next action row. */
+.lcos-portal-preview-view[data-lcos-family='portal-preview'] { display:block; position:relative; box-sizing:border-box; width:440px; max-width:100%; height:auto; min-width:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; container:lcos-portal / inline-size; color:var(--lcos-text-primary); }
+.lcos-portal-preview-view[data-state='旧缓存'] .lcos-portal-preview-frame::before {border-style:dashed;border-color:var(--lcos-color-border-default);}
+.lcos-portal-preview-view[data-state='部分预览'] .lcos-portal-preview-frame::before {border-color:var(--lcos-pin-amber);}
+.lcos-portal-preview-view[data-state='目标缺失'] .lcos-portal-preview-frame::before,
+.lcos-portal-preview-view[data-state='预览失败'] .lcos-portal-preview-frame::before {border-color:var(--lcos-status-danger);}
+
 .lcos-portal-preview-frame { position:relative; height:360px; box-sizing:border-box; border-radius:18px; background:color-mix(in srgb,var(--lcos-surface-base) 10%,transparent); box-shadow:var(--lcos-glass-shadow); backdrop-filter:blur(var(--lcos-glass-blur)); -webkit-backdrop-filter:blur(var(--lcos-glass-blur)); }
 .lcos-portal-preview-frame::before { content:''; position:absolute; inset:0; pointer-events:none; border:1px solid var(--lcos-surface-base); border-radius:inherit; }
 .lcos-portal-preview-title { position:absolute; left:20px; top:18px; width:calc(100% - 160px); max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:500 17px/1.45 'Noto Sans SC',sans-serif; }
@@ -96,7 +104,7 @@
 .lcos-portal-preview-frame > button:hover:not(:disabled),.lcos-portal-preview-frame > button:focus-visible { background:var(--gen2-raised); outline:2px solid var(--gen2-accent); outline-offset:2px; }
 .lcos-portal-preview-frame > .lcos-portal-open { right:14px; top:12px; width:108px; }
 .lcos-portal-preview-frame > .lcos-portal-open:disabled { opacity:.35; cursor:not-allowed; }
-.lcos-portal-preview-stage { position:absolute; left:14px; right:14px; top:71px; height:220px; min-width:0; overflow:hidden; border-radius:12px; background:var(--lcos-surface-base); }
+.lcos-portal-preview-view .lcos-portal-preview-stage { display:block; border:0; position:absolute; left:14px; right:14px; top:71px; height:220px; min-width:0; overflow:hidden; border-radius:12px; background:var(--lcos-surface-base); }
 /* Stretch the supplied scene host, never its buttons, labels or SVG children. */
 .lcos-portal-preview-stage > [data-lcos-real-portal-preview] { display:flex; width:100%; height:100%; min-height:0; }
 .lcos-portal-state-copy { position:absolute; inset:0; box-sizing:border-box; display:flex; flex-direction:column; gap:16px; padding:54px 24px 18px; overflow:auto; color:var(--lcos-text-primary); }
@@ -180,3 +188,21 @@
 /* Atlas pagination preserves the spatial field; recovery sits after retained objects. */
 .lcos-atlas-pagination-feedback { display:flex; justify-content:center; margin:20px auto 0; width:min(460px,100%); }
 .lcos-atlas-load-more { min-width:176px; min-height:44px; }
+
+/* Portal P01: adjacent actions affect the same target; preview controls never pan Main. */
+.lcos-portal-body { box-sizing:border-box; padding:16px; width:100%; min-width:0; overflow:auto; }
+.lcos-portal-actions { display:flex; flex-wrap:wrap; gap:14px; width:440px; max-width:100%; margin-top:12px; }
+.lcos-portal-actions button { flex:1 1 108px; min-height:44px; border:.5px solid var(--lcos-color-border-default); border-radius:8px; background:var(--lcos-surface-base); color:var(--lcos-text-primary); font:500 14px/20px 'Noto Sans SC',sans-serif; padding:6px 12px; }
+.lcos-portal-actions button:disabled {opacity:.45;cursor:not-allowed;}
+.lcos-portal-actions button:focus-visible {outline:2px solid var(--gen2-accent);outline-offset:2px;}
+.lcos-portal-action-message {width:440px;max-width:100%;margin-top:10px;font:400 13px/20px 'Noto Sans SC',sans-serif;color:var(--lcos-color-text-secondary);overflow-wrap:anywhere;}
+.lcos-portal-open-reason {position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;}
+[data-lcos-portal-body][data-portal-state='waiting'] {outline:1px solid var(--gen2-accent);outline-offset:2px;}
+[data-lcos-portal-body][data-portal-state='failed'] {outline:1px solid var(--lcos-color-border-default);outline-offset:2px;}
+
+.lcos-portal-node-title {user-select:none;display:block; flex:none; overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:500 14px/22px 'Noto Sans SC',sans-serif;margin-bottom:6px;}
+.lcos-portal-node-scene {display:flex;flex:1;min-height:0;overflow:hidden;border-radius:10px;}
+.lcos-portal-node-empty {display:grid;place-items:center;flex:1;min-height:60px;font:400 12px/18px 'Noto Sans SC',sans-serif;color:var(--lcos-color-text-secondary);}
+
+/* Native preview uses the local Portal surface token, never the main camera. */
+.lcos-portal-node-scene,.lcos-portal-preview-stage {--bg-default:var(--lcos-surface-base);}

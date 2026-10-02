@@ -7,7 +7,6 @@ import timeIcon from './assets/context-time.svg';
 import './context-spatial.css';
 
 import type { PreviewMediaProps } from '../spatial/PreviewMedia';
-import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 export type ContextCollectionOrganization = '事情' | '时间' | '未指定';
@@ -24,6 +23,9 @@ export interface ContextCollectionFaceProps {
   readonly onRemoveMember?: (memberRef: { readonly type: 'artifact' | 'note' | 'collection' | 'scope' | 'workspace' | 'conversation' | 'run'; readonly id: string }) => Promise<boolean>;
   readonly spaceAction?: ReactNode;
   readonly memberSummary?: string;
+  readonly primaryPreview?: ReactNode;
+  readonly secondaryPreview?: ReactNode;
+  readonly memberControls?: ReactNode;
   readonly hideEmptyPreviews?: boolean;
   readonly organization?: ContextCollectionOrganization;
   /** Canonical Warehouse kind; selects a truthful Atlas silhouette. */
@@ -63,30 +65,29 @@ export function ContextCollectionFace({
   action, onActivate, activationLabel, unspecifiedGlyph, sourceLabel,
   memberLabels,
   memberSummary,
-  members,
-  onRemoveMember,
+  primaryPreview, secondaryPreview, memberControls,
   spaceAction,
 }: ContextCollectionFaceProps): React.JSX.Element {
-  const [memberActionError, setMemberActionError] = useState(false);
-  const [membersExpanded, setMembersExpanded] = useState(false);
   const organizationLabel = organization === undefined
     ? undefined
     : organization === '未指定' ? '组织未标注' : `按${organization}组织`;
   const label = memberSummary ?? [sourceLabel, organizationLabel].filter((fact): fact is string => fact !== undefined).join(' · ');
-  const hasRealCover = Boolean(previewUrl || secondaryPreviewUrl);
+  const hasRealCover = Boolean(primaryPreview || secondaryPreview || previewUrl || secondaryPreviewUrl);
   return <>
     {onActivate && !disabled ? <button type="button" className="lcos-context-collection-hit"
       aria-label={activationLabel ?? `进入集合 · ${title}`}
       title={activationLabel ?? `进入集合 · ${title}`} onClick={onActivate} /> : null}
     <div className="lcos-context-collection-back" aria-hidden />
     <div className="lcos-context-collection-tab" aria-hidden />
-    {previewUrl ? <div className="lcos-context-collection-cover cover-a">
+    {primaryPreview || previewUrl ? <div className="lcos-context-collection-cover cover-a">
+      {primaryPreview ?? (
       <PreviewMedia src={previewUrl} label={`${title} 封面`}
-        {...(previewFit === undefined ? {} : { fit: previewFit })} />
+        {...(previewFit === undefined ? {} : { fit: previewFit })} />)}
     </div> : null}
-    {secondaryPreviewUrl ? <div className="lcos-context-collection-cover cover-b">
+    {secondaryPreview || secondaryPreviewUrl ? <div className="lcos-context-collection-cover cover-b">
+      {secondaryPreview ?? (
       <PreviewMedia src={secondaryPreviewUrl} label={`${title} 第二份材料预览`}
-        {...(secondaryPreviewFit === undefined ? {} : { fit: secondaryPreviewFit })} />
+        {...(secondaryPreviewFit === undefined ? {} : { fit: secondaryPreviewFit })} />)}
     </div> : null}
     {!hasRealCover && atlasVisualKind !== 'collection' ? <AtlasKindEmblem kind={atlasVisualKind} /> : null}
     <div className="lcos-context-collection-pocket-base" aria-hidden />
@@ -101,20 +102,9 @@ export function ContextCollectionFace({
       <div><strong title={title}>{title}</strong>{label || disabled ? <span title={disabled ? disabledReason : label}>
         {disabled ? disabledReason ?? '目标当前不可用' : label}
       </span> : null}{memberLabels && memberLabels.length > 0 ? <span data-lcos-collection-member-labels title={memberLabels.join(' · ')}>{memberLabels.slice(0, 3).join(' · ')}</span> : null}
-      {members && members.length > 0 && onRemoveMember ? <span data-lcos-collection-member-actions>
-        {members.slice(0, membersExpanded ? undefined : 3).map((member) => <span key={`${member.type}:${member.id}`}>
-          {member.label}<button type="button" aria-label={`从集合移除 ${member.label}`} title={`从集合移除 ${member.label}`}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => { event.stopPropagation(); void onRemoveMember({ type: member.type, id: member.id }).then((ok) => setMemberActionError(!ok)); }}>×</button>
-        </span>)}
-        {members.length > 3 ? <button type="button" aria-expanded={membersExpanded}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => { event.stopPropagation(); setMembersExpanded((value) => !value); }}>
-          {membersExpanded ? '收起' : `展开其余 ${members.length - 3} 项`}
-        </button> : null}
-      </span> : null}</div>
-    {memberActionError ? <span role="status">成员移除失败，集合内容未变</span> : null}
+      </div>
     </div>
+    {memberControls}
     <div className="lcos-context-collection-action">{!disabled ? action : null}{spaceAction}</div>
     {rendition === '总览' ? <div className="lcos-context-collection-depth" aria-hidden /> : null}
   </>;

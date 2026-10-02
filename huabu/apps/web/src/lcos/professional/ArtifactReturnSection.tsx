@@ -4,7 +4,7 @@
 // Accept 必须带 expectedBaseRevisionId（CAS 防覆盖）；retry 语义 = 同一 Draft 再跑（真实 product command）。
 
 import { CheckCheck, RotateCcw, ShieldQuestion, XCircle } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
 import { lcosTokens } from '../ui/lcosTokens';
@@ -15,35 +15,54 @@ import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 type Action = 'accept' | 'reject' | 'retry';
 
 export interface ArtifactReturnSectionProps {
+  readonly refreshKey?: string;
   readonly collaboration: CoreCollaborationClient;
   readonly projectId: string;
   readonly conversationId: string;
 }
 
-export function ArtifactReturnSection({ collaboration, projectId, conversationId }: ArtifactReturnSectionProps): React.JSX.Element | null {
+export function ArtifactReturnSection({ collaboration, projectId, conversationId, refreshKey }: ArtifactReturnSectionProps): React.JSX.Element | null {
   const [reviews, setReviews] = useState<readonly CollaborationReviewV1[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<string | null>(null);
+  const pendingRead = useRef<AbortController | null>(null);
+  const pendingWrite = useRef(false);
+  const scope = useRef('');
+  scope.current = JSON.stringify([projectId, conversationId]);
 
   const load = useCallback((): void => {
+    pendingRead.current?.abort();
+    const controller = new AbortController(); pendingRead.current = controller;
     setState('loading');
+    setErrorDetail(undefined);
     void collaboration
-      .readReviews(projectId, conversationId)
+      .readReviews(projectId, conversationId, controller.signal)
       .then((value) => {
+        if (controller.signal.aborted) return;
         setReviews(value);
         setState('ready');
       })
       .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
         setState('error');
         setErrorDetail(error instanceof Error ? error.message : String(error));
       });
   }, [collaboration, projectId, conversationId]);
 
   useEffect(() => {
+    scope.current = JSON.stringify([projectId, conversationId]);
     load();
-  }, [load]);
+    return () => { pendingRead.current?.abort(); scope.current = ''; };
+  }, [load, projectId, conversationId]);
+
+  const previousRefresh = useRef(refreshKey);
+  useEffect(() => {
+    if (previousRefresh.current === refreshKey) return;
+    previousRefresh.current = refreshKey;
+    if (!pendingWrite.current) load();
+  }, [refreshKey, load]);
 
   const pending = reviews.filter((review) => review.status === 'pending_review');
   // loading/error 时 reviews 仍可能是空数组，但这不代表“没有待复核产出”。
@@ -51,6 +70,9 @@ export function ArtifactReturnSection({ collaboration, projectId, conversationId
   if (state === 'ready' && pending.length === 0) return null;
 
   const decide = (review: CollaborationReviewV1, action: Action): void => {
+    if (pendingWrite.current || state !== 'ready' || !review.capabilities[action].enabled) return;
+    const submittedScope = scope.current;
+    pendingWrite.current = true;
     const busyKey = `${action}:${review.returnId}`;
     setBusy(busyKey);
     setReceipt(null);
@@ -65,13 +87,15 @@ export function ArtifactReturnSection({ collaboration, projectId, conversationId
           });
     void call
       .then((result) => {
+        if (scope.current !== submittedScope) return;
+        if (result.ok && (result.receipt.returnId !== review.returnId || result.receipt.command !== (action === 'retry' ? 'retry' : 'approve'))) throw new Error('复核回执未确认，请刷新后核对');
         if (!result.ok) throw new Error(result.error.userMessage);
         setReceipt(
           action === 'accept'
             ? '已采纳'
             : action === 'reject'
-              ? '已拒绝该 Draft（Current 未改变）'
-              : '已按同一 Draft 重试（未新建 Run）',
+              ? '已拒绝该候选结果，当前版本未改变'
+              : '重试请求已提交',
         );
         load();
         // 同 WaitingInputSection：复核回执后必须让共享投影失效重取，
@@ -79,9 +103,10 @@ export function ArtifactReturnSection({ collaboration, projectId, conversationId
         void useCollaborationSessionStore.getState().refresh(projectId, conversationId);
       })
       .catch((error: unknown) => {
+        if (scope.current !== submittedScope) return;
         setErrorDetail(error instanceof Error ? error.message : String(error));
       })
-      .finally(() => setBusy(null));
+      .finally(() => { pendingWrite.current = false; if (scope.current === submittedScope) setBusy(null); });
   };
 
   return (
@@ -93,7 +118,7 @@ export function ArtifactReturnSection({ collaboration, projectId, conversationId
       <div className="flex items-center gap-1.5">
         <ShieldQuestion className="h-3.5 w-3.5" style={{ color: lcosTokens.color.pinViolet }} aria-hidden />
         <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>
-          Review · 待复核产出
+          待复核产出
         </span>
       </div>
 
@@ -119,7 +144,7 @@ export function ArtifactReturnSection({ collaboration, projectId, conversationId
                   {review.title}
                 </span>
                 <span className="shrink-0 text-[10px]" style={{ color: lcosTokens.color.muted }}>
-                  base {review.baseRevisionId.slice(0, 8)}
+                  保留原版本，采纳后更新
                 </span>
               </div>
               <div className="flex items-center gap-1.5">

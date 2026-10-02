@@ -80,6 +80,11 @@ export interface CurationPatchReceiptV0 {
   readonly operationId: string
   readonly applied: boolean
   readonly completedSteps: readonly CurationPatchStepReceiptV0[]
+  /** Source-stay Railway batch uses the existing transactional receipt storage. */
+  readonly railway?: {
+    readonly request: import('./railway.js').RailwayReceiveRequestV1 | import('./railway.js').PortalReceiveRequestV1
+    readonly outcome: import('./railway.js').RailwayReceiveOutcomeV1
+  }
   readonly failedStep?: { readonly step: string; readonly error: string }
   readonly createdAt: string
   /** F6 follow-up：apply 成功时带回 ChangeSet id（前端 undo 入口）。 */

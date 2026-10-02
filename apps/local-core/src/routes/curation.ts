@@ -1,3 +1,4 @@
+import { readCanvasText } from '../canvas-text-service.js'
 import type { SearchEntityTypeV0 } from '@local-creative-os/contracts'
 
 import type { CurationQueryService } from '../curation-query-service.js'
@@ -38,9 +39,40 @@ export async function handleCurationRoute(ctx: CurationRouteContext): Promise<bo
   const relatedMatch = /^\/projects\/([^/]+)\/related$/.exec(pathname)
   const searchMatch = /^\/projects\/([^/]+)\/search$/.exec(pathname)
   const applyMatch = /^\/projects\/([^/]+)\/curation\/apply$/.exec(pathname)
+  const canvasTextMatch = /^\/projects\/([^/]+)\/curation\/canvas-text$/.exec(pathname)
   const textMatch = /^\/projects\/([^/]+)\/curation\/text$/.exec(pathname)
-  if (readMatch === null && relatedMatch === null && searchMatch === null && applyMatch === null && textMatch === null) return false
+  if (readMatch === null && relatedMatch === null && searchMatch === null && applyMatch === null && textMatch === null && canvasTextMatch === null) return false
   if (metadata === undefined) return false
+
+  if (canvasTextMatch !== null) {
+    const projectId = decodeURIComponent(canvasTextMatch[1] ?? '')
+    if (metadata.getProject(projectId) === undefined) { sendJson(response, 404, failure('NOT_FOUND', 'Project not found.')); return true }
+    if (method !== 'GET' && method !== 'PUT') return false
+    try {
+      const input = method === 'GET' ? { canvasId: url.searchParams.get('canvasId'), spatialId: url.searchParams.get('spatialId') }
+        : await readJsonBody(request, controller.signal)
+      if (!ctx.helpers.isRecord(input) || typeof input.canvasId !== 'string' || !input.canvasId.trim()
+        || typeof input.spatialId !== 'string' || !input.spatialId.trim()) throw new Error('需要准确的画布与节点身份。')
+      const address = { canvasId: input.canvasId, spatialId: input.spatialId }
+      if (method === 'GET') {
+        sendJson(response, 200, { ok: true, value: await readCanvasText(metadata, projectId, address) })
+      } else {
+        if (curationCommand === undefined) { sendJson(response, 503, failure('UNAVAILABLE', 'Curation command service is not configured.')); return true }
+        if (Object.keys(input).some((key) => !['canvasId', 'spatialId', 'body', 'artifactId', 'expectedRevisionId'].includes(key))
+          || typeof input.body !== 'string'
+          || !(input.expectedRevisionId === null || typeof input.expectedRevisionId === 'string' && input.expectedRevisionId.trim())
+          || !(input.artifactId === undefined || typeof input.artifactId === 'string' && input.artifactId.trim())) {
+          throw new Error('需要完整正文和已读取的版本；不能无条件覆盖。')
+        }
+        if (controller.signal.aborted) throw new Error('保存请求已取消。')
+        const value = await curationCommand.saveCanvasText(projectId, { ...address, body: input.body,
+          expectedRevisionId: input.expectedRevisionId,
+          ...(input.artifactId === undefined ? {} : { artifactId: input.artifactId }) })
+        sendJson(response, 200, { ok: true, value })
+      }
+    } catch (error) { sendJson(response, 409, failure('CONFLICT', error instanceof Error ? error.message : '正文读取或保存失败。')) }
+    return true
+  }
 
   if (readMatch !== null && method === 'POST') {
     if (curation === undefined) {

@@ -7,7 +7,7 @@ import {
   createContinuationOperationId,
   retainContinuationIntent,
   type ConversationContinuationAction,
-  type ConversationContinuationIntent,
+  type ContinuationUiRequest,
 } from './conversationContinuationActions';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
@@ -19,7 +19,7 @@ import '../ui/professional/conversation-continuation.css';
 
 import type { CoreEntityRefLike } from '../referenceBridge';
 import type { ComposerReferenceViewItem } from '../ui/nearfield/composerViewTypes';
-import type { CollaborationProductErrorV1, OrderedRunReferenceV2 } from '@local-creative-os/contracts';
+import type { OrderedRunReferenceV2 } from '@local-creative-os/contracts';
 
 export interface ConversationContinuationSubmission {
   readonly action: ConversationContinuationAction;
@@ -28,6 +28,7 @@ export interface ConversationContinuationSubmission {
 }
 
 export interface ConversationContinuationControlsProps {
+  readonly disabled?: boolean;
   readonly projectId: string;
   readonly conversationId: string;
   readonly draftReferences: readonly CoreEntityRefLike[];
@@ -44,13 +45,6 @@ const MODES = [
   { action: 'native_full_fork', capability: 'canFork', label: '完整历史分支', Icon: GitFork, history: '仅继承协作者支持分支的已完成历史', context: '不将当前草稿自动追加为引用' },
 ] as const;
 
-type RequestState = {
-  intent: ConversationContinuationIntent;
-  items: readonly ComposerReferenceViewItem[];
-  status: 'sending' | 'accepted' | 'error';
-  error?: CollaborationProductErrorV1;
-};
-
 function readOnlyItems(items: readonly ComposerReferenceViewItem[]): readonly ComposerReferenceViewItem[] {
   return items.map(({ onRemove: _onRemove, ...item }) => ({ ...item }));
 }
@@ -59,7 +53,7 @@ function readOnlyItems(items: readonly ComposerReferenceViewItem[]): readonly Co
  * The existing Composer owns the draft. This child holds only caller request identity
  * and its immutable submission preview, never another conversation/window store. */
 export function ConversationContinuationControls({
-  projectId, conversationId, draftReferences, referenceItems, collaboration: suppliedClient, onSubmitted,
+  projectId, conversationId, disabled = false, draftReferences, referenceItems, collaboration: suppliedClient, onSubmitted,
 }: ConversationContinuationControlsProps): React.JSX.Element {
   const ownedClient = useMemo(() => suppliedClient ?? new CoreCollaborationClient(createLcosCoreSession().http), [suppliedClient]);
   const entry = useCollaborationSession(projectId, conversationId);
@@ -68,38 +62,38 @@ export function ConversationContinuationControls({
   const activeTarget = useRef(targetKey);
   activeTarget.current = targetKey;
   const mounted = useRef(true);
-  const requests = useRef(new Map<string, RequestState>());
+  const requests = useLcosShellStore((state) => state.continuationRequests);
+  const setRequest = useLcosShellStore((state) => state.setContinuationRequest);
   const [expanded, setExpanded] = useState(false);
   const [action, setAction] = useState<ConversationContinuationAction>('continue_existing');
-  const [, update] = useState(0);
   const sectionId = useId();
   const selectedContext = useMemo(() => buildSelectedContextReferences(draftReferences), [draftReferences]);
   const fallbackItems = draftReferences.map((ref, index) => ({ key: `${ref.entityType}:${ref.entityId}`, label: `引用 ${index + 1}` }));
   const draftItems = readOnlyItems(referenceItems ?? fallbackItems);
   const mode = MODES.find((item) => item.action === action) ?? MODES[0];
   const requestKey = `${targetKey}:${action}`;
-  const request = requests.current.get(requestKey);
-  const pendingForTarget = MODES.some((item) => requests.current.get(`${targetKey}:${item.action}`)?.status === 'sending');
+  const request = requests.get(requestKey);
+  const pendingForTarget = MODES.some((item) => requests.get(`${targetKey}:${item.action}`)?.status === 'sending');
   const capabilityReason = projection?.capabilities[mode.capability] === true ? undefined
     : projection?.capabilityReasons?.[mode.capability] ?? (entry?.status === 'error' ? '暂时无法读取会话能力' : '当前协作方式尚未确认支持此操作');
   // A retry uses its first submitted snapshot even if the next draft is now empty.
   const referenceReason = action !== 'selected_context' || request !== undefined ? undefined
     : selectedContext.unsupportedEntityTypes.length > 0 ? '部分引用尚不支持新建会话，请先移除不支持的引用'
       : selectedContext.orderedReferences.length === 0 ? '先把要携带的材料加入输入框引用' : undefined;
-  const blockedReason = capabilityReason ?? referenceReason;
+  const blockedReason = disabled ? '当前消息尚未确认，请先核对或处理原消息' : capabilityReason ?? referenceReason;
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { setExpanded(false); setAction('continue_existing'); }, [targetKey]);
 
   const submit = async (): Promise<void> => {
-    if (blockedReason !== undefined || pendingForTarget || request?.status === 'accepted') return;
+    if (!mounted.current || activeTarget.current !== targetKey || blockedReason !== undefined || pendingForTarget || request?.status === 'accepted') return;
+    if (useLcosShellStore.getState().continuationRequests.get(requestKey)?.status === 'accepted') return;
     // Synchronous guard also blocks two clicks before React has rendered busy state.
-    if (MODES.some((item) => requests.current.get(`${targetKey}:${item.action}`)?.status === 'sending')) return;
+    if (MODES.some((item) => useLcosShellStore.getState().continuationRequests.get(`${targetKey}:${item.action}`)?.status === 'sending')) return;
     const intent = retainContinuationIntent(request?.intent, action, targetKey,
       () => createContinuationOperationId(action), action === 'selected_context' ? selectedContext.orderedReferences : undefined);
-    const next: RequestState = { intent, items: request?.items ?? (action === 'selected_context' ? draftItems : []), status: 'sending' };
-    requests.current.set(requestKey, next);
-    update((value) => value + 1);
+    const next: ContinuationUiRequest = { intent, items: request?.items ?? (action === 'selected_context' ? draftItems : []), status: 'sending' };
+    setRequest(requestKey, next);
     const stillCurrent = (): boolean => mounted.current && activeTarget.current === targetKey;
     try {
       const result = action === 'continue_existing'
@@ -110,21 +104,25 @@ export function ConversationContinuationControls({
             operationId: intent.operationId, conversationId,
             ...(action === 'selected_context' ? { orderedReferences: intent.orderedReferences ?? [] } : {}),
           });
+      if (useLcosShellStore.getState().continuationRequests.get(requestKey) !== next) return;
+      if (result.ok && (result.receipt.conversationId !== conversationId || result.receipt.continuationOperationId !== intent.operationId
+        || result.receipt.command !== (action === 'continue_existing' ? 'resume' : action === 'native_full_fork' ? 'fork' : 'new_session'))) throw new Error('回执身份未确认');
       if (result.ok) {
         // Keep a readonly preview after settlement; it is not the editable draft.
-        requests.current.set(requestKey, { ...next, status: 'accepted' });
+        setRequest(requestKey, { ...next, status: 'accepted' });
         void useCollaborationSessionStore.getState().refresh(projectId, conversationId);
         if (stillCurrent()) onSubmitted?.({ action, operationId: intent.operationId,
           ...(intent.orderedReferences === undefined ? {} : { orderedReferences: intent.orderedReferences }) });
       } else {
-        requests.current.set(requestKey, { ...next, status: 'error', error: result.error });
+        setRequest(requestKey, { ...next, status: 'error', error: result.error });
       }
     } catch {
-      requests.current.set(requestKey, { ...next, status: 'error', error: {
+      if (useLcosShellStore.getState().continuationRequests.get(requestKey) !== next) return;
+      setRequest(requestKey, { ...next, status: 'error', error: {
         schemaVersion: 1, code: 'operation_unknown', retryable: false,
         userMessage: '请求结果尚未确认；请核对原请求，不要重复创建。',
       } });
-    } finally { if (stillCurrent()) update((value) => value + 1); }
+    }
   };
 
   const handleEscape = (event: React.KeyboardEvent): void => {
@@ -151,7 +149,7 @@ export function ConversationContinuationControls({
               <label key={item.action} className="lcos-continuation-mode-option" data-selected={action === item.action || undefined}
                 title={`${item.label} · ${item.history} · ${item.context}`}>
                 <input type="radio" name={`${sectionId}-continuation-mode`} value={item.action}
-                  checked={action === item.action} disabled={pendingForTarget}
+                  checked={action === item.action} disabled={pendingForTarget || disabled}
                   aria-label={`${item.label}。${item.history}；${item.context}`}
                   onKeyDown={handleEscape}
                   onChange={() => setAction(item.action)} />
@@ -179,6 +177,8 @@ export function ConversationContinuationControls({
         {blockedReason !== undefined && <p className="lcos-continuation-note" data-lcos-continuation-reason>{blockedReason}</p>}
         {request?.status === 'accepted' ? <p role="status" data-lcos-continuation-receipt className="lcos-continuation-note">
           请求已提交，等待外部确认。可继续编辑下一份草稿。
+          <button type="button" data-lcos-open-request-status onClick={() => useLcosShellStore.getState().openWindow('conversation', '会话请求', conversationId)}>查看原请求</button>
+          <button type="button" data-lcos-new-continuation-intent disabled={disabled} onClick={() => setRequest(requestKey, undefined)}>准备另一个请求</button>
         </p> : <div className="lcos-continuation-footer">
           {request?.error !== undefined && <p role="alert" data-lcos-continuation-error data-error-code={request.error.code}>
             {request.error.userMessage}

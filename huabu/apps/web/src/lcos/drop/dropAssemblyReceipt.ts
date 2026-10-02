@@ -1,32 +1,20 @@
-import type { AssemblyApplyItemResultV1, AssemblyApplyResultV1, AssemblySourceRefV1 } from '@local-creative-os/contracts';
+import type { AssemblyApplyItemResultV1 } from '@local-creative-os/contracts';
+import { assemblySourceKey, reviewAssemblyApply, unconfirmedAssemblyItem } from '../professional/assemblyApplyReview';
 import type { DropAssemblyApplyIntent, DropCommitReceipt } from './dropTypes';
 
-/** Skill catalog source/version are identity, not interchangeable IDs. */
-export function dropSourceKey(ref: AssemblySourceRefV1): string {
-  return JSON.stringify(ref.kind === 'skill' ? [ref.kind, ref.id, ref.source, ref.version ?? null] : [ref.kind, ref.id]);
-}
+export { assemblySourceKey as dropSourceKey } from '../professional/assemblyApplyReview';
 
-/** T4 C1-3 §§24/26/69–72: inspect each canonical result, never HTTP success/allApplied alone. */
-export function assemblyDropReceipt(
-  intent: DropAssemblyApplyIntent,
-  transactionId: string,
-  canonicalReceipt: AssemblyApplyResultV1,
-  previousItems: readonly AssemblyApplyItemResultV1[] = [],
-): DropCommitReceipt {
-  const latest = new Map((canonicalReceipt.results ?? []).map((item) => [dropSourceKey(item.sourceRef), item]));
-  const previous = new Map(previousItems.map((item) => [dropSourceKey(item.sourceRef), item]));
-  const items = intent.sourceRefs.map((sourceRef) => latest.get(dropSourceKey(sourceRef)) ?? previous.get(dropSourceKey(sourceRef)));
-  // Missing item outcomes leave mutation status unknown. Do not replay them.
-  const unresolved = items.filter((item) => item === undefined).length;
-  const known = items.filter((item): item is AssemblyApplyItemResultV1 => item !== undefined);
+function summarize(intent: DropAssemblyApplyIntent, transactionId: string, projectId: string,
+  items: readonly AssemblyApplyItemResultV1[], unknownKeys: readonly string[], canonicalReceipt: unknown): DropCommitReceipt {
+  const unknown = new Set(unknownKeys);
+  const known = items.filter((item) => !unknown.has(assemblySourceKey(item.sourceRef)));
   const applied = known.filter((item) => item.status === 'applied').length;
   const already = known.filter((item) => item.status === 'skipped' && item.channel === 'already-member').length;
   const unsupported = known.filter((item) => item.channel === 'unsupported').length;
-  const failed = known.filter((item) => item.status === 'failed' && item.channel !== 'unsupported').length;
-  const skipped = known.length - applied - already - unsupported - failed;
-  const allApplied = items.length > 0 && applied === items.length;
-  const allAlready = items.length > 0 && already === items.length;
-  const status = allApplied || allAlready ? 'success' : applied > 0 ? 'partial' : 'failed';
+  const failed = known.filter((item) => item.status === 'failed' && item.channel === 'error').length;
+  const allSatisfied = items.length > 0 && unknown.size === 0 && applied + already === items.length;
+  const allAlready = allSatisfied && already === items.length;
+  const status = allSatisfied ? 'success' : applied + already > 0 ? 'partial' : 'failed';
   const message = [
     allAlready ? (intent.targetRef.kind === 'conversation' ? '已在会话上下文中' : '已在目标中')
       : status === 'success' ? (intent.targetRef.kind === 'conversation' ? '已保存到会话上下文' : '投放完成')
@@ -35,16 +23,45 @@ export function assemblyDropReceipt(
     !allAlready && already > 0 ? `${already} 项已在目标中` : undefined,
     failed > 0 ? `${failed} 项失败` : undefined,
     unsupported > 0 ? `${unsupported} 项不支持` : undefined,
-    skipped > 0 ? `${skipped} 项未应用` : undefined,
-    unresolved > 0 || items.length === 0 ? '部分结果未确认，请先查看目标现场' : undefined,
+    unknown.size > 0 || items.length === 0 ? `${unknown.size} 项结果未确认，请先查看目标现场` : undefined,
   ].filter(Boolean).join(' · ');
-  return {
-    status, transactionId, targetId: intent.targetId, message, canonicalReceipt,
-    assemblyItems: known,
-    // The exact refs from the frozen request, never a substitute Artifact/skill identity.
-    retrySourceRefs: intent.sourceRefs.filter((sourceRef) => {
-      const item = latest.get(dropSourceKey(sourceRef)) ?? previous.get(dropSourceKey(sourceRef));
-      return item?.status === 'failed' && item.channel !== 'unsupported';
+  return { status, transactionId, targetId: intent.targetId, projectId, message, canonicalReceipt,
+    assemblyItems: items, unknownSourceKeys: [...unknown],
+    retrySourceRefs: intent.railwayReceive || intent.portalReceive ? [] : intent.sourceRefs.filter((ref) => {
+      if (unknown.has(assemblySourceKey(ref))) return false;
+      const line = known.find((item) => assemblySourceKey(item.sourceRef) === assemblySourceKey(ref));
+      return line?.status === 'failed' && line.channel === 'error';
     }),
   };
+}
+
+/** Exactly the same canonical-row review as Assembly buttons. expectedProjectId is request-owned. */
+export function assemblyDropReceipt(intent: DropAssemblyApplyIntent, transactionId: string,
+  canonicalReceipt: unknown, expectedProjectId: string): DropCommitReceipt {
+  const review = reviewAssemblyApply({projectId: expectedProjectId, sourceRefs: intent.sourceRefs}, canonicalReceipt);
+  return summarize(intent, transactionId, expectedProjectId, review.result.results, review.unknownKeys, canonicalReceipt);
+}
+
+/** A retry updates only its attempted subset. A lost/malformed new reply must never reuse an old
+ * failure as permission to resend. Earlier confirmed successes and earlier unknowns both survive. */
+export function mergeAssemblyDropAttempt(original: DropAssemblyApplyIntent, attempted: DropAssemblyApplyIntent,
+  current: DropCommitReceipt, previous?: DropCommitReceipt): DropCommitReceipt {
+  const projectId = current.projectId ?? previous?.projectId ?? '';
+  const scopeMatches = current.targetId === original.targetId && attempted.targetId === original.targetId
+    && JSON.stringify(attempted.targetRef) === JSON.stringify(original.targetRef)
+    && (!previous?.projectId || previous.projectId === projectId);
+  const attemptedKeys = new Set(attempted.sourceRefs.map(assemblySourceKey));
+  const originalKeys = new Set(original.sourceRefs.map(assemblySourceKey));
+  const admissible = scopeMatches && [...attemptedKeys].every((key) => originalKeys.has(key));
+  const unknownKeys: string[] = [];
+  const next = new Map((current.assemblyItems ?? []).map((item) => [assemblySourceKey(item.sourceRef), item]));
+  const prior = new Map((previous?.assemblyItems ?? []).map((item) => [assemblySourceKey(item.sourceRef), item]));
+  const items = original.sourceRefs.map((ref) => {
+    const key = assemblySourceKey(ref);
+    const item = admissible ? (attemptedKeys.has(key) ? next.get(key) : prior.get(key)) : undefined;
+    const unknown = attemptedKeys.has(key) ? current.unknownSourceKeys : previous?.unknownSourceKeys;
+    if (!item || unknown?.includes(key)) { unknownKeys.push(key); return unconfirmedAssemblyItem(ref); }
+    return item;
+  });
+  return { ...current, ...summarize(original, current.transactionId, projectId, items, unknownKeys, current.canonicalReceipt) };
 }

@@ -1,3 +1,5 @@
+import type { CoreEntityRefLike } from '../referenceBridge';
+
 // R1 Semantic Drop Foundation — host-neutral target and intent types.
 //
 // These types describe a live interaction only. They are not a persistence
@@ -10,6 +12,7 @@ import type {
   AssemblySourceRefV1,
   AssemblyTargetRefV1,
   ProjectViewRailRefV0,
+  RailwayCanonicalRefV1, RailwayReceiveOutcomeV1,
 } from '@local-creative-os/contracts';
 import type {
   DropPayload,
@@ -34,9 +37,7 @@ export interface DropRect {
   readonly height: number;
 }
 
-export interface DropEntityRef {
-  readonly entityType: string;
-  readonly entityId: string;
+export interface DropEntityRef extends CoreEntityRefLike {
   readonly displayLabel?: string;
 }
 
@@ -49,12 +50,17 @@ export type DropTargetSemantic =
       readonly kind: 'railway-receive';
       /** Railway receive still uses Assembly apply; it never writes rail order. */
       readonly targetRef: AssemblyTargetRefV1;
-      readonly destinationRef: ProjectViewRailRefV0;
+      readonly destinationRef: ProjectViewRailRefV0 | RailwayCanonicalRefV1;
+      readonly orderVersion?: number;
+      readonly canvasId?: string;
+      readonly accepts?: readonly string[];
     }
   | {
       /** Portal body is a named route into an existing workspace; it never reorders Railway. */
       readonly kind: 'portal-receive';
       readonly targetRef?: AssemblyTargetRefV1;
+      readonly destinationRef?: RailwayCanonicalRefV1;
+      readonly canvasId?: string;
     }
   | {
       /** A visible control that is explicitly not a drag receiver; blocks canvas fallback. */
@@ -64,6 +70,8 @@ export type DropTargetSemantic =
   | { readonly kind: 'collection-membership'; readonly collectionId: string }
   | {
       readonly kind: 'composer-reference';
+      readonly intent?: 'continue' | 'delegate';
+      readonly inputKey?: string;
     }
   | {
       /** Glyth body / user ruling 2026-09-27: durable context via existing Assembly apply. */
@@ -78,11 +86,15 @@ export type DropTargetSemantic =
 /** A registered live target. The registry is ephemeral and gesture-scoped. */
 export interface DropTargetRegistration {
   readonly targetId: string;
+  /** Native source node identity, used only to exclude self-hit during a drag. */
+  readonly nodeId?: string;
   readonly kind: DropTargetKind;
   readonly label: string;
   readonly rect: DropRect;
   /** Read current DOM geometry at hit-test time; transforms do not trigger ResizeObserver. */
   readonly readRect?: () => DropRect | undefined;
+  /** Live occlusion test owned by the rendered receiver; never saved as truth. */
+  readonly acceptsPoint?: (point: SurfacePoint) => boolean;
   readonly priority: number;
   readonly enabled: boolean;
   readonly ineligibleReason?: string;
@@ -96,13 +108,20 @@ export interface DropAssemblyApplyIntent {
   readonly sourceRefs: readonly AssemblySourceRefV1[];
   readonly placementPoint?: SurfacePoint;
   readonly railwayReceive?: boolean;
-  readonly railwayDestinationRef?: ProjectViewRailRefV0;
+  readonly portalReceive?: boolean;
+  readonly railwayDestinationRef?: ProjectViewRailRefV0 | RailwayCanonicalRefV1;
+  readonly railwayOrderVersion?: number;
+  readonly railwayCanvasId?: string;
 }
 
 export interface DropComposerReferenceIntent {
   readonly kind: 'composer-reference';
   readonly targetId: string;
   readonly reference: DropEntityRef;
+  readonly inputKey?: string;
+  readonly intent?: 'continue' | 'delegate';
+  /** An explicit multi-object gesture, ordered and de-duplicated by the resolver. */
+  readonly references?: readonly DropEntityRef[];
 }
 
 export interface DropExternalImportIntent {
@@ -129,6 +148,15 @@ export interface DropCollectionMembershipIntent {
   readonly targetId: string;
   readonly collectionId: string;
   readonly memberRef: { readonly type: 'artifact' | 'note' | 'collection' | 'scope' | 'workspace' | 'conversation' | 'run'; readonly id: string };
+  /** Same target, one explicit selection. Never silently submit a supported subset. */
+  readonly memberRefs?: readonly DropCollectionMembershipIntent['memberRef'][];
+}
+
+export interface DropCollectionItemReceipt {
+  readonly memberRef: DropCollectionMembershipIntent['memberRef'];
+  readonly status: 'success' | 'partial' | 'failed';
+  readonly message?: string;
+  readonly canonicalReceipt?: unknown;
 }
 
 export type DropIntent =
@@ -152,8 +180,13 @@ export interface DropCommitReceipt {
   readonly targetId: string;
   readonly message?: string;
   readonly canonicalReceipt?: unknown;
+  readonly railwayReceipt?: RailwayReceiveOutcomeV1;
+  readonly railwayOperationId?: string;
+  readonly collectionItems?: readonly DropCollectionItemReceipt[];
   /** Derived display/retry scope only; the actual Core receipt remains untouched. */
   readonly assemblyItems?: readonly AssemblyApplyItemResultV1[];
+  readonly projectId?: string;
+  readonly unknownSourceKeys?: readonly string[];
   readonly retrySourceRefs?: readonly AssemblySourceRefV1[];
 }
 

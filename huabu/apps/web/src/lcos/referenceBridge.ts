@@ -18,6 +18,8 @@ export {
   orderedReferences,
   removeReference,
   sameEntityRef,
+  sameDraftReference,
+  draftReferenceKey,
   toggleReference,
 } from '@local-creative-os/web-gen2';
 

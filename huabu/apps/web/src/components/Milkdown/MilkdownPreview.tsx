@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { resolveArtifactUrl } from '@/api/artifact';
+import { toast } from '@/components/Common/Toast';
 
 import { attachBlockDragListeners } from './blockDrag';
 import { createMilkdown, type MilkdownInstance } from './createMilkdown';
@@ -48,6 +49,10 @@ export interface MilkdownPreviewProps {
   enableBlockDrag?: boolean;
   /** Fires alongside Crepe's native drag handler when a block drag begins. */
   onBlockDragStart?: (event: MilkdownBlockDragEvent) => void;
+  /** Called only after this document has actually been rendered. */
+  onRendered?: (markdown: string) => void;
+  /** The owner can retry the same content without changing its source version. */
+  onError?: (error: Error) => void;
 }
 
 /**
@@ -99,13 +104,16 @@ export function MilkdownPreview(
     canvasId,
     enableBlockDrag = false,
     onBlockDragStart,
+    onRendered,
+    onError,
   } = props;
   const resolvedAriaLabel = ariaLabel ?? t('editor.readOnlyContent');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<MilkdownInstance | null>(null);
   const lastSyncedRef = useRef<string>(normalizeMarkdown(markdown));
-  const pendingMarkdownRef = useRef<string | null>(null);
+  const latestRef = useRef({ markdown, onRendered, onError });
+  latestRef.current = { markdown, onRendered, onError };
   // Keep the latest drag callback in a ref so the mount effect stays
   // stable while still reading fresh closures.
   const onBlockDragStartRef = useRef(onBlockDragStart);
@@ -121,10 +129,17 @@ export function MilkdownPreview(
     const container = containerRef.current;
     if (!container) return;
 
-    // Milkdown mounts directly into the host container (light DOM).
-    // See the file-level comment for why Shadow DOM isolation was
-    // removed.
-    const mountRoot: HTMLElement = container;
+    // One light-DOM mount per effect; late cleanup after a drag-mode switch
+    // must only remove the obsolete instance, never the new document.
+    const mountRoot = document.createElement('div');
+    container.append(mountRoot);
+    let ownedInstance: MilkdownInstance | null = null;
+    const reportError = (reason: unknown) => {
+      if (cancelled) return;
+      const error = reason instanceof Error ? reason : new Error(String(reason));
+      if (latestRef.current.onError) latestRef.current.onError(error);
+      else toast(`正文预览载入失败：${error.message}`, { tone: 'danger' });
+    };
 
     // Class hook used by `milkdown-overrides.css` to scope the compact
     // block-handle (single 18px grip, no "+ add" button) to chat-card
@@ -140,9 +155,10 @@ export function MilkdownPreview(
     });
 
     void (async () => {
+      const initialMarkdown = normalizeMarkdown(latestRef.current.markdown);
       const instance = await createMilkdown({
         root: mountRoot,
-        initialMarkdown: lastSyncedRef.current,
+        initialMarkdown,
         // When block drag is requested we need the editor in editable
         // mode so Crepe shows the block handle and lets the user
         // initiate a native drag. Input mutations are still blocked by
@@ -160,6 +176,7 @@ export function MilkdownPreview(
         },
       });
 
+      ownedInstance = instance;
       if (cancelled) {
         await instance.destroy();
         return;
@@ -168,21 +185,18 @@ export function MilkdownPreview(
       instance.setAriaLabel(ariaLabelRef.current);
       instanceRef.current = instance;
 
-      const pending = pendingMarkdownRef.current;
-      pendingMarkdownRef.current = null;
-      if (pending !== null && pending !== lastSyncedRef.current) {
-        lastSyncedRef.current = pending;
-        instance.setMarkdown(pending);
-      }
-    })();
+      const next = normalizeMarkdown(latestRef.current.markdown);
+      lastSyncedRef.current = next;
+      if (!markdownEquals(initialMarkdown, next)) instance.setMarkdown(next);
+      latestRef.current.onRendered?.(latestRef.current.markdown);
+    })().catch(reportError);
 
     return () => {
       cancelled = true;
       detachDrag();
-      mountRoot.classList.remove('milkdown-preview-host');
-      const instance = instanceRef.current;
-      instanceRef.current = null;
-      if (instance) void instance.destroy();
+      if (instanceRef.current === ownedInstance) instanceRef.current = null;
+      mountRoot.remove();
+      if (ownedInstance) void ownedInstance.destroy().catch(() => undefined);
     };
     // Re-mount when drag mode toggles (rare, expected).
   }, [enableBlockDrag]);
@@ -191,12 +205,10 @@ export function MilkdownPreview(
     if (markdownEquals(markdown, lastSyncedRef.current)) return;
     const next = normalizeMarkdown(markdown);
     const instance = instanceRef.current;
-    if (!instance) {
-      pendingMarkdownRef.current = next;
-      return;
-    }
+    if (!instance) return; // Creation consumes latestRef, including A→B→A.
     lastSyncedRef.current = next;
     instance.setMarkdown(next);
+    latestRef.current.onRendered?.(markdown);
   }, [markdown]);
 
   // The editor mounts asynchronously, so the mount path above applies the

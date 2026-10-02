@@ -50,6 +50,7 @@ export interface ArtifactProjectionSource {
   currentRevisionId?: string;
   /** Core managed fact when available. */
   managed?: boolean;
+  revisionStatus?: 'draft' | 'current' | 'superseded';
   /** Core provenance: the Run that produced this artifact, when present. */
   sourceRunId?: string;
   /** Existing Core presentation mode; used only to choose an adopted initial morphology size. */
@@ -72,6 +73,7 @@ export interface SpaceEntityProjectionSource {
   sourceKind?: string;
   sourceRunId?: string;
   managed?: boolean;
+  revisionStatus?: 'draft' | 'current' | 'superseded';
   fileRecordId?: string;
   currentRevisionId?: string;
   displayMode?: 'card' | 'thumbnail' | 'compact' | string;
@@ -108,6 +110,7 @@ function figmaInitialSize(input: SpaceEntityProjectionSource): PlacementItem | u
     ...(input.sourceKind === undefined ? {} : { sourceKind: input.sourceKind }),
     ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
     ...(input.managed === undefined ? {} : { managed: input.managed }),
+    ...(input.revisionStatus === undefined ? {} : { revisionStatus: input.revisionStatus }),
     ...(input.displayMode === undefined ? {} : { displayMode: input.displayMode }),
   });
   return preset ? { width: preset.width, height: preset.height } : undefined;
@@ -164,6 +167,7 @@ export function huabuNodeTypeForPresentation(
     sourceKind: source.sourceKind,
     sourceRunId: source.sourceRunId,
     managed: source.managed,
+    revisionStatus: source.revisionStatus,
   });
   return huabuNodeTypeForFamily(family);
 }
@@ -227,6 +231,7 @@ export class ProjectToSpaceProjection {
         ...(artifact.fileRecordId === undefined ? {} : { fileRecordId: artifact.fileRecordId }),
         ...(artifact.currentRevisionId === undefined ? {} : { currentRevisionId: artifact.currentRevisionId }),
         ...(artifact.managed === undefined ? {} : { managed: artifact.managed }),
+        ...(artifact.revisionStatus === undefined ? {} : { revisionStatus: artifact.revisionStatus }),
         ...(artifact.sourceRunId === undefined ? {} : { sourceRunId: artifact.sourceRunId }),
         ...(artifact.displayMode === undefined ? {} : { displayMode: artifact.displayMode }),
         ...(artifact.size === undefined ? {} : { size: artifact.size }),

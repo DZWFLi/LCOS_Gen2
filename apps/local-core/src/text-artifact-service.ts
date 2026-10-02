@@ -13,13 +13,15 @@ import type {
   WorkspaceId,
 } from '@local-creative-os/domain'
 
-import type { SqliteMetadataRepository } from './metadata-repository.js'
+import type { ProjectionBindingRecord, SqliteMetadataRepository } from './metadata-repository.js'
 
 export interface CreateTextArtifactInput {
   readonly title?: string
   readonly body: string
   readonly scopeId: string
   readonly workspaceId?: string
+  /** Claim the existing native carrier in the same registration transaction. */
+  readonly nativeBinding?: { readonly canvasId: string; readonly spatialId: string }
   readonly x?: number
   readonly y?: number
 }
@@ -129,18 +131,17 @@ export async function createTextArtifact(
   const draft = await buildTextArtifactDraft(repository, projectId, input)
   const { fileRecord, artifact, revision, view, stagedPath, finalPath } = draft
   try {
-    repository.registerTextArtifactComposite(fileRecord, artifact, revision, view, input.workspaceId === undefined ? undefined : input.workspaceId as WorkspaceId)
-  } catch (error: unknown) {
-    // DB 失败：删 staged，不留半套
-    await rm(stagedPath, { force: true }).catch(() => { /* best effort */ })
-    throw error
-  }
-  try {
+    // Publish the owned file before its canonical binding becomes readable.
+    // Concurrent adoption can then verify the winner without racing its rename.
     await mkdir(dirname(finalPath), { recursive: true })
     await rename(stagedPath, finalPath)
-  } catch {
-    // rename 失败（罕见）：DB 已提交，文件留在 staging；启动 sweep 会按 id 归位到 notes。
-    console.warn(`[text-artifact] staged file rename deferred: ${stagedPath}`)
+    repository.registerTextArtifactComposite(fileRecord, artifact, revision, view, input.workspaceId === undefined ? undefined : input.workspaceId as WorkspaceId,
+      input.nativeBinding === undefined ? undefined : { projectId: String(projectId), ...input.nativeBinding, spatialKind: 'node', entityType: 'artifact', entityId: String(artifact.id) })
+  } catch (error: unknown) {
+    // Both paths belong to this UUID draft; never remove the competing winner.
+    await rm(stagedPath, { force: true }).catch(() => { /* best effort */ })
+    await rm(finalPath, { force: true }).catch(() => { /* best effort */ })
+    throw error
   }
   return {
     artifactId: String(draft.artifact.id),
@@ -163,7 +164,7 @@ export async function reviseManagedTextArtifact(
   projectId: ProjectId,
   target: { readonly viewId?: string; readonly artifactId?: string },
   body: string,
-  options: { readonly title?: string; readonly createdBy?: string } = {},
+  options: { readonly title?: string; readonly createdBy?: string; readonly expectedRevisionId?: string; readonly binding?: ProjectionBindingRecord } = {},
 ): Promise<ReviseManagedTextResult> {
   const project = repository.getProject(String(projectId))
   if (project === undefined) throw new Error('Project not found.')
@@ -173,6 +174,7 @@ export async function reviseManagedTextArtifact(
   if (artifact === undefined || String(artifact.projectId) !== projectId) throw new Error('Managed text artifact not found.')
   const currentRevisionId = artifact.currentRevisionId
   if (currentRevisionId === undefined) throw new Error('Managed text artifact has no current revision.')
+  if (options.expectedRevisionId !== undefined && String(currentRevisionId) !== options.expectedRevisionId) throw new Error('正文已有新版本；请先核对，不会覆盖较新的编辑。')
   const previousRevision = repository.getArtifactRevision(currentRevisionId)
   if (previousRevision === undefined) throw new Error('Current revision not found.')
   const previousFileRecord = repository.getFileRecord(String(previousRevision.fileRecordId))
@@ -189,47 +191,58 @@ export async function reviseManagedTextArtifact(
   await writeFile(newPath, body, 'utf8')
 
   let legacyMigrated = false
-  const previousPath = previousFileRecord.observedPath
-  const previousIsLegacy = basename(dirname(previousPath)) === 'notes'
-    || (!previousPath.includes(join('notes', artifact.id)) && basename(previousPath).startsWith('text-'))
-  if (previousIsLegacy) {
-    const legacyRevisionPath = join(artifactDir, `${String(previousRevision.id)}.md`)
-    await copyFile(previousPath, legacyRevisionPath)
-    repository.upsertFileRecord({
-      ...previousFileRecord,
-      observedPath: legacyRevisionPath,
+  try {
+    const previousPath = previousFileRecord.observedPath
+    const previousIsLegacy = basename(dirname(previousPath)) === 'notes'
+      || (!previousPath.includes(join('notes', artifact.id)) && basename(previousPath).startsWith('text-'))
+    if (previousIsLegacy) {
+      const legacyRevisionPath = join(artifactDir, `${String(previousRevision.id)}.md`)
+      await copyFile(previousPath, legacyRevisionPath)
+      repository.upsertFileRecord({
+        ...previousFileRecord,
+        observedPath: legacyRevisionPath,
+        observedAt: now,
+      })
+      legacyMigrated = true
+    }
+
+    const newFileRecord: FileRecord = {
+      id: `file-text-${randomUUID()}` as FileRecord['id'],
+      projectId,
+      observedPath: newPath,
+      observedHash: contentHash as FileRecord['observedHash'],
+      size: Buffer.byteLength(body, 'utf8'),
+      modifiedAt: now,
+      mimeType: 'text/markdown' as const,
+      availability: 'current' as const,
       observedAt: now,
+    }
+    const newRevision: ArtifactRevision = {
+      id: revisionId as ArtifactRevision['id'],
+      artifactId: artifact.id,
+      fileRecordId: newFileRecord.id,
+      parentRevisionId: previousRevision.id,
+      contentHash: contentHash as ArtifactRevision['contentHash'],
+      source: 'external' as const,
+      status: 'current' as const,
+      createdAt: now,
+    }
+    repository.commitManagedTextRevision({
+      artifact,
+      previousRevision,
+      newFileRecord,
+      newRevision,
+      ...(options.binding === undefined ? {} : { binding: options.binding }),
     })
-    legacyMigrated = true
+  } catch (error: unknown) {
+    // Only this invocation's new immutable file is disposable. Never remove
+    // historical files or a revision that actually committed.
+    if (repository.getArtifactRevision(revisionId) === undefined) {
+      await rm(newPath, { force: true }).catch(() => { /* best effort */ })
+    }
+    throw error
   }
 
-  const newFileRecord: FileRecord = {
-    id: `file-text-${randomUUID()}` as FileRecord['id'],
-    projectId,
-    observedPath: newPath,
-    observedHash: contentHash as FileRecord['observedHash'],
-    size: Buffer.byteLength(body, 'utf8'),
-    modifiedAt: now,
-    mimeType: 'text/markdown' as const,
-    availability: 'current' as const,
-    observedAt: now,
-  }
-  const newRevision: ArtifactRevision = {
-    id: revisionId as ArtifactRevision['id'],
-    artifactId: artifact.id,
-    fileRecordId: newFileRecord.id,
-    parentRevisionId: previousRevision.id,
-    contentHash: contentHash as ArtifactRevision['contentHash'],
-    source: 'external' as const,
-    status: 'current' as const,
-    createdAt: now,
-  }
-  repository.commitManagedTextRevision({
-    artifact,
-    previousRevision,
-    newFileRecord,
-    newRevision,
-  })
   const view = target.viewId
     ?? repository.getArtifactViews(String(artifact.id))[0]?.id
   return { artifactId: artifact.id, viewId: view ?? '', revisionId, legacyMigrated }

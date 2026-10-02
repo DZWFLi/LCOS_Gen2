@@ -14,7 +14,7 @@ type FakeClick = Parameters<typeof handleReferenceClickSuppression>[0];
 function fakeClick(insideNode: boolean, opts: { shiftKey?: boolean } = {}): FakeClick {
   const target = {
     closest: (sel: string) =>
-      insideNode && sel === '.react-flow__node' ? {} : null,
+      insideNode && sel === '.react-flow__node[data-id]' ? {dataset:{id:'node-a'}} : null,
   };
   return {
     target,
@@ -27,7 +27,7 @@ function fakeClick(insideNode: boolean, opts: { shiftKey?: boolean } = {}): Fake
 
 describe('reference click suppressor', () => {
   it('swallows a click on a canvas node right after a pick', () => {
-    markReferencePickCompleted();
+    markReferencePickCompleted('node-a');
     const click = fakeClick(true);
     expect(handleReferenceClickSuppression(click)).toBe(true);
     expect(click.preventDefault).toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe('reference click suppressor', () => {
   });
 
   it('lets clicks through outside the pick window', () => {
-    markReferencePickCompleted();
+    markReferencePickCompleted('node-a');
     vi.useFakeTimers();
     vi.setSystemTime(Date.now() + 1000);
     const click = fakeClick(true);
@@ -44,14 +44,14 @@ describe('reference click suppressor', () => {
   });
 
   it('never swallows a Shift click, even inside the pick window', () => {
-    markReferencePickCompleted();
+    markReferencePickCompleted('node-a');
     const click = fakeClick(true, { shiftKey: true });
     expect(handleReferenceClickSuppression(click)).toBe(false);
     expect(click.preventDefault).not.toHaveBeenCalled();
   });
 
   it('lets clicks on non-node targets through', () => {
-    markReferencePickCompleted();
+    markReferencePickCompleted('node-a');
     const click = fakeClick(false);
     expect(handleReferenceClickSuppression(click)).toBe(false);
   });
@@ -60,13 +60,13 @@ describe('reference click suppressor', () => {
     const addSpy = vi.spyOn(document, 'addEventListener');
     const removeSpy = vi.spyOn(document, 'removeEventListener');
     const uninstall = installReferenceClickSuppressor();
-    for (const event of ['click', 'contextmenu']) {
+    for (const event of ['click', 'pointerdown', 'contextmenu']) {
       expect(addSpy.mock.calls.filter(([name]) => name === event)).toHaveLength(1);
     }
     const redundantUninstall = installReferenceClickSuppressor();
     redundantUninstall();
     expect(removeSpy).not.toHaveBeenCalled();
-    for (const event of ['click', 'contextmenu']) {
+    for (const event of ['click', 'pointerdown', 'contextmenu']) {
       expect(addSpy.mock.calls.filter(([name]) => name === event)).toHaveLength(1);
     }
     markCarryCompleted();
@@ -78,13 +78,13 @@ describe('reference click suppressor', () => {
     expect(next.defaultPrevented).toBe(false);
     uninstall();
     uninstall();
-    for (const event of ['click', 'contextmenu']) {
+    for (const event of ['click', 'pointerdown', 'contextmenu']) {
       const handler = addSpy.mock.calls.find(([name]) => name === event)?.[1];
       expect(removeSpy).toHaveBeenCalledWith(event, handler, { capture: true });
       expect(removeSpy.mock.calls.filter(([name]) => name === event)).toHaveLength(1);
     }
     const reinstall = installReferenceClickSuppressor();
-    for (const event of ['click', 'contextmenu']) {
+    for (const event of ['click', 'pointerdown', 'contextmenu']) {
       expect(addSpy.mock.calls.filter(([name]) => name === event)).toHaveLength(2);
     }
     reinstall();

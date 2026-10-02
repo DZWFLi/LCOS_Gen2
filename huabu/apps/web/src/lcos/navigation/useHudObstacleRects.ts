@@ -47,7 +47,7 @@ export function useHudObstacleRects(selector?: string, excluded?: RefObject<HTML
     });
     membership?.observe(document.body, { childList: true, subtree: true });
     return () => { resize?.disconnect(); mutation?.disconnect(); membership?.disconnect(); };
-  });
+  }, [selector, excluded]);
   return peerRects;
 }
 

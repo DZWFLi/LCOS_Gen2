@@ -2,6 +2,7 @@ import type { CoreEntityRefLike } from '../referenceBridge';
 import type { LcosComposerTarget } from '../shell/lcosShellStore';
 import type { CollaborationSendInputV1 } from '@local-creative-os/contracts';
 import type { CreateRunInputV1 } from '@local-creative-os/web-gen2';
+import { prepareDraftReferences, draftReferenceUnavailableReason, runReferenceUnavailableReason } from './referenceSnapshot';
 import { buildSelectedContextReferences } from '../professional/conversationContinuationActions';
 
 
@@ -24,16 +25,19 @@ export interface ComposerContinuationSubmissionInput {
 
 /** Build the exact Core Run payload; receiver identity is never inferred from labels or node ids. */
 export function buildComposerRunInput(input: ComposerSubmissionInput): CreateRunInputV1 {
+  const inputs = [...(input.target.targetReferences ?? []), ...input.refs];
+  // Check every offered input before identity deduplication can hide a conflict.
+  const blocked = inputs.map(runReferenceUnavailableReason).find(Boolean);
+  if (blocked) throw new Error(blocked);
+  const prepared = inputs.length ? prepareDraftReferences(inputs, 'delegate') : { ok: true as const, references: inputs };
+  if (!prepared.ok) throw new Error(prepared.reason);
+  const selected = buildSelectedContextReferences(prepared.references);
+  if (selected.unsupportedEntityTypes.length > 0) throw new Error('本轮含暂不支持的引用，请先移除或转换为可读取的材料。');
   return {
     instruction: input.instruction,
     outputIntent: 'analyze',
-    contextArtifactIds: input.refs
-      .filter((ref) => ref.entityType === 'artifact')
-      .map((ref) => ref.entityId),
-    orderedReferences: input.refs.map((ref) => ({
-      entityType: ref.entityType,
-      entityId: ref.entityId,
-    })),
+    contextArtifactIds: [...new Set(prepared.references.filter((ref) => ref.entityType === 'artifact').map((ref) => ref.entityId))],
+    orderedReferences: selected.orderedReferences,
     ...(input.target.receiverConversationId === undefined
       ? {}
       : { receiverRef: { connectedConversationId: input.target.receiverConversationId } }),
@@ -49,7 +53,8 @@ export function canSubmitComposerTarget(
   return (
     instruction.trim().length > 0 &&
     workspaceId !== undefined &&
-    target.receiverBlockedReason === undefined
+    target.receiverBlockedReason === undefined &&
+    (target.targetReferences ?? []).every((ref) => !runReferenceUnavailableReason(ref))
   );
 }
 
@@ -70,6 +75,7 @@ export function canSubmitComposerContinuation(
     target.receiverConversationId !== undefined &&
     target.continuationOperationId !== undefined &&
     target.messageId !== undefined &&
+    refs.every((ref) => !draftReferenceUnavailableReason(ref, 'continue')) &&
     selected.unsupportedEntityTypes.length === 0 &&
     target.receiverBlockedReason === undefined
   );
@@ -78,7 +84,9 @@ export function canSubmitComposerContinuation(
 export function buildComposerContinuationInput(
   input: ComposerContinuationSubmissionInput,
 ): CollaborationSendInputV1 {
-  const selected = buildSelectedContextReferences(input.refs);
+  const prepared = input.refs.length ? prepareDraftReferences(input.refs, 'continue') : { ok: true as const, references: input.refs };
+  if (!prepared.ok) throw new Error(prepared.reason);
+  const selected = buildSelectedContextReferences(prepared.references);
   return {
     conversationId: input.conversationId,
     text: input.text.trim(),

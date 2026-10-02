@@ -30,19 +30,41 @@ afterEach(async () => {
 });
 
 describe('Reader production presentation', () => {
-  it('preserves all supplied text and escapes markup instead of adding an HTML execution channel', async () => {
-    const value = '第一行\n<script>window.bad = true</script>\n最后一行';
-    const host = await mount(<ReaderContentView content={{ kind: 'text', value }} kind="markdown" fileName="资料" />);
-    const lines = Array.from(host.querySelectorAll('[data-donor-text-reader] [data-line]'), (line) => line.textContent);
-    expect(lines).toEqual(value.split('\n'));
-    expect(host.querySelector('script')).toBeNull();
-    expect(host.querySelector('[data-line="1"]')?.innerHTML).toContain('&lt;script&gt;');
+  it('renders Markdown through the shared Milkdown schema rather than a line-prefix parser', async () => {
+    const content = { kind: 'text' as const, value: '# 标题\n\n**粗体** 和 [链接](https://example.com)\n\n| A | B |\n| --- | --- |\n| 一 | 二 |\n\n```js\nconst x = 1;\n```', viewKey: 'artifact@old-revision' };
+    const ready = vi.fn();
+    const host = await mount(<ReaderContentView content={content} kind="markdown" fileName="资料" onContentReady={ready} />);
+    await vi.waitFor(() => expect(host.querySelector('.ProseMirror strong')?.textContent).toBe('粗体'));
+    expect(host.querySelector('.ProseMirror h1')?.textContent).toBe('标题');
+    expect(host.querySelector('.ProseMirror a')?.getAttribute('href')).toBe('https://example.com');
+    expect(host.querySelector('.ProseMirror table')).not.toBeNull();
+    expect(host.querySelector('.ProseMirror pre')?.textContent).toContain('const x = 1;');
+    expect(host.querySelector('.ProseMirror')?.getAttribute('contenteditable')).toBe('false');
+    expect(ready).toHaveBeenCalledWith(content);
+    expect(host.querySelector('[data-donor-text-reader]')).toBeNull();
   });
-  it('keeps executable tags, inline handlers and unsafe links as inert visible text', async () => {
-    const value = '<img src=x onerror="alert(1)">\n<a href="javascript:alert(1)">链接</a>\n<iframe srcdoc="<script>alert(1)</script>"></iframe>';
+  it('does not execute untrusted raw markup; a render failure retains the literal source', async () => {
+    const value = '第一行\n<script>window.bad = true</script>\n<img src=x onerror="alert(1)">\n<iframe srcdoc="<script>alert(1)</script>"></iframe>\n最后一行';
     const host = await mount(<ReaderContentView content={{ kind: 'text', value }} kind="markdown" fileName="外部文本" />);
-    expect(Array.from(host.querySelectorAll('[data-line]'), (line) => line.textContent)).toEqual(value.split('\n'));
-    expect(host.querySelector('img, a, script, iframe, [onerror]')).toBeNull();
+    await vi.waitFor(() => expect(host.querySelector('.ProseMirror, [data-lcos-reader-render-error]')).not.toBeNull());
+    expect(host.querySelector('script, iframe, [onerror], [onclick]')).toBeNull();
+    if (host.querySelector('[data-lcos-reader-render-error]')) {
+      const raw = Array.from(host.querySelectorAll('button')).find(button => button.textContent === '查看同一版本原文');
+      await act(async () => raw?.click());
+      expect(host.querySelector('pre')?.textContent).toBe(value);
+    }
+    expect((window as Window & { bad?: boolean }).bad).not.toBe(true);
+  });
+  it('retains the shared parser safe-link click protection', async () => {
+    const host = await mount(<ReaderContentView content={{ kind: 'text', value: '[不可执行](javascript:alert%281%29)' }} kind="markdown" fileName="外部链接" />);
+    await vi.waitFor(() => expect(host.querySelector('.ProseMirror')).not.toBeNull());
+    const unsafe = host.querySelector('a[href^="javascript:"]');
+    if (unsafe) {
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+      await act(async () => unsafe.dispatchEvent(click));
+      expect(click.defaultPrevented).toBe(true);
+    }
+    expect(host.querySelector('script, [onclick]')).toBeNull();
   });
   it('preserves plain text bytes including newlines without Markdown interpretation', async () => {
     const value = '# 原始文本\n<script>untrusted()</script>\n最后一行';

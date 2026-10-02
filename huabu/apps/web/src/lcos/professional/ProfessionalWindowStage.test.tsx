@@ -156,7 +156,7 @@ it('does not let a hidden Composer for another conversation block closing the cu
 
 it('passes the Core-resolved Portal Workspace to the production open caller', async () => {
   const store = useLcosShellStore.getState();
-  store.openWindow('portal-preview', '入口', 'canvas-target', 'canvas');
+  store.openWindow('portal-preview', '入口', 'canvas-target', 'canvas', {workspaceId:'workspace-target',sourceNodeId:'portal-node'});
   const open = vi.fn();
   await act(async () => root.render(
     <ProfessionalWindowStage
@@ -240,7 +240,9 @@ it('restores both split readers after a narrow viewport without losing revision 
     store.splitWindowRegion(a.id, 'vertical');
     await act(async () => root.render(<ProfessionalWindowStage projectId="p" />));
     expect(host.querySelector('[data-lcos-professional-stage]')?.getAttribute('data-compact')).toBe('true');
-    expect(host.querySelectorAll('[data-reader-artifact]')).toHaveLength(1);
+    // Both readers remain mounted; narrow mode hides only the inactive projection.
+    expect(host.querySelectorAll('[data-reader-artifact]')).toHaveLength(2);
+    expect(host.querySelectorAll('.lcos-retained-reader:not([hidden])')).toHaveLength(1);
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
     await act(async () => window.dispatchEvent(new Event('resize')));
     expect(host.querySelectorAll('[data-reader-artifact]')).toHaveLength(2);
@@ -265,11 +267,11 @@ it('publishes moving-window bounds before pointerup while the saved layout stays
   const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { frame = callback; return 100; });
   try {
     await act(async () => handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 250, clientY: 130 })));
-    await act(async () => window.dispatchEvent(new PointerEvent('pointermove', { clientX: 280, clientY: 155 })));
+    await act(async () => window.dispatchEvent(new PointerEvent('pointermove', { buttons: 1, clientX: 280, clientY: 155 })));
     expect(useLcosShellStore.getState().windowRegions[0]?.rect?.x).toBe(200);
     await act(async () => frame?.(0));
     expect(useLcosShellStore.getState().windowEnvironment?.occupiedRects[0]).toMatchObject({ x: 230, y: 145 });
-    await act(async () => window.dispatchEvent(new PointerEvent('pointerup')));
+    await act(async () => window.dispatchEvent(new PointerEvent('pointerup', { button: 0, clientX: 280, clientY: 155 })));
     expect(useLcosShellStore.getState().windowRegions[0]?.rect?.x).toBe(230);
   } finally { raf.mockRestore(); rect.mockRestore(); }
 });
@@ -319,7 +321,7 @@ it('drops a dragged tab into the pane under the pointer, not an array-neighbor r
   vi.spyOn(sourceRegion, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 500, 400));
   vi.spyOn(targetRegion, 'getBoundingClientRect').mockReturnValue(new DOMRect(700, 100, 500, 400));
   await act(async () => tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 4, clientX: 200, clientY: 120 })));
-  await act(async () => window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 4, clientX: 900, clientY: 250 })));
+  await act(async () => window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 4, buttons: 1, clientX: 900, clientY: 250 })));
   expect(host.querySelector('[data-lcos-window-drop-preview]')).not.toBeNull();
   await act(async () => window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 4, clientX: 900, clientY: 250 })));
   const target = useLcosShellStore.getState().windowRegions.find((region) => region.id === c.id);
@@ -339,7 +341,28 @@ it('does not persist a cancelled window drag', async () => {
   if (!region || !handle) throw new Error('missing drag handle');
   vi.spyOn(region, 'getBoundingClientRect').mockImplementation(() => new DOMRect(parseFloat(region.style.left), parseFloat(region.style.top), parseFloat(region.style.width), parseFloat(region.style.height)));
   await act(async () => handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 2, clientX: 250, clientY: 130 })));
-  await act(async () => window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: 280, clientY: 155 })));
+  await act(async () => window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, buttons: 1, clientX: 280, clientY: 155 })));
   await act(async () => window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 2 })));
   expect(useLcosShellStore.getState().windowRegions[0]?.rect).toEqual({ x: 200, y: 120, width: 400, height: 320 });
+});
+
+
+it('IME Escape leaves the current Reader and revision intact', async () => {
+  useLcosShellStore.getState().openReader('历史版本', 'artifact-a', { revisionId: 'old' });
+  await act(async () => root.render(<ProfessionalWindowStage projectId="p" />));
+  await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })));
+  expect(useLcosShellStore.getState().windows[0]?.readerRevisionId).toBe('old');
+});
+
+it('Reader split has one outer chrome and two independent content tab strips', async () => {
+  const store = useLcosShellStore.getState();
+  store.openReader('A', 'artifact-a'); store.openReader('B', 'artifact-b');
+  const [a, b] = useLcosShellStore.getState().windowRegions;
+  if (!a || !b) throw new Error('two regions required');
+  store.groupWindowRegions(b.id, a.id); store.splitWindowRegion(a.id, 'vertical');
+  await act(async () => root.render(<ProfessionalWindowStage projectId="p" />));
+  expect(host.querySelectorAll('[data-lcos-family="window-chrome"]')).toHaveLength(1);
+  expect(host.querySelectorAll('[data-lcos-reader-content-tabs]')).toHaveLength(2);
+  expect(host.querySelector('[data-lcos-reader-merge-groups]')).not.toBeNull();
+  expect(host.querySelector('[data-lcos-reader-detach-group]')).not.toBeNull();
 });

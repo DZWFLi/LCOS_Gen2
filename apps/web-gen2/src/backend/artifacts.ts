@@ -47,8 +47,26 @@ export interface RevisionCompareResultV1 {
   readonly diff?: readonly RevisionCompareLineV1[];
 }
 
+export interface CanvasTextAddress { readonly canvasId: string; readonly spatialId: string }
+export interface CanvasTextSnapshot extends CanvasTextAddress {
+  readonly projectId: string; readonly artifactId: string; readonly viewId: string;
+  readonly revisionId: string; readonly fileRecordId: string; readonly body: string; readonly title: string;
+}
+export interface CanvasTextWrite extends CanvasTextAddress {
+  readonly body: string; readonly expectedRevisionId: string | null; readonly artifactId?: string;
+}
+
 export class CoreArtifactClient {
   constructor(private readonly http: HttpClient) {}
+
+  readCanvasText(projectId: string, address: CanvasTextAddress, signal?: AbortSignal): Promise<CanvasTextSnapshot | null> {
+    const query = new URLSearchParams({ canvasId: address.canvasId, spatialId: address.spatialId });
+    return coreRequest(this.http, 'GET', `/projects/${encodeURIComponent(projectId)}/curation/canvas-text?${query}`, signal ? { signal } : {});
+  }
+
+  saveCanvasText(projectId: string, input: CanvasTextWrite): Promise<CanvasTextSnapshot> {
+    return coreRequest(this.http, 'PUT', `/projects/${encodeURIComponent(projectId)}/curation/canvas-text`, { body: input });
+  }
 
   listArtifacts(projectId: string, lifecycle: 'active' | 'archived' | 'all' = 'active'): Promise<Artifact[]> {
     return coreRequest<Artifact[]>(this.http, 'GET',
@@ -68,20 +86,22 @@ export class CoreArtifactClient {
   }
 
   /** GET /artifacts/:artifactId. */
-  getArtifactDetail(artifactId: string): Promise<ArtifactDetailProjection> {
+  getArtifactDetail(artifactId: string, signal?: AbortSignal): Promise<ArtifactDetailProjection> {
     return coreRequest<ArtifactDetailProjection>(
       this.http,
       'GET',
       `/artifacts/${encodeURIComponent(artifactId)}`,
+      { signal },
     );
   }
 
   /** GET /artifacts/:artifactId/revisions -> real ArtifactRevision[]. */
-  listArtifactRevisions(artifactId: string): Promise<ArtifactRevision[]> {
+  listArtifactRevisions(artifactId: string, signal?: AbortSignal): Promise<ArtifactRevision[]> {
     return coreRequest<ArtifactRevision[]>(
       this.http,
       'GET',
       `/artifacts/${encodeURIComponent(artifactId)}/revisions`,
+      { signal },
     );
   }
 

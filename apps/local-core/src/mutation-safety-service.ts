@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type {
+  RailwayReceiveRequestV1, RailwayReceiveOutcomeV1, RailwayDestinationV1, AssemblyApplyItemResultV1,
   MutationChangeItemV1,
   MutationChangeSetV1,
   MutationRelationSnapshotV1,
@@ -94,7 +95,7 @@ export class MutationSafetyService {
     return this.#metadata.listMutationChangeSets(projectId, limit)
   }
 
-  createCollection(input: { readonly projectId: string; readonly title: string; readonly actorKind?: MutationChangeSetV1['actorKind']; readonly origin?: ProjectEventOrigin }): { readonly collection: Collection; readonly changeSet: MutationChangeSetV1 } {
+  createCollection(input: { readonly projectId: string; readonly title: string; readonly members?: readonly CollectionMembership['memberRef'][]; readonly actorKind?: MutationChangeSetV1['actorKind']; readonly origin?: ProjectEventOrigin }): { readonly collection: Collection; readonly changeSet: MutationChangeSetV1 } {
     const title = input.title.trim()
     if (!title || title.length > 200) throw new Error('Collection title must contain 1–200 characters.')
     const now = new Date().toISOString()
@@ -105,8 +106,22 @@ export class MutationSafetyService {
       forward: { type: 'collection_identity_add', collection },
       appliedFingerprint: `collection:${collection.id}:present`,
     }
-    const changeSet = this.#buildChangeSet({ projectId: input.projectId, operationId: input.origin?.operationId ?? `collection-create-${randomUUID()}`, actorKind: input.actorKind ?? 'web', changes: [change] })
-    this.#metadata.runCurationMutation({ projectId: input.projectId, collectionAdds: [collection], changeSet })
+    // Creation with an initial selection is one reversible mutation. Validate
+    // every real identity first; never leave a partly-filled container behind.
+    const members = [...new Map((input.members ?? []).map((ref) => [JSON.stringify([ref.type, ref.id]), ref])).values()]
+    const memberships: CollectionMembership[] = members.map((ref) => {
+      this.#assertCollectionMemberExists(input.projectId, ref)
+      if (ref.type === 'collection') this.#assertCollectionNesting(input.projectId, String(collection.id), ref.id)
+      return { collectionId: collection.id, memberRef: ref, relationId: `collection-member-${randomUUID()}` as never, addedAt: now }
+    })
+    const changes: MutationChangeItemV1[] = [change, ...memberships.map((membership): MutationChangeItemV1 => ({
+      type: 'collection_membership_add', membership,
+      inverse: { type: 'collection_membership_remove', membership },
+      forward: { type: 'collection_membership_add', membership },
+      appliedFingerprint: `collection-membership:${membership.relationId}:present`,
+    }))]
+    const changeSet = this.#buildChangeSet({ projectId: input.projectId, operationId: input.origin?.operationId ?? `collection-create-${randomUUID()}`, actorKind: input.actorKind ?? 'web', changes })
+    this.#metadata.runCurationMutation({ projectId: input.projectId, collectionAdds: [collection], collectionMembershipAdds: memberships, changeSet })
     this.#publishChangeSet(changeSet, input.origin)
     return { collection, changeSet }
   }
@@ -324,6 +339,75 @@ export class MutationSafetyService {
    * 原子复合事务（membership 写 + ChangeSet 同事务）；已成员 → 无 mutation、返回 undefined（调用方报 already-member）。
    * 存量 POST /workspaces/{id}/members 路由维持原状（ChangeSet 覆盖 census 是 F7A 范围）。
    */
+  /** A Railway selection is one reversible mutation, including its durable receipt.
+   * Resolution and source checks run under the existing SQLite write transaction. */
+  receiveWorkspaceBatch(request: RailwayReceiveRequestV1 | import('@local-creative-os/contracts').PortalReceiveRequestV1, resolve: () => RailwayDestinationV1): RailwayReceiveOutcomeV1 {
+    let outcome: RailwayReceiveOutcomeV1 | undefined
+    let committed: MutationChangeSetV1 | undefined
+    this.#metadata.runCurationMutation(() => {
+      const previous = this.#metadata.getCurationReceipt(request.operationId)
+      if (previous) {
+        if (!previous.railway || JSON.stringify(previous.railway.request) !== JSON.stringify(request))
+          throw new Error('同一操作编号不能改投另一目标或另一组选中材料。')
+        if (previous.changeSetId && this.#metadata.getMutationChangeSet(previous.changeSetId)?.status !== 'applied')
+          throw new Error('原操作已撤销，请重新确认后发起新的投递。')
+        outcome = previous.railway.outcome
+        return {projectId: request.projectId}
+      }
+      const destination = resolve()
+      if (!destination.available || destination.ref.kind !== 'worksite' || !destination.workspaceId)
+        throw new Error(destination.reason ?? '当前目的地不接收材料。')
+      const workspaceId = destination.workspaceId
+      const members = new Set(this.#metadata.listWorkspaceMembers(workspaceId as never).map((m) => String(m.artifactViewId)))
+      const notes = new Set(this.#metadata.listWorkspaceEntityMembers(workspaceId as never).filter((m) => m.entityType === 'note').map((m) => m.entityId))
+      const changes: MutationChangeItemV1[] = []
+      const results: AssemblyApplyItemResultV1[] = []
+      const now = new Date().toISOString()
+      const viewsToAdd: {workspaceId: never; viewId: never; addedBy: 'user'; addedAt: string}[] = []
+      const notesToAdd: {workspaceId: never; entityType: 'note'; entityId: string; addedBy: 'user'; addedAt: string}[] = []
+      for (const sourceRef of request.sourceRefs) {
+        if (sourceRef.kind === 'artifactView') {
+          const view = this.#metadata.getArtifactView(sourceRef.id)
+          const artifact = view && this.#metadata.getArtifact(String(view.artifactId))
+          if (!view || !artifact || String(artifact.projectId) !== request.projectId) throw new Error('材料视图不存在或属于另一个项目；本批未写入。')
+          const revision = this.#metadata.getArtifactRevision(String(view.revisionId ?? artifact.currentRevisionId ?? ''))
+          if (!revision || String(revision.artifactId) !== String(view.artifactId)) throw new Error('材料版本不存在或身份错配；本批未写入。')
+          const existing = members.has(sourceRef.id)
+          results.push({sourceRef, status:existing ? 'skipped' : 'applied', channel:existing ? 'already-member' : 'workspace-membership', memberViewId:sourceRef.id})
+          if (existing) continue
+          viewsToAdd.push({workspaceId:workspaceId as never,viewId:sourceRef.id as never,addedBy:'user',addedAt:now})
+          changes.push({type:'workspace_membership_add',workspaceId,viewId:sourceRef.id,
+            inverse:{type:'workspace_membership_remove',workspaceId,viewId:sourceRef.id},
+            forward:{type:'workspace_membership_add',workspaceId,viewId:sourceRef.id},
+            appliedFingerprint:`workspace:${workspaceId}:member:${sourceRef.id}:present`})
+        } else if (sourceRef.kind === 'note') {
+          if (String(this.#metadata.getNote(sourceRef.id)?.projectId ?? '') !== request.projectId)
+            throw new Error('笔记不存在或属于另一个项目；本批未写入。')
+          const existing = notes.has(sourceRef.id)
+          results.push({sourceRef,status:existing ? 'skipped' : 'applied',channel:existing ? 'already-member' : 'workspace-membership'})
+          if (existing) continue
+          notesToAdd.push({workspaceId:workspaceId as never,entityType:'note',entityId:sourceRef.id,addedBy:'user',addedAt:now})
+          changes.push({type:'workspace_entity_membership_add',workspaceId,entityType:'note',entityId:sourceRef.id,
+            inverse:{type:'workspace_entity_membership_remove',workspaceId,entityType:'note',entityId:sourceRef.id},
+            forward:{type:'workspace_entity_membership_add',workspaceId,entityType:'note',entityId:sourceRef.id},
+            appliedFingerprint:`workspace:${workspaceId}:entity:note:${sourceRef.id}:present`})
+        } else throw new Error('该材料类型尚无原子接收能力；整组选中材料均未投递。')
+      }
+      committed = changes.length ? this.#buildChangeSet({projectId:request.projectId,operationId:request.operationId,actorKind:'web',changes}) : undefined
+      outcome = {status:'committed',operationId:request.operationId,destination,spatial:{status:'not_required'},
+        result:{schemaVersion:1,projectId:request.projectId,allApplied:true,
+          results:results.map((r) => r.status === 'applied' && committed ? {...r,changeSetId:committed.id} : r),
+          ...(committed ? {changeSetId:committed.id} : {})}}
+      return {projectId:request.projectId,workspaceMembershipAdds:viewsToAdd,workspaceEntityMembershipAdds:notesToAdd,
+        ...(committed ? {changeSet:committed} : {}),
+        receipt:{schemaVersion:0,operationId:request.operationId,applied:true,completedSteps:[],createdAt:now,
+          ...(committed ? {changeSetId:committed.id} : {}),railway:{request,outcome}}}
+    })
+    if (!outcome) throw new Error('未取得已提交回执。')
+    if (committed) this.#publishChangeSet(committed)
+    return outcome
+  }
+
   addWorkspaceMember(input: {
     readonly projectId: string
     readonly workspaceId: string
@@ -655,6 +739,13 @@ export class MutationSafetyService {
     const changeSet = this.#metadata.getMutationChangeSet(changeSetId)
     if (changeSet === undefined) throw new Error('Change set not found.')
     if (changeSet.status !== 'applied') return { revertable: false, changeSetId }
+    if (changeSet.changes.some((change) => change.type === 'collection_identity_add')
+      && changeSet.changes.some((change) => change.type === 'collection_membership_add')) {
+      const changed = this.#metadata.transitionCollectionCreation(changeSetId, 'undo')
+      if (!changed) return { revertable: false, reason: 'TOUCHED_STATE_CHANGED_AFTER_APPLY', changeSetId }
+      this.#publishChangeSet(this.#metadata.getMutationChangeSet(changeSetId)!, origin)
+      return { revertable: true, changeSetId }
+    }
 
     // 1. 全部 touched state 必须仍等于本 ChangeSet apply 后的状态。
     for (const change of changeSet.changes) {
@@ -843,6 +934,13 @@ export class MutationSafetyService {
     const changeSet = this.#metadata.getMutationChangeSet(changeSetId)
     if (changeSet === undefined) throw new Error('Change set not found.')
     if (changeSet.status !== 'reverted') return { revertable: false, changeSetId }
+    if (changeSet.changes.some((change) => change.type === 'collection_identity_add')
+      && changeSet.changes.some((change) => change.type === 'collection_membership_add')) {
+      const changed = this.#metadata.transitionCollectionCreation(changeSetId, 'redo')
+      if (!changed) return { revertable: false, reason: 'TOUCHED_STATE_CHANGED_AFTER_APPLY', changeSetId }
+      this.#publishChangeSet(this.#metadata.getMutationChangeSet(changeSetId)!, origin)
+      return { revertable: true, changeSetId }
+    }
 
     for (const change of changeSet.changes) {
       if (change.type === 'presentation_state') {

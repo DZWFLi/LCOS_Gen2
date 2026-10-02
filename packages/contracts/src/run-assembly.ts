@@ -114,3 +114,25 @@ export interface RunRecipeV0 {
   readonly provider?: string
   readonly createdAt: string
 }
+
+
+/** Lightweight, complete read projection for spatial execution. No prompt bodies,
+ * provider secrets, geometry ownership, or second Run store. */
+export interface RunCanvasProjection {
+  readonly id: string
+  readonly projectId: string
+  readonly workspaceId?: string
+  readonly title: string
+  readonly status: import('@local-creative-os/domain').RunStatus
+  readonly pendingReturnCount: number
+  readonly pendingArtifactIds: readonly string[]
+  readonly resultSlotId?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+export interface ProjectExecutionProjection {
+  readonly projectId: string
+  readonly runs: readonly RunCanvasProjection[]
+  readonly resultSlots: readonly ResultSlotV0[]
+}

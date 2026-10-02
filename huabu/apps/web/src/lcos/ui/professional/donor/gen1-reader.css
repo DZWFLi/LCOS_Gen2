@@ -11,7 +11,7 @@
 .lcos-gen1-reader-document .reader-code { display: block; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
 .lcos-gen1-reader-document mark { background: color-mix(in srgb, var(--gen2-accent) 18%, transparent); color: inherit; }
 .lcos-reader-figure:has([data-donor-image-zoom]) { display: flex; flex-direction: column; align-self: stretch; width: 100%; min-height: 0; height: 100%; }
-.lcos-image-zoom-stage { position: relative; min-width: 0; min-height: 240px; flex: 1; width: 100%; overflow: hidden; background: var(--gen2-raised); border-radius: 10px; touch-action: none; cursor: grab; }
+.lcos-image-zoom-stage { position: relative; min-width: 0; min-height: 120px; flex: 1; width: 100%; overflow: hidden; background: var(--gen2-raised); border-radius: 10px; touch-action: none; cursor: grab; }
 .lcos-image-zoom-stage.is-dragging { cursor: grabbing; }
 .lcos-image-zoom-stage:focus-visible { outline: 2px solid var(--gen2-accent); outline-offset: 2px; }
 .lcos-image-zoom-pan { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
@@ -25,3 +25,6 @@
 
 .lcos-image-zoom-error { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--gen2-muted); background: var(--gen2-raised); font-size: 13px; }
 .lcos-image-zoom-toolbar button:disabled { opacity: .45; }
+
+.lcos-image-zoom-toolbar { flex-wrap: wrap; max-width: calc(100% - 16px); }
+.lcos-image-zoom-toolbar button[aria-pressed="true"] { background: var(--gen2-raised); }

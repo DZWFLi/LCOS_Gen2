@@ -7,6 +7,7 @@ export type LcosNodeSpecies =
   | 'working' // 当前加工中的状态（活跃边/轻状态）
   | 'draft' // AI 派生产出（Draft/Pending/Review，绝不冒充 Current）
   | 'context-reference' // 引用/集合语义、来源锚点
+  | 'result-slot' // canonical reservation, not an Artifact
   | 'run' // 过程与执行状态（queued/running/waiting_input/review/failed）
   | 'decision' // 决策/版本标记
   | 'glyth' // Conversation/Agent 活身份（活动/注意力/LOD）
@@ -23,6 +24,7 @@ export interface NodeSpeciesSource {
   readonly sourceKind?: string;
   readonly sourceRunId?: string;
   readonly managed?: boolean;
+  readonly revisionStatus?: 'draft' | 'current' | 'superseded';
 }
 
 export const NODE_SPECIES_LABEL: Readonly<Record<LcosNodeSpecies, string>> = {
@@ -31,6 +33,7 @@ export const NODE_SPECIES_LABEL: Readonly<Record<LcosNodeSpecies, string>> = {
   draft: '草稿',
   'context-reference': '引用',
   run: '运行',
+  'result-slot': '结果位',
   decision: '决策',
   glyth: '会话',
   collection: '集合',
@@ -54,6 +57,8 @@ export function resolveNodeSpecies(source: NodeSpeciesSource): LcosNodeSpecies {
       return 'collection';
     case 'conversation':
       return 'glyth';
+    case 'result-slot':
+      return 'result-slot';
     case 'run':
       return 'run';
     case 'skill':
@@ -73,7 +78,7 @@ export function resolveNodeSpecies(source: NodeSpeciesSource): LcosNodeSpecies {
   }
 
   // AI 派生产出（Draft）：有来源 Run 且为 managed 输出
-  if (source.sourceRunId !== undefined && source.managed === true) return 'draft';
+  if (source.sourceRunId !== undefined && source.managed === true && source.revisionStatus !== 'current' && source.revisionStatus !== 'superseded') return 'draft';
 
   // 其余按内容族归为 source（图片/文档/文本/网页/音视频/文件）
   if (
@@ -95,6 +100,7 @@ export function resolveNodeSpecies(source: NodeSpeciesSource): LcosNodeSpecies {
  */
 export function resolveNodeSpeciesFromEntityType(entityType: string | undefined): LcosNodeSpecies {
   switch (entityType) {
+    case 'result-slot': return 'result-slot';
     case 'collection':
       return 'collection';
     case 'conversation':

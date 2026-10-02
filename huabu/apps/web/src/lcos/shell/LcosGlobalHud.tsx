@@ -3,17 +3,19 @@
 // 全部入口只发命令（shell store / worksite nav），不建第二 camera/search/graph。
 
 import { useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { beginChildWorksiteNavigation } from '../navigation/childWorksiteNavigation';
+import { useLcosShellStore } from './lcosShellStore';
 
 
 import { LcosRailway } from './LcosRailway';
 import { type LcosSurfaceKey } from './lcosShellStore';
 import { LcosSurfaceDock } from './LcosSurfaceDock';
-import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { NavigationHudProvider } from '../navigation/NavigationHudSlot';
 import { LcosFocusWhere } from '../navigation/LcosFocusWhere';
 import { ColorPinHud } from '../pin/ColorPinHud';
 
-import type { RailwayDestinationProjection } from '../navigation/railwayProjection';
+import type { RailwayDestinationV1 } from '@local-creative-os/contracts';
 
 export interface LcosGlobalHudProps {
   readonly projectId: string;
@@ -30,30 +32,17 @@ export interface LcosGlobalHudProps {
 }
 
 export function LcosGlobalHud(props: LcosGlobalHudProps): React.JSX.Element {
-  const { switchWorksite } = useLcosWorksiteNav({
-    projectId: props.projectId,
-    canvasBySurface: props.canvasBySurface,
-    ensureCanvas: props.ensureCanvas,
-  });
-  const { ensureWorkspaceCanvas } = props;
-  const activateDestination = useCallback(
-    async (destination: RailwayDestinationProjection): Promise<void> => {
-      if (destination.surface === undefined) return;
-      if (destination.workspaceId === undefined) {
-        const switched = await switchWorksite(destination.surface);
-        if (!switched) throw new Error('未能进入目标现场，请重试');
-        return;
-      }
-      const canvasId = await ensureWorkspaceCanvas(destination.workspaceId);
-      if (canvasId === undefined) {
-        throw new Error('目标现场还没有可用画布');
-      }
-      if (!await switchWorksite(destination.surface, { canvasId, workspaceId: destination.workspaceId })) {
-        throw new Error('未能读取目标现场，请重试');
-      }
-    },
-    [ensureWorkspaceCanvas, switchWorksite],
-  );
+  const navigate = useNavigate();
+  const activateDestination = useCallback(async (destination: RailwayDestinationV1): Promise<void> => {
+    if (!destination.available || !destination.surface || !destination.canvasId || !destination.workspaceId)
+      throw new Error('目的地没有已确认的工作现场。');
+    const shell = useLcosShellStore.getState();
+    if (shell.projectId !== props.projectId) throw new Error('项目已经切换，未进入旧目的地。');
+    const entered = await beginChildWorksiteNavigation({projectId:props.projectId,sourceSurface:shell.activeSurface,
+      ...(shell.activeWorkspaceId ? {sourceWorkspaceId:shell.activeWorkspaceId} : {}),sourceWasChild:props.childWorkspaceId!==undefined,
+      targetSurface:destination.surface,targetWorkspace:{id:destination.workspaceId as never,canvasId:destination.canvasId},navigate});
+    if (!entered) throw new Error('未能进入目标现场，来源状态保留。');
+  },[props.projectId,props.childWorkspaceId,navigate]);
 
   return (
     <NavigationHudProvider>

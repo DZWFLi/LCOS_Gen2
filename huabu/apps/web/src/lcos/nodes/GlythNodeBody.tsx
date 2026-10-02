@@ -7,7 +7,7 @@ import {
   glythInputFromCollaborationState,
   resolveGlythPresentation,
 } from '@local-creative-os/web-gen2';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useLcosNodePresentation } from '@/lcos-seam/nodePresentation';
 import useCanvasStore from '@/store/canvasStore';
@@ -15,7 +15,9 @@ import useCanvasStore from '@/store/canvasStore';
 import { NodeColorPinMarkers } from './NodeColorPinMarkers';
 import { NodeReferenceMarker } from './NodeReferenceMarker';
 import { useLcosDensity } from './useLcosDensity';
+import { glythDropFeedback, glythSessionLabel, isGlythDropTarget, mayOpenGlythFromKeyboard } from '../collaboration/glythInteraction';
 import { useCollaborationSession } from '../collaboration/useCollaborationSession';
+import { isDropPointExposed } from '../drop/dropOcclusion';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
 import { useLcosDropStore } from '../lcosDropState';
 import { useLcosReferenceStore } from '../lcosReferenceState';
@@ -47,23 +49,37 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
   const collaborationEntry = useCollaborationSession(projectId, conversationId);
   const projection = collaborationEntry?.status === 'ready' ? collaborationEntry.projection : undefined;
   const collabInput = glythInputFromCollaborationState(projection?.userState);
-  const receiving = useLcosDropStore((state) => state.state.status === 'preview'
-    && state.resolution?.status === 'ready'
-    && state.resolution.intent.kind === 'assembly-apply'
-    && state.resolution.intent.targetRef.kind === 'conversation'
-    && state.resolution.intent.targetRef.id === conversationId);
+  const receiving = useLcosDropStore((state) => (state.state.status === 'preview' || state.state.status === 'committing')
+    && isGlythDropTarget(conversationId, state.resolution));
+  const committing = useLcosDropStore((state) => state.state.status === 'committing' && isGlythDropTarget(conversationId, state.resolution));
+  const dropFeedback = useLcosDropStore((state) => state.feedback);
+  const lastReceipt = useRef(dropFeedback?.receipt.transactionId);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  useEffect(() => {
+    const id = dropFeedback?.receipt.transactionId;
+    if (!id || lastReceipt.current === id) return;
+    lastReceipt.current = id;
+    if (!glythDropFeedback(conversationId, dropFeedback)) return;
+    setFlashId(id);
+  }, [dropFeedback, conversationId]);
+  useEffect(() => {
+    if (flashId === null) return;
+    const timer = setTimeout(() => setFlashId(null), 3500);
+    return () => clearTimeout(timer);
+  }, [flashId]);
+  const feedback = flashId === dropFeedback?.receipt.transactionId ? glythDropFeedback(conversationId, dropFeedback) : undefined;
   const resolvedPose = resolveGlythPresentation({
     ...collabInput,
     ...(presentation?.phase === undefined ? {} : { phase: presentation.phase }),
   });
   const pose = receiving ? 'curious' : resolvedPose;
-  const attention = projection?.userState === 'needs_user';
+  const attention = projection?.userState === 'needs_user' || Boolean(projection?.activity.pendingInputId)
+    || projection?.recentReturns.some((item) => item.status === 'pending_review') || projection?.recovery?.state === 'recoverable';
   const stateLabel = conversationId === null
     ? '未绑定会话'
-    : projection === undefined
-      ? collaborationEntry?.status === 'error' ? '状态读取失败' : '正在读取状态'
-      : ({ ready: '可以继续', thinking: '正在思考', working: '正在执行',
-        needs_user: '等你回应', done: '本轮已完成', unavailable: '暂时无法连接' } as const)[projection.userState];
+    : committing ? '正在保存会话上下文'
+      : receiving ? '松手保存到会话上下文'
+        : feedback?.label ?? glythSessionLabel(projection, collaborationEntry?.status);
   const isMark = density === 'mark';
   const layout = glythBodyLayout(presentation?.worldWidth, presentation?.worldHeight, presentation?.zoom);
   const stateFontSize = Math.max(10, layout.labelSize - 0.75);
@@ -89,11 +105,16 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
     const target: Omit<DropTargetRegistration, 'rect'> = {
       targetId,
       kind: 'collaboration-reference',
+      nodeId: input.nodeId,
       label: `会话上下文 · ${title}`,
       priority: 20,
       enabled: canReceive,
       ...(!canReceive ? { ineligibleReason: '该会话尚未完成状态读取，暂不可接收引用' } : {}),
       semantic: { kind: 'collaboration-reference', conversationId },
+      acceptsPoint: (point) => {
+        const element = bodyRef.current;
+        return element !== null && isDropPointExposed(element, point);
+      },
       readRect: () => {
         const body = bodyRef.current;
         return body?.isConnected ? rectFromDomRect(body.getBoundingClientRect()) : undefined;
@@ -127,6 +148,8 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
       data-lcos-glyth-tone="ink"
       data-lcos-glyth-pose={pose}
       data-lcos-glyth-attention={attention ? 'needs_user' : undefined}
+      data-lcos-glyth-drop-state={committing ? 'committing' : receiving ? 'receiving' : feedback ? 'receipt' : undefined}
+      aria-busy={committing || collaborationEntry?.status === 'loading'}
       data-lcos-glyth-user-state={projection?.userState}
       data-lcos-density={density}
       data-figma-node-id="5388:118"
@@ -135,7 +158,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
         openWorkView();
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.target === event.currentTarget && mayOpenGlythFromKeyboard({ key: event.key, repeat: event.repeat, isComposing: event.nativeEvent.isComposing })) {
           event.preventDefault();
           event.stopPropagation();
           openWorkView();
@@ -153,6 +176,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
       <GlythBodyView
         pose={pose}
         {...(projection?.userState === undefined ? {} : { userState: projection.userState })}
+        reaction={feedback?.reaction}
         selected={selected}
         mark={isMark}
         paused={presentation?.phase === 'dragging' || presentation?.phase === 'resizing'}
@@ -182,6 +206,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
           </span>
           {stateHasRoom && (
             <span
+              role="status" aria-live="polite"
               data-lcos-glyth-state={projection?.userState ?? collaborationEntry?.status ?? 'loading'}
               className="lcos-glyth-state-label truncate"
               style={{

@@ -28,7 +28,8 @@ function render(element: React.JSX.Element): HTMLElement {
   act(() => {
     root.render(element);
   });
-  return container;
+  // Feedback is portal-mounted so professional windows cannot clip it.
+  return document.body;
 }
 
 afterEach(() => {

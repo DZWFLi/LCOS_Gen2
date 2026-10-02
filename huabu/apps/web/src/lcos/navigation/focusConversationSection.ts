@@ -1,9 +1,13 @@
 /** Presentation-only focus into the existing WorkView; no second window or session state. */
-export type ConversationSectionAction = 'answer-input' | 'review-result' | 'view-progress';
+export type ConversationSectionAction = 'answer-input' | 'review-result' | 'view-progress' | 'recover-session' | 'session-diagnostics' | 'session-options' | 'cancel-work';
 const SECTIONS: Record<ConversationSectionAction, string> = {
   'answer-input': '[data-lcos-waiting-input]',
   'review-result': '[data-lcos-artifact-return]',
   'view-progress': '[data-lcos-conversation-timeline]',
+  'recover-session': '[data-lcos-user-recovery]',
+  'session-diagnostics': '[data-lcos-diagnostics-host]',
+  'session-options': '[data-lcos-conversation-composer]',
+  'cancel-work': '[data-lcos-cancel-work-host]',
 };
 
 export function focusConversationSection(conversationId: string, action: ConversationSectionAction): () => void {
@@ -21,6 +25,10 @@ export function focusConversationSection(conversationId: string, action: Convers
       .find((element) => element.dataset.lcosWindowTarget === conversationId && !element.closest('[hidden], [aria-hidden="true"]'));
     const section = body?.querySelector<HTMLElement>(SECTIONS[action]);
     if (body === undefined || section === null || section === undefined) return false;
+    if (action === 'session-diagnostics') {
+      const toggle = section.querySelector<HTMLButtonElement>('[data-lcos-diagnostics-toggle]');
+      if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click();
+    }
     // WaitingInput may mount a loading section first. Wait for its actual response control.
     const control = action === 'view-progress' ? null : section.querySelector<HTMLElement>(
       'textarea:not(:disabled), input:not(:disabled), button:not(:disabled), select:not(:disabled)',

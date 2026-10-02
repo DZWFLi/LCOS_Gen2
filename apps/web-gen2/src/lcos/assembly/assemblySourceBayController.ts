@@ -18,6 +18,9 @@ import type {
   SkillCatalogEntryV1,
   SkillCatalogReadV1,
   WarehouseSnapshotV1,
+  WarehouseMaterialFilterV1,
+  WarehouseSortV1,
+  WarehouseQueryV1,
 } from '@local-creative-os/contracts';
 import type { CoreAssemblyClient } from '../../backend/assembly.js';
 import type { CoreCaptureSpaceClient } from '../../backend/captureSpace.js';
@@ -53,6 +56,8 @@ export interface AssemblySourceBayStateV1 {
   readonly warehouseNextCursor?: string;
   readonly warehouseLoadingMore: boolean;
   readonly warehouseSearch: string;
+  readonly warehouseMaterialFilter: WarehouseMaterialFilterV1;
+  readonly warehouseSort: WarehouseSortV1;
   /** 兼容既有消费点 = warehouseErrorCode。 */
   readonly errorCode?: string;
   /** Capture 路（system-level staging）。 */
@@ -65,6 +70,7 @@ export interface AssemblySourceBayStateV1 {
   readonly resourceErrorCode?: string;
   /** Skills 路（分层只读 catalog）。 */
   readonly skillStatus: AssemblyPathStatusV1;
+  readonly skillSearch: string;
   readonly skills?: readonly SkillCatalogEntryV1[];
   readonly skillErrorCode?: string;
   readonly revision: number;
@@ -80,6 +86,7 @@ export class AssemblySourceBayController {
   private state: AssemblySourceBayStateV1 | undefined;
   private epoch: AssemblySourceBayEpoch | undefined;
   private readonly pathGeneration: Record<AssemblySourceTabV1, number> = { project: 0, capture: 0, sources: 0, skills: 0 };
+  private readonly pathReads: Partial<Record<AssemblySourceTabV1, AbortController>> = {};
   private readonly listeners = new Set<() => void>();
   private readonly deps: AssemblySourceBayDepsV1;
 
@@ -108,13 +115,16 @@ export class AssemblySourceBayController {
       warehouseStatus: 'loading',
       warehouseLoadingMore: false,
       warehouseSearch: '',
+      warehouseMaterialFilter: 'all',
+      warehouseSort: 'updated',
+      skillSearch: '',
       captureStatus: 'idle',
       resourceStatus: 'idle',
       skillStatus: 'idle',
       revision: 0,
     };
     this.notify();
-    void this.loadWarehouseFirstPage(this.pathGeneration.project, '');
+    void this.loadWarehouseFirstPage(this.pathGeneration.project);
   }
 
   /** 切 tab 只改 tab，不发请求（source data 保留；由 UI 显式 loadTab 懒加载）。 */
@@ -161,15 +171,43 @@ export class AssemblySourceBayController {
     if (this.epoch === undefined) return;
     const generation = this.bumpPath('project');
     this.setState({ warehouseStatus: 'loading', warehouseErrorCode: undefined, errorCode: undefined, warehouseLoadingMore: false });
-    void this.loadWarehouseFirstPage(generation, this.state?.warehouseSearch ?? '');
+    void this.loadWarehouseFirstPage(generation);
   }
 
   /** filter/query 变化：重置 cursor 并重取第一页（不追加到旧结果）。 */
   setWarehouseSearch(search: string): void {
+    this.setWarehouseQuery({ search });
+  }
+
+  /** A query change starts a new result set; a refresh retains the visible set. */
+  setWarehouseQuery(query: Pick<WarehouseQueryV1, 'search' | 'materialFilter' | 'sort'>): void {
     if (this.state === undefined) return;
     const generation = this.bumpPath('project');
-    this.setState({ warehouseSearch: search, warehouseStatus: 'loading', warehouseErrorCode: undefined, errorCode: undefined, warehouseLoadingMore: false, warehouseNextCursor: undefined });
-    void this.loadWarehouseFirstPage(generation, search);
+    this.setState({
+      warehouseSearch: query.search ?? this.state.warehouseSearch,
+      warehouseMaterialFilter: query.materialFilter ?? this.state.warehouseMaterialFilter,
+      warehouseSort: query.sort ?? this.state.warehouseSort,
+      warehouse: undefined, warehouseStatus: 'loading', warehouseErrorCode: undefined,
+      errorCode: undefined, warehouseLoadingMore: false, warehouseNextCursor: undefined,
+    });
+    void this.loadWarehouseFirstPage(generation);
+  }
+
+  setSkillSearch(search: string): void {
+    if (this.state === undefined) return;
+    const generation = this.bumpPath('skills');
+    this.setState({ skillSearch: search, skills: undefined, skillStatus: 'loading', skillErrorCode: undefined });
+    void this.loadSkills(generation);
+  }
+
+  private warehouseQuery(): WarehouseQueryV1 {
+    const state = this.state;
+    return {
+      ...(state?.warehouseSearch.trim() ? { search: state.warehouseSearch } : {}),
+      ...(state?.warehouseMaterialFilter !== undefined && state.warehouseMaterialFilter !== 'all' ? { materialFilter: state.warehouseMaterialFilter } : {}),
+      ...(state?.warehouseSort !== undefined && state.warehouseSort !== 'updated' ? { sort: state.warehouseSort } : {}),
+      limit: ASSEMBLY_WAREHOUSE_PAGE_SIZE,
+    };
   }
 
   /** 追加下一页：仅在已有 nextCursor 且没有 in-flight 时；按 canonical 身份去重。 */
@@ -182,14 +220,16 @@ export class AssemblySourceBayController {
     const generation = this.pathGeneration.project;
     this.setState({ warehouseLoadingMore: true });
     void this.deps.assembly
-      .queryWarehouse(epoch.projectId, { search: state.warehouseSearch, limit: ASSEMBLY_WAREHOUSE_PAGE_SIZE, cursor }, epoch.controller.signal)
+      .queryWarehouse(epoch.projectId, { ...this.warehouseQuery(), cursor }, this.readSignal('project'))
       .then((page) => {
         if (!this.isCurrent('project', generation)) return;
         const current = this.state;
         if (current === undefined) return;
+        requireWarehouseProject(page, epoch.projectId);
         const merged = dedupeWarehouseItems(current.warehouse?.items ?? [], page.items);
         this.setState({
           warehouseLoadingMore: false,
+          warehouseErrorCode: undefined, errorCode: undefined,
           warehouse: { ...page, items: merged },
           warehouseNextCursor: page.nextCursor,
         });
@@ -237,25 +277,25 @@ export class AssemblySourceBayController {
 
   // ---- transient reads（预览/描述符/技能正文；不改 Source Bay 状态）----
 
-  async previewCapture(captureId: string): Promise<CaptureSpacePayloadPreviewV1> {
+  async previewCapture(captureId: string, signal?: AbortSignal): Promise<CaptureSpacePayloadPreviewV1> {
     const epoch = this.requireEpoch();
     const client = this.deps.captureSpace;
     if (client === undefined) throw new Error('Capture Space is not configured.');
-    return client.preview(captureId, epoch.controller.signal);
+    return client.preview(captureId, signal ? AbortSignal.any([signal, epoch.controller.signal]) : epoch.controller.signal);
   }
 
-  async readResourceDescriptor(resourceId: string): Promise<ResourceDescriptorV0> {
+  async readResourceDescriptor(resourceId: string, signal?: AbortSignal): Promise<ResourceDescriptorV0> {
     const epoch = this.requireEpoch();
     const client = this.deps.resources;
     if (client === undefined) throw new Error('Resource service is not configured.');
-    return client.descriptor(epoch.projectId, resourceId, epoch.controller.signal);
+    return client.descriptor(epoch.projectId, resourceId, signal ? AbortSignal.any([signal, epoch.controller.signal]) : epoch.controller.signal);
   }
 
-  async readSkill(skillId: string): Promise<SkillCatalogReadV1> {
+  async readSkill(skillId: string, signal?: AbortSignal): Promise<SkillCatalogReadV1> {
     const epoch = this.requireEpoch();
     const client = this.deps.skills;
     if (client === undefined) throw new Error('Skill catalog is not configured.');
-    return client.read(epoch.projectId, skillId, epoch.controller.signal);
+    return client.read(epoch.projectId, skillId, signal ? AbortSignal.any([signal, epoch.controller.signal]) : epoch.controller.signal);
   }
 
   // ---- internals ----
@@ -270,28 +310,52 @@ export class AssemblySourceBayController {
   }
 
   private bumpPath(tab: AssemblySourceTabV1): number {
+    this.pathReads[tab]?.abort();
+    delete this.pathReads[tab];
     this.pathGeneration[tab] += 1;
     return this.pathGeneration[tab];
   }
 
   private bumpAllPaths(): void {
-    for (const tab of ['project', 'capture', 'sources', 'skills'] as const) this.pathGeneration[tab] += 1;
+    for (const tab of ['project', 'capture', 'sources', 'skills'] as const) this.bumpPath(tab);
+  }
+
+  private readSignal(tab: AssemblySourceTabV1): AbortSignal {
+    this.pathReads[tab]?.abort();
+    const controller = new AbortController();
+    this.pathReads[tab] = controller;
+    // open/dispose abort every path via bumpAllPaths, without accumulating listeners.
+    return controller.signal;
   }
 
   private isCurrent(tab: AssemblySourceTabV1, generation: number): boolean {
     return this.epoch !== undefined && this.pathGeneration[tab] === generation;
   }
 
-  private async loadWarehouseFirstPage(generation: number, search: string): Promise<void> {
+  private async loadWarehouseFirstPage(generation: number): Promise<void> {
     const epoch = this.epoch;
     if (epoch === undefined) return;
     try {
-      const snapshot = await this.deps.assembly.queryWarehouse(
-        epoch.projectId,
-        search.trim() === '' ? { limit: ASSEMBLY_WAREHOUSE_PAGE_SIZE } : { search, limit: ASSEMBLY_WAREHOUSE_PAGE_SIZE },
-        epoch.controller.signal,
-      );
+      const query = this.warehouseQuery();
+      const signal = this.readSignal('project');
+      const visibleCount = this.state?.warehouse?.items.length ?? 0;
+      let snapshot = await this.deps.assembly.queryWarehouse(epoch.projectId, query, signal);
       if (!this.isCurrent('project', generation)) return;
+      requireWarehouseProject(snapshot, epoch.projectId);
+      // A refresh of a scrolled multi-page field must not shrink it back to
+      // page one. Re-read only the already exposed range using real cursors.
+      let items = [...snapshot.items];
+      const readCursors = new Set<string>();
+      while (items.length < visibleCount && snapshot.nextCursor !== undefined) {
+        const cursor = snapshot.nextCursor;
+        if (readCursors.has(cursor)) throw new Error('仓库分页重复，请重试读取。');
+        readCursors.add(cursor);
+        const page = await this.deps.assembly.queryWarehouse(epoch.projectId, { ...query, cursor }, signal);
+        if (!this.isCurrent('project', generation)) return;
+        requireWarehouseProject(page, epoch.projectId);
+        items = dedupeWarehouseItems(items, page.items);
+        snapshot = { ...page, items };
+      }
       this.setState({
         warehouseStatus: 'loaded',
         warehouse: snapshot,
@@ -312,7 +376,7 @@ export class AssemblySourceBayController {
     if (epoch === undefined) return;
     const generation = this.bumpPath('project');
     this.setState({ warehouseStatus: 'loading', warehouseErrorCode: undefined, errorCode: undefined, warehouseLoadingMore: false });
-    await this.loadWarehouseFirstPage(generation, this.state?.warehouseSearch ?? '');
+    await this.loadWarehouseFirstPage(generation);
   }
 
   private async loadCapture(generation: number): Promise<void> {
@@ -324,7 +388,7 @@ export class AssemblySourceBayController {
       return;
     }
     try {
-      const snapshot = await client.snapshot(undefined, epoch.controller.signal);
+      const snapshot = await client.snapshot(undefined, this.readSignal('capture'));
       if (!this.isCurrent('capture', generation)) return;
       this.setState({ captureStatus: 'loaded', captureItems: snapshot.items, captureErrorCode: undefined });
     } catch (error: unknown) {
@@ -350,7 +414,7 @@ export class AssemblySourceBayController {
       return;
     }
     try {
-      const resources = await client.list(epoch.projectId, epoch.controller.signal);
+      const resources = await client.list(epoch.projectId, this.readSignal('sources'));
       if (!this.isCurrent('sources', generation)) return;
       this.setState({ resourceStatus: 'loaded', resources, resourceErrorCode: undefined });
     } catch (error: unknown) {
@@ -376,7 +440,7 @@ export class AssemblySourceBayController {
       return;
     }
     try {
-      const skills = await client.list(epoch.projectId, undefined, epoch.controller.signal);
+      const skills = await client.list(epoch.projectId, this.state?.skillSearch || undefined, this.readSignal('skills'));
       if (!this.isCurrent('skills', generation)) return;
       this.setState({ skillStatus: 'loaded', skills, skillErrorCode: undefined });
     } catch (error: unknown) {
@@ -404,8 +468,14 @@ export class AssemblySourceBayController {
   }
 }
 
+function requireWarehouseProject(snapshot: WarehouseSnapshotV1, projectId: string): void {
+  if (!snapshot || snapshot.schemaVersion !== 1 || snapshot.projectId !== projectId || !Array.isArray(snapshot.items)) {
+    throw Object.assign(new Error('仓库返回的项目身份不一致，已保留当前材料。'), { code: 'warehouse_identity_mismatch' });
+  }
+}
+
 function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
+  return (error instanceof Error && error.name === 'AbortError') || (error as { code?: string } | null)?.code === 'aborted';
 }
 
 /** 追加分页时按 canonical 身份去重（kind:id），不产生重复卡。 */
@@ -413,8 +483,9 @@ export function dedupeWarehouseItems<T extends WarehouseItemLikeV1>(
   existing: readonly T[],
   incoming: readonly T[],
 ): T[] {
+  const incomingByKey = new Map(incoming.map((item) => [`${item.kind}:${item.entityRef.id}`, item]));
   const seen = new Set(existing.map((item) => `${item.kind}:${item.entityRef.id}`));
-  const merged = [...existing];
+  const merged = existing.map((item) => incomingByKey.get(`${item.kind}:${item.entityRef.id}`) ?? item);
   for (const item of incoming) {
     const key = `${item.kind}:${item.entityRef.id}`;
     if (seen.has(key)) continue;

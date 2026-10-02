@@ -1,764 +1,327 @@
-// LcosRailway — 项目具体目的地导航脊柱（Figma Railway 5385:283）。
-// Railway 不承担 Main/Context/Workflow 一级切换；SurfaceDock 才是唯一一级入口。
-// 这里读取 Core orderedRefs，按 kind + viewId 解析真实目的地；无法解析的 ref
-// 保留为 disabled，避免用静态 roots 或“+N”占位冒充恢复能力。
-
-import {
-  type ConnectedConversationV1,
-  type ProjectViewRailOrderV0,
-} from '@local-creative-os/contracts';
-import {
-  CoreConversationClient,
-  CoreProjectClient,
-  CoreRailwayClient,
-  removeRailwayRefV1,
-  railwayRefKeyV1,
-  reorderRailwayRefV1,
-} from '@local-creative-os/web-gen2';
-import { ArrowUp, ArrowDown, Eye, FolderOpen, Inbox, Layers, ListTree, MoreHorizontal, PanelsTopLeft, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-
+// Project navigation: Core V1 identity/order; existing Huabu preview, Drop and navigation owners.
+import { createId } from '@huabu/shared';
+import { placeExistingWorkspacePortal } from '../navigation/portalPlacement';
+import { useLcosHostStore } from '../host/lcosHostState';
+import { useLcosReferenceStore } from '../lcosReferenceState';
+import { railwayStableKeyV1 } from '@local-creative-os/contracts';
+import type { ConnectedConversationV1, RailwayDestinationV1 } from '@local-creative-os/contracts';
+import { CoreConversationClient, CoreRailwayClient, moveRailwayDestination } from '@local-creative-os/web-gen2';
+import { ArrowDown, ArrowUp, Eye, MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
+import { Popover } from '@/components/Common/Popover';
+import useCanvasStore from '@/store/canvasStore';
 import { lcosHudEdgeOffsets, lcosHudSafeCenterY } from './lcosHudPlacement';
 import { useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
 import { useCollaborationSession } from '../collaboration/useCollaborationSession';
 import { LcosReceiverIdentity } from '../composer/LcosReceiverIdentity';
+import { isDropPointExposed } from '../drop/dropOcclusion';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
 import { useLcosDropStore } from '../lcosDropState';
 import { RailwayPeek } from '../navigation/RailwayPeek';
-import {
-  projectRailwaySnapshot,
-  type RailwayUiSnapshot,
-  type RailwayDestinationProjection,
-} from '../navigation/railwayProjection';
-import {
-  railwayReceiveLabel,
-  railwayReceivePresentation,
-} from '../navigation/railwayReceivePresentation';
+import { railwayReceiveLabel, railwayReceivePresentation } from '../navigation/railwayReceivePresentation';
+import { railwayDropGestureActive, railwayDynamicCapacity, railwayHiddenDestinations, railwayVisibleDestinations } from '../navigation/railwayDynamicLayout';
 import { useAvoidingHudPosition } from '../navigation/useAvoidingHudPosition';
 import { useHudViewport } from '../navigation/useHudViewport';
-import { LcosRailwayView, type LcosRailwayViewItem } from '../ui/families';
-import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
+import { useRailwayDestinations } from '../navigation/useRailwayDestinations';
+import { LcosRailwayView } from '../ui/families/LcosRailwayView';
+import type { LcosRailwayViewItem } from '../ui/families/LcosRailwayView';
+import { FigmaShellGlyph } from '../ui/FigmaShellGlyph';
+import { LcosIconButton } from '../ui/primitives/LcosIconButton';
+import { lcosGlassStyle } from '../ui/lcosTokens';
+import '../ui/nearfield/railway-destinations.css';
 
-import type { DropTargetRegistration } from '../drop/dropTypes';
-
-const RAILWAY_PRIMARY_CAPACITY = 4;
-
-function destinationTargetId(
-  projectId: string,
-  destinationKey: string,
-): string {
-  return `railway:${projectId}:${destinationKey}`;
-}
-
+const REORDER_MIME = 'application/x-lcos-railway-order';
+const targetId = (projectId: string, key: string) => `railway:${projectId}:${key}`;
 export interface LcosRailwayProps {
   readonly projectId: string;
-  readonly surfaceByWorkspace: ReadonlyMap<string, LcosSurfaceKey>;
-  readonly activateDestination: (
-    destination: RailwayDestinationProjection,
-  ) => Promise<void> | void;
+  readonly surfaceByWorkspace: ReadonlyMap<string,LcosSurfaceKey>;
+  readonly activateDestination: (destination: RailwayDestinationV1) => Promise<void> | void;
 }
-
-function iconFor(
-  kind: RailwayDestinationProjection['kind'],
-): React.ComponentType<{ className?: string }> {
-  switch (kind) {
-    case 'scene':
-      return PanelsTopLeft;
-    case 'context':
-      return Layers;
-    case 'workflow':
-      return ListTree;
-    case 'collection':
-      return FolderOpen;
-  }
-}
-
-function destinationsForOrder(
-  order: ProjectViewRailOrderV0,
-  previous: readonly RailwayDestinationProjection[],
-): readonly RailwayDestinationProjection[] {
-  const byKey = new Map(previous.map((destination) => [destination.key, destination]));
-  return order.orderedRefs.flatMap((sourceRef, sourceIndex) => {
-    const destination = byKey.get(railwayRefKeyV1(sourceRef));
-    return destination === undefined
-      ? []
-      : [{ ...destination, sourceRef, sourceIndex }];
-  });
-}
-
-/** Project identity is the lifecycle boundary for destination/receiver snapshots. */
 export function LcosRailway(props: LcosRailwayProps): React.JSX.Element {
   return <ProjectRailway key={props.projectId} {...props} />;
 }
-
-function ProjectRailway({
-  projectId,
-  surfaceByWorkspace,
-  activateDestination,
-}: LcosRailwayProps): React.JSX.Element {
-  const viewport = useHudViewport();
-  const activeSurface = useLcosShellStore((s) => s.activeSurface);
+function ProjectRailway({projectId,activateDestination}: LcosRailwayProps): React.JSX.Element {
+  const session = useMemo(() => createLcosCoreSession(),[]);
+  const railway = useMemo(() => new CoreRailwayClient(session.http),[session]);
+  const conversations = useMemo(() => new CoreConversationClient(session.http),[session]);
+  const data = useRailwayDestinations(projectId,railway);
+  const {snapshot,status,busy,notice,setNotice,reload,update} = data;
   const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
-  const windowEnvironment = useLcosShellStore((s) => s.windowEnvironment);
+  const environment = useLcosShellStore((s) => s.windowEnvironment);
   const openWindow = useLcosShellStore((s) => s.openWindow);
-  const registerTarget = useLcosDropStore((s) => s.registerTarget);
-  const unregisterTarget = useLcosDropStore((s) => s.unregisterTarget);
-  const dropState = useLcosDropStore((s) => s.state);
-  const dropResolution = useLcosDropStore((s) => s.resolution);
-  const receiveTargetElements = useRef(new Map<string, HTMLButtonElement>());
-  const receiverTargetElement = useRef<HTMLButtonElement | null>(null);
-  const [snapshot, setSnapshot] = useState<RailwayUiSnapshot | undefined>(undefined);
-  const [activeReceiver, setActiveReceiver] = useState<ConnectedConversationV1 | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [receiverError, setReceiverError] = useState<string | undefined>(undefined);
-  const [activatingKey, setActivatingKey] = useState<string | undefined>(undefined);
-  const [dragKey, setDragKey] = useState<string | undefined>(undefined);
-  const [reorderTargetKey, setReorderTargetKey] = useState<string | undefined>(undefined);
-  const [reordering, setReordering] = useState(false);
-  const keyboardMoveFocus = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (reordering || keyboardMoveFocus.current === undefined) return;
-    const element = receiveTargetElements.current.get(keyboardMoveFocus.current);
-    keyboardMoveFocus.current = undefined;
-    element?.focus();
-  }, [reordering, snapshot]);
-  const [peekKey, setPeekKey] = useState<string | undefined>(undefined);
-  const [moreKey, setMoreKey] = useState<string | undefined>(undefined);
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
-  const [refreshVersion, setRefreshVersion] = useState(0);
-  const watchProjectChanges = useCollaborationSessionStore((state) => state.watchProjectChanges);
-  const receiverEntry = useCollaborationSession(projectId, activeReceiver?.id);
-  const refresh = useCallback(() => setRefreshVersion((value) => value + 1), []);
-  useEffect(() => watchProjectChanges(projectId, refresh), [projectId, refresh, watchProjectChanges]);
-  useEffect(() => {
-    const onVisible = (): void => { if (document.visibilityState === 'visible') refresh(); };
-    window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', onVisible);
-    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', onVisible); };
-  }, [refresh]);
-  const session = useMemo(() => createLcosCoreSession(), []);
-  const railway = useMemo(() => new CoreRailwayClient(session.http), [session]);
-  const conversations = useMemo(() => new CoreConversationClient(session.http), [session]);
-  const projects = useMemo(
-    () => new CoreProjectClient(session.http),
-    [session],
-  );
-
-  useEffect(() => {
-    // A project invalidation during CAS waits for the existing operation to settle.
-    if (reordering) return;
-    const controller = new AbortController();
-    let cancelled = false;
-    void Promise.all([
-      railway.read(projectId, controller.signal),
-      projects.getProjectGraph(projectId),
-    ])
-      .then(([order, graph]) => {
-        if (cancelled) return;
-        if (!order || !graph) {
-          setSnapshot(undefined);
-          setError(undefined);
-          return;
-        }
-        setSnapshot(projectRailwaySnapshot(order, {
-          workspaces: graph.workspaces.map((workspace) => ({
-            id: String(workspace.id),
-            name: workspace.name,
-            scopeId: String(workspace.scopeId),
-            canvasId: workspace.canvasId,
-          })),
-          scopes: graph.scopes.map((scope) => ({
-            id: String(scope.id),
-            name: scope.name,
-            kind: scope.kind,
-          })),
-          surfaceByWorkspace,
-        }));
-        setError(undefined);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled && (cause as { name?: string }).name !== 'AbortError') {
-          setError('导航读取失败，当前显示上次结果');
-        }
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [projectId, projects, railway, surfaceByWorkspace, refreshVersion, reordering]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let cancelled = false;
-    void Promise.all([
-      conversations.listConnectedConversations(projectId, controller.signal),
-      conversations.getReceiverBinding(projectId, controller.signal),
-    ])
-      .then(([items, binding]) => {
-        if (cancelled) return;
-        if (binding.activeReceiverId === null) {
-          setActiveReceiver(undefined);
-          setReceiverError(undefined);
-          return;
-        }
-        const receiver = items.find((item) => item.id === binding.activeReceiverId);
-        setActiveReceiver(receiver);
-        setReceiverError(receiver === undefined ? '当前承接会话身份已失效' : undefined);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled && (cause as { name?: string }).name !== 'AbortError') {
-          setActiveReceiver(undefined);
-          setReceiverError('承接会话读取失败');
-        }
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [conversations, projectId, refreshVersion]);
-
-  const destinations = useMemo(
-    () => snapshot?.destinations ?? [],
-    [snapshot],
-  );
-
-  const publishReceiveTarget = useCallback((
-    destination: RailwayDestinationProjection,
-    element: HTMLButtonElement | undefined,
-  ): void => {
-    const targetId = destinationTargetId(projectId, destination.key);
-    if (
-      element === undefined ||
-      !destination.available ||
-      destination.workspaceId === undefined
-    ) {
-      unregisterTarget(targetId);
-      return;
-    }
-    const target: DropTargetRegistration = {
-      targetId,
-      kind: 'railway-receive',
-      label: destination.label,
-      rect: rectFromDomRect(element.getBoundingClientRect()),
-      priority: 20,
-      enabled: true,
-      semantic: {
-        kind: 'railway-receive',
-        targetRef: { kind: 'workspace', id: destination.workspaceId },
-        destinationRef: destination.sourceRef,
-      },
-    };
-    registerTarget(target);
-  }, [projectId, registerTarget, unregisterTarget]);
-
-  const publishReceiverDropExclusion = useCallback((): void => {
-    if (activeReceiver === undefined || receiverTargetElement.current === null) return;
-    registerTarget({
-      targetId: `railway-receiver:${projectId}:${activeReceiver.id}`,
-      kind: 'drop-exclusion',
-      label: activeReceiver.label,
-      rect: rectFromDomRect(receiverTargetElement.current.getBoundingClientRect()),
-      priority: 30,
-      enabled: true,
-      semantic: {
-        kind: 'drop-exclusion',
-        reason: '承接会话用于打开会话；请在接收者选择器中更改接收者。',
-      },
-    });
-  }, [activeReceiver, projectId, registerTarget]);
-
-  // Railway is itself scrollable. A ref callback gives us the first rect, but
-  // internal scroll / viewport resize can move a button without remounting it.
-  // Keep the registry as live screen-space geometry just like Composer does.
-  useEffect(() => {
-    const publishAll = (): void => {
-      for (const destination of destinations) {
-        publishReceiveTarget(destination, receiveTargetElements.current.get(destination.key));
-      }
-    };
-    publishAll();
-    const observer = typeof ResizeObserver === 'function'
-      ? new ResizeObserver(publishAll)
-      : undefined;
-    for (const destination of destinations) {
-      const element = receiveTargetElements.current.get(destination.key);
-      if (element !== undefined) observer?.observe(element);
-    }
-    window.addEventListener('resize', publishAll);
-    // capture=true also observes scroll events from the Railway overflow island.
-    window.addEventListener('scroll', publishAll, true);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', publishAll);
-      window.removeEventListener('scroll', publishAll, true);
-      for (const destination of destinations) {
-        unregisterTarget(`railway:${projectId}:${destination.key}`);
-      }
-    };
-  }, [destinations, projectId, publishReceiveTarget, unregisterTarget]);
-
-  useEffect(() => {
-    if (activeReceiver === undefined) return;
-    const targetId = `railway-receiver:${projectId}:${activeReceiver.id}`;
-    publishReceiverDropExclusion();
-    const element = receiverTargetElement.current;
-    const observer = element !== null && typeof ResizeObserver === 'function'
-      ? new ResizeObserver(publishReceiverDropExclusion)
-      : undefined;
-    if (element !== null) observer?.observe(element);
-    window.addEventListener('resize', publishReceiverDropExclusion);
-    window.addEventListener('scroll', publishReceiverDropExclusion, true);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', publishReceiverDropExclusion);
-      window.removeEventListener('scroll', publishReceiverDropExclusion, true);
-      unregisterTarget(targetId);
-    };
-  }, [activeReceiver, projectId, publishReceiverDropExclusion, unregisterTarget]);
-
-  const refreshAfterConflict = useCallback(async (previous: RailwayUiSnapshot): Promise<void> => {
+  const canvasId = useCanvasStore((s) => s.canvasId);
+  const watch = useCollaborationSessionStore((s) => s.watchProjectChanges);
+  const drop = useLcosDropStore((s) => s.state);
+  const resolution = useLcosDropStore((s) => s.resolution);
+  const [receiver,setReceiver] = useState<ConnectedConversationV1>();
+  const [receiverError,setReceiverError] = useState<string>();
+  const receiverEntry = useCollaborationSession(projectId,receiver?.id);
+  const [peek,setPeek] = useState<string>();
+  const [manage,setManage] = useState(false);
+  const [overflowPeek,setOverflowPeek] = useState(false);
+  const [query,setQuery] = useState('');
+  const [activating,setActivating] = useState<string>();
+  const activateLock = useRef(false);
+  const [placing, setPlacing] = useState(false);
+  const portalPlacement = useRef<AbortController | null>(null);
+  useEffect(() => () => { portalPlacement.current?.abort(); portalPlacement.current = null; }, [projectId,canvasId]);
+  const placePortal = async (item: RailwayDestinationV1) => {
+    if (portalPlacement.current || !canvasId) return;
+    const controller = new AbortController(); portalPlacement.current = controller; setPlacing(true); setNotice(undefined);
+    const host = useLcosHostStore.getState().host;
     try {
-      const [fresh, graph] = await Promise.all([
-        railway.read(projectId),
-        projects.getProjectGraph(projectId),
-      ]);
-      if (fresh === undefined || graph === undefined) {
-        setSnapshot(previous);
-        setError('Railway 已在别处更新，但最新顺序暂时读取失败');
-        return;
+      if (!host || host.projectId !== projectId) throw new Error('当前画布身份尚未确认。');
+      const current = () => useLcosShellStore.getState().projectId === projectId && useCanvasStore.getState().canvasId === canvasId
+        && useLcosHostStore.getState().host === host;
+      const result = await placeExistingWorkspacePortal(projectId,canvasId,item, {
+        current, nodes: () => useCanvasStore.getState().nodes,
+        bindings: () => host.bindings.list(),
+        readTarget: (id, signal) => railway.portalTarget(projectId,id,signal),
+        create: (targetCanvasId,label) => {
+          const id = createId('node');
+          useCanvasStore.getState().addNodes([{id,nodeType:'spacePreview',data:{targetCanvasId,label,origin:{type:'user-created'}}}]);
+          return id;
+        },
+        save: () => useCanvasStore.getState().saveCanvas(),
+        claim: (id,nodeId,targetCanvasId) => railway.claimPortal(projectId,id,canvasId,nodeId,targetCanvasId),
+      },controller.signal);
+      if (current()) {
+        useLcosReferenceStore.getState().requestNodeBindingRefresh();
+        if (!controller.signal.aborted) {
+          useLcosShellStore.getState().requestLocate({reqId:crypto.randomUUID(),surface:useLcosShellStore.getState().activeSurface,
+            canvasId,nodeId:result.nodeId,status:'projected',preserveSelection:true});
+          setNotice(result.status === 'existing' ? '已定位已有入口，没有重复创建。' : '入口已保存；预览不离开当前现场。');
+        }
       }
-      setSnapshot(projectRailwaySnapshot(fresh, {
-        workspaces: graph.workspaces.map((workspace) => ({
-          id: String(workspace.id),
-          name: workspace.name,
-          scopeId: String(workspace.scopeId),
-            canvasId: workspace.canvasId,
-        })),
-        scopes: graph.scopes.map((scope) => ({
-          id: String(scope.id),
-          name: scope.name,
-          kind: scope.kind,
-        })),
-        surfaceByWorkspace,
-      }));
-      setNotice(undefined);
-      setError('Railway 已在别处更新，已回读最新顺序');
-    } catch {
-      setSnapshot(previous);
-      setError('Railway 已在别处更新，但最新顺序暂时读取失败');
+    } catch (error) { if (!controller.signal.aborted) setNotice(error instanceof Error ? error.message : '入口尚未确认，请重试核对同一节点。'); }
+    finally { if (portalPlacement.current === controller) portalPlacement.current = null; if (alive.current) setPlacing(false); }
+  };
+  const alive = useRef(true);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mutedFocus = useRef<string | undefined>(undefined);
+  const drag = useRef<string | undefined>(undefined);
+  const [reorderTarget,setReorderTarget] = useState<{readonly key:string;readonly where:'before'|'after'}>();
+  const [receiverRefresh,setReceiverRefresh] = useState(0);
+  const [elementVersion,setElementVersion] = useState(0);
+  const elementCallbacks = useRef(new Map<string,(element:HTMLButtonElement | null)=>void>());
+  const elements = useRef(new Map<string,HTMLButtonElement>());
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const addRef = useRef<HTMLButtonElement | null>(null);
+  const receiverRef = useRef<HTMLButtonElement | null>(null);
+  const viewport = useHudViewport();
+  const destinations = snapshot?.destinations.filter((d) => d.role !== 'surface') ?? [];
+  const receiverDestinationId = receiver?.id;
+  const railDestinations = receiverDestinationId
+    ? destinations.filter((item) => !(item.ref.kind === 'receiver_conversation' && item.ref.connectedConversationId === receiverDestinationId))
+    : destinations;
+  const offsets = lcosHudEdgeOffsets(environment,viewport);
+  const safeHeight = environment?.safeRect.height ?? Math.max(1, viewport.height - offsets.top - offsets.bottom);
+  const dropActive = railwayDropGestureActive(drop.status);
+  const reservedHeight = 44 + (receiver ? 36 : 0) + (railDestinations.length ? 36 : 0) + 32;
+  const capacity = railwayDynamicCapacity({safeHeight,reservedHeight});
+  const primary = railwayVisibleDestinations(railDestinations,capacity,activeWorkspaceId ?? undefined);
+  const hidden = railwayHiddenDestinations(railDestinations,primary);
+  const receiveOverflowOpen = dropActive && hidden.length > 0;
+  useEffect(() => {
+    if (!dropActive) return;
+    setManage(false);
+    setQuery('');
+    setPeek(undefined);
+    setOverflowPeek(false);
+  },[dropActive]);
+  const focused = destinations.find((d) => d.key === peek);
+  const primaryHeight = primary.length ? 10 + primary.length * 42 : 0;
+  const hostHeight = Math.max(52,primaryHeight) + (hidden.length ? 36 : 0) + (receiver ? 36 : 0) + 44;
+  const placement = useAvoidingHudPosition({x:offsets.left,y:lcosHudSafeCenterY(environment,viewport.height),width:52,height:hostHeight},{y:'center'});
+  const cancelHide = useCallback(() => { if (hideTimer.current) clearTimeout(hideTimer.current); },[]);
+  const dismiss = useCallback((restore = false) => {
+    cancelHide(); setManage(false); setPeek(undefined);
+    if (restore) { mutedFocus.current = peek; (peek ? elements.current.get(`rail:${peek}`) : addRef.current)?.focus(); }
+  },[cancelHide,peek]);
+  const enterPeek = (key: string) => {
+    if (mutedFocus.current === key) { mutedFocus.current = undefined; return; }
+    if (manage || drag.current) return;
+    cancelHide(); setPeek(key);
+  };
+  const leavePeek = () => {
+    cancelHide(); hideTimer.current = setTimeout(() => {
+      if (!panelRef.current?.contains(document.activeElement)) setPeek(undefined);
+    },180);
+  };
+  useEffect(() => { alive.current = true; return () => { alive.current = false; cancelHide(); }; },[cancelHide]);
+  const refresh = useCallback(() => { void reload(); setReceiverRefresh((n) => n+1); },[reload]);
+  useEffect(() => watch(projectId,refresh),[watch,projectId,refresh]);
+  useEffect(() => {
+    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    const cancelDrag = () => { drag.current=undefined; setReorderTarget(undefined); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') cancelDrag(); };
+    window.addEventListener('focus',refresh); window.addEventListener('blur',cancelDrag); window.addEventListener('keydown',key);
+    document.addEventListener('visibilitychange',visible);
+    return () => { window.removeEventListener('focus',refresh);window.removeEventListener('blur',cancelDrag);window.removeEventListener('keydown',key);document.removeEventListener('visibilitychange',visible); };
+  },[refresh]);
+  useEffect(() => {
+    const controller = new AbortController(); let current=true;
+    void Promise.all([conversations.listConnectedConversations(projectId,controller.signal),conversations.getReceiverBinding(projectId,controller.signal)])
+      .then(([list,binding]) => { if (!current) return; setReceiver(list.find((c) => c.id === binding.activeReceiverId));setReceiverError(undefined); })
+      .catch(() => { if (current) {setReceiver(undefined);setReceiverError('承接会话读取失败');} });
+    return () => {current=false;controller.abort();};
+  },[conversations,projectId,receiverRefresh]);
+  // One element may occur in the island and in management. Each live receptor has its own target ID.
+  const onElement = useCallback((key: string,element: HTMLButtonElement | null) => {
+    if (elements.current.get(key) === element || (!element && !elements.current.has(key))) return;
+    if (element) elements.current.set(key,element); else elements.current.delete(key);
+    setElementVersion((n) => n+1);
+  },[]);
+  const elementRef = (key: string) => {
+    let callback=elementCallbacks.current.get(key);
+    if (!callback) { callback=(element)=>onElement(key,element);elementCallbacks.current.set(key,callback); }
+    return callback;
+  };
+  useEffect(() => {
+    const store = useLcosDropStore.getState();
+    const cleanups: (() => void)[]=[];
+    for (const [elementKey,element] of elements.current) {
+      const key = elementKey.slice(elementKey.indexOf(':')+1);
+      const destination = snapshot?.destinations.find((d) => d.key === key);
+      if (!destination) continue;
+      const enabled = status === 'ready' && !busy && destination.available && destination.accepts.length > 0 && destination.canvasId !== canvasId;
+      const reason = destination.reason ?? (destination.role === 'receiver' ? '这里只打开会话；请把材料拖到画布上的会话本体。'
+        : destination.canvasId === canvasId ? '已经在当前现场，请直接在画布整理。' : '目的地暂不能接收材料。');
+      cleanups.push(store.registerTarget({targetId:targetId(projectId,elementKey),kind:enabled ? 'railway-receive' : 'drop-exclusion',label:destination.label,
+        rect:rectFromDomRect(element.getBoundingClientRect()),readRect:() => element.isConnected ? rectFromDomRect(element.getBoundingClientRect()) : undefined,
+        acceptsPoint:(point) => isDropPointExposed(element,point),priority:30,enabled:true,
+        semantic:enabled && destination.ref.kind === 'worksite' && destination.workspaceId ? {
+          kind:'railway-receive',targetRef:{kind:'workspace',id:destination.workspaceId},destinationRef:destination.ref,
+          canvasId:destination.canvasId,orderVersion:snapshot!.order.version,accepts:destination.accepts,
+        } : {kind:'drop-exclusion',reason}}));
     }
-  }, [projectId, projects, railway, surfaceByWorkspace]);
+    for (const [id,element] of [['panel',panelRef.current],['receiver',receiverRef.current]] as const) {
+      if (!element) continue;
+      cleanups.push(store.registerTarget({targetId:`railway-control:${projectId}:${id}`,kind:'drop-exclusion',label:'导航操作',
+        rect:rectFromDomRect(element.getBoundingClientRect()),readRect:()=>element.isConnected ? rectFromDomRect(element.getBoundingClientRect()) : undefined,
+        acceptsPoint:(point)=>isDropPointExposed(element,point),priority:5,enabled:true,
+        semantic:{kind:'drop-exclusion',reason:'请放到明确的现场目的地上；这里不会投到背景画布。'}}));
+    }
+    return () => { for (const close of cleanups) close(); };
+  },[snapshot,status,busy,canvasId,elementVersion,projectId,manage,peek,receiver]);
 
-  const removeDestination = useCallback((destinationKey: string): void => {
-    const previous = snapshot;
-    if (previous === undefined || reordering) return;
-    const orderedRefs = removeRailwayRefV1(previous.order.orderedRefs, destinationKey);
-    if (orderedRefs === previous.order.orderedRefs) return;
-    setReordering(true);
-    setError(undefined);
-    setNotice(undefined);
-    void railway.write({
-      projectId,
-      orderedRefs,
-      expectedVersion: previous.order.version,
-    })
-      .then((serverOrder) => {
-        setSnapshot({
-          order: serverOrder,
-          destinations: destinationsForOrder(serverOrder, previous.destinations),
-        });
-        setPeekKey(undefined);
-        setMoreKey(undefined);
-        setNotice('目的地已移出导航');
-      })
-      .catch(async (cause: unknown) => {
-        if ((cause as { status?: number }).status === 409) {
-          await refreshAfterConflict(previous);
-          return;
-        }
-        setError(cause instanceof Error ? cause.message : 'Railway 目的地移除失败');
-      })
-      .finally(() => setReordering(false));
-  }, [projectId, refreshAfterConflict, railway, reordering, snapshot]);
-
-  const reorder = useCallback((movedKey: string, targetKey: string, placement: 'before' | 'after'): void => {
-    const previous = snapshot;
-    if (previous === undefined || reordering) return;
-    const orderedRefs = reorderRailwayRefV1(previous.order.orderedRefs, movedKey, targetKey, placement);
-    if (orderedRefs === previous.order.orderedRefs) return;
-    const optimisticOrder = { ...previous.order, orderedRefs };
-    setSnapshot({
-      order: optimisticOrder,
-      destinations: destinationsForOrder(optimisticOrder, previous.destinations),
-    });
-    setReordering(true);
-    void railway.write({ projectId, orderedRefs, expectedVersion: previous.order.version })
-      .then((serverOrder) => {
-        setSnapshot({
-          order: serverOrder,
-          destinations: destinationsForOrder(serverOrder, previous.destinations),
-        });
-        setNotice('目的地顺序已保存');
-        setError(undefined);
-      })
-      .catch(async (cause: unknown) => {
-        setSnapshot(previous);
-        if ((cause as { status?: number }).status === 409) {
-          // 409 的解锁条件必须是「fresh order + fresh graph 回读完成」。
-          // 若此处 fire-and-forget，finally 会先 setReordering(false)，用户在 fresh
-          // 投影回来前又能发起 reorder —— 那一次仍基于旧 version，要么再撞 409，
-          // 要么把并发期间新增的目的地顺序写坏。await 让 refresh 与解锁严格同序。
-          await refreshAfterConflict(previous);
-          return;
-        }
-        setError(cause instanceof Error ? cause.message : 'Railway 顺序保存失败');
-      })
-      .finally(() => setReordering(false));
-  }, [projectId, refreshAfterConflict, railway, snapshot, reordering]);
-
-  const moveActions = (destinationKey: string): React.JSX.Element => <>
-    {(['up', 'down'] as const).map((direction) => {
-      const index = destinations.findIndex((item) => item.key === destinationKey);
-      const target = index < 0 ? undefined : destinations[index + (direction === 'up' ? -1 : 1)];
-      const Icon = direction === 'up' ? ArrowUp : ArrowDown;
-      return <button key={direction} type="button" role="menuitem" data-lcos-railway-more-action={direction}
-        disabled={reordering || target === undefined}
-        onClick={() => { if (target) { keyboardMoveFocus.current = destinationKey; reorder(destinationKey, target.key, direction === 'up' ? 'before' : 'after'); } }}>
-        <Icon size={14} aria-hidden />{direction === 'up' ? '上移' : '下移'}
-      </button>;
-    })}
-  </>;
-
-  const activate = useCallback((destination: RailwayDestinationProjection): void => {
-    if (!destination.available || activatingKey !== undefined || reordering) return;
-    setActivatingKey(destination.key);
-    setError(undefined);
-    void Promise.resolve(activateDestination(destination))
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setActivatingKey(undefined));
-  }, [activateDestination, activatingKey, reordering]);
-
-  const primaryDestinations = useMemo(
-    () => destinations.slice(0, RAILWAY_PRIMARY_CAPACITY),
-    [destinations],
-  );
-  const primaryKeys = useMemo(
-    () => new Set(primaryDestinations.map((destination) => destination.key)),
-    [primaryDestinations],
-  );
-  const destinationByKey = useMemo(
-    () => new Map(destinations.map((destination) => [destination.key, destination])),
-    [destinations],
-  );
-  const overflowRefs = useMemo(
-    () => (snapshot?.order.orderedRefs ?? []).filter(
-      (ref) => !primaryKeys.has(railwayRefKeyV1(ref)),
-    ),
-    [primaryKeys, snapshot],
-  );
-
-  const items: readonly LcosRailwayViewItem[] = primaryDestinations.map(
-    (destination) => {
-      const receivePresentation = railwayReceivePresentation({
-        targetId: destinationTargetId(projectId, destination.key),
-        enabled: destination.available,
-        dropState,
-        resolution: dropResolution,
-      });
-      return {
-        key: destination.key,
-        label: destination.label,
-        icon: iconFor(destination.kind),
-        glyph: destination.kind === 'scene' ? 'project' : destination.kind,
-      selected:
-        destination.available &&
-        (destination.workspaceId !== undefined
-          ? destination.workspaceId === activeWorkspaceId
-          : destination.surface === activeSurface),
-      disabled: !destination.available || activatingKey !== undefined || reordering,
-      draggable: destination.available && !reordering,
-      reorderDropTarget: reorderTargetKey === destination.key,
-      receivePresentation,
-      peekOpen: peekKey === destination.key,
-      onPeekEnter: () => {
-        setPeekKey(destination.key);
-        setMoreKey(undefined);
-      },
-      onPeekLeave: () => {
-        setPeekKey((current) => current === destination.key ? undefined : current);
-        setMoreKey((current) => current === destination.key ? undefined : current);
-      },
-      peek: peekKey === destination.key ? (
-        <div
-          data-lcos-railway-peek={destination.key}
-          role="dialog"
-          aria-label={`${destination.label} 目的地预览`}
-          style={{ ...lcosGlassStyle, color: lcosTokens.color.text }}
-        >
-          <strong data-lcos-railway-peek-label>{destination.label}</strong>
-          {destination.canvasId ? <RailwayPeek canvasId={destination.canvasId} /> : <span data-lcos-railway-peek-geometry>
-            {destination.reason ?? '这个目的地还没有可读取的现场预览'}
-          </span>}
-          <span data-lcos-railway-receive-state>
-            {railwayReceiveLabel(receivePresentation, destination.reason)}
-          </span>
-          <div data-lcos-railway-actions>
-            <button
-              type="button"
-              data-lcos-railway-action="peek"
-              aria-pressed="true"
-              onClick={() => {
-                setPeekKey(destination.key);
-                setMoreKey(undefined);
-              }}
-            >
-              <Eye size={14} aria-hidden />
-              预览
-            </button>
-            <button
-              type="button"
-              data-lcos-railway-action="receive"
-              disabled
-              title="Receive 需要从 Assembly 或 Canvas 拖入素材"
-            >
-              <Inbox size={14} aria-hidden />
-              拖入接收
-            </button>
-            <button
-              type="button"
-              data-lcos-railway-action="more"
-              aria-expanded={moreKey === destination.key}
-              onClick={() => setMoreKey((current) => current === destination.key ? undefined : destination.key)}
-            >
-              <MoreHorizontal size={14} aria-hidden />
-              更多
-            </button>
-          </div>
-        </div>
-      ) : undefined,
-      moreOpen: moreKey === destination.key,
-      more: moreKey === destination.key ? (
-        <div data-lcos-railway-more role="menu" aria-label={`${destination.label} 更多操作`}>
-          <button
-            type="button"
-            role="menuitem"
-            data-lcos-railway-more-action="open"
-            disabled={!destination.available || activatingKey !== undefined || reordering}
-            onClick={() => activate(destination)}
-          >
-            <Eye size={14} aria-hidden />
-            进入目的地
-          </button>
-          {moveActions(destination.key)}
-          <button
-            type="button"
-            role="menuitem"
-            data-lcos-railway-more-action="remove"
-            disabled={reordering}
-            onClick={() => removeDestination(destination.key)}
-          >
-            <Trash2 size={14} aria-hidden />
-            移出 Railway
-          </button>
-          {!destination.available && (
-            <span data-lcos-railway-more-reason>
-              {destination.reason ?? '当前目的地缺少可用能力'}
-            </span>
-          )}
-        </div>
-      ) : undefined,
-      onDragStart: (event: DragEvent<HTMLButtonElement>) => {
-        if (!destination.available || reordering) return;
-        setDragKey(destination.key);
-        setReorderTargetKey(undefined);
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/lcos-railway', destination.key);
-      },
-      onDragOver: (event: DragEvent<HTMLButtonElement>) => {
-        if (dragKey === undefined || dragKey === destination.key || reordering) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        setReorderTargetKey(destination.key);
-      },
-      onDrop: (event: DragEvent<HTMLButtonElement>) => {
-        event.preventDefault();
-        const movedKey = dragKey ?? event.dataTransfer.getData('text/lcos-railway');
-        if (movedKey.length === 0 || movedKey === destination.key || reordering) return;
-        const rect = event.currentTarget.getBoundingClientRect();
-        const placement = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-        reorder(movedKey, destination.key, placement);
-        setDragKey(undefined);
-        setReorderTargetKey(undefined);
-      },
-      onDragEnd: () => {
-        setDragKey(undefined);
-        setReorderTargetKey(undefined);
-      },
-      onElement: (element) => {
-        if (element === null) {
-          receiveTargetElements.current.delete(destination.key);
-          unregisterTarget(`railway:${projectId}:${destination.key}`);
-          return;
-        }
-        receiveTargetElements.current.set(destination.key, element);
-        publishReceiveTarget(destination, element);
-      },
-      };
+  const activate = async (item: RailwayDestinationV1) => {
+    if (!item.available || activateLock.current || busy || status !== 'ready') return;
+    activateLock.current=true;setActivating(item.key);setNotice(undefined);
+    try {
+      const fresh = await railway.snapshot(projectId);
+      if (!alive.current) return;
+      const target = fresh.destinations.find((d) => d.key === item.key);
+      if (!target?.available) throw new Error(target?.reason ?? '目的地已被移出导航。');
+      if (target.canvasId !== item.canvasId) { void reload(); throw new Error('目标画布已变化，请重新预览后进入。'); }
+      if (target.ref.kind === 'receiver_conversation') openWindow('conversation',`会话窗口 · ${target.label}`,target.ref.connectedConversationId);
+      else if (target.workspaceId !== activeWorkspaceId) await activateDestination(target);
+      if (alive.current) dismiss();
+    } catch (error) { if (alive.current) setNotice(error instanceof Error ? error.message : '进入失败，仍保留当前现场。'); }
+    finally {activateLock.current=false;if(alive.current)setActivating(undefined);}
+  };
+  const remove = (key: string) => update((s) => s.order.orderedRefs.filter((ref) => railwayStableKeyV1(ref)!==key),'已移出导航，原现场和内容没有删除。');
+  const move = (key: string,target: string,where:'before'|'after') => update((s) => moveRailwayDestination(s.order.orderedRefs,key,target,where),'目的地顺序已保存。');
+  const dragHandlers = (item: RailwayDestinationV1) => {
+    const reorderable = item.role === 'worksite' && item.available && !snapshot?.migrationRequired;
+    return ({
+    draggable: reorderable && !busy && status === 'ready',
+    onDragStart:(event:DragEvent<HTMLButtonElement>) => {
+      if (!reorderable || busy || status !== 'ready') {event.preventDefault();return;}
+      drag.current=item.key;setPeek(undefined);event.stopPropagation();event.dataTransfer.effectAllowed='move';
+      event.dataTransfer.setData(REORDER_MIME,JSON.stringify({projectId,key:item.key}));
     },
-  );
-
-  const overflow = overflowRefs.length > 0 ? (
-    <div
-      data-lcos-railway-overflow
-      role="dialog"
-      aria-label="Railway 全部目的地"
-      style={{ ...lcosGlassStyle, color: lcosTokens.color.text }}
-    >
-      <strong>Railway 目的地</strong>
-      <span data-lcos-railway-overflow-summary>
-        共 {snapshot?.order.orderedRefs.length ?? 0} 个目的地
-      </span>
-      <div data-lcos-railway-overflow-list>
-        {overflowRefs.map((ref) => {
-          const key = railwayRefKeyV1(ref);
-          const destination = destinationByKey.get(key);
-          const presentation = railwayReceivePresentation({
-            targetId: destinationTargetId(projectId, key),
-            enabled: destination?.available === true,
-            dropState,
-            resolution: dropResolution,
-          });
-          return (
-            <div key={key} data-lcos-railway-overflow-row={key} data-lcos-receive-state={presentation}>
-              <button
-                type="button"
-                data-lcos-railway-overflow-open={key}
-                ref={(element) => {
-                  if (destination === undefined) return;
-                  if (element === null) {
-                    receiveTargetElements.current.delete(destination.key);
-                    unregisterTarget(destinationTargetId(projectId, destination.key));
-                    return;
-                  }
-                  receiveTargetElements.current.set(destination.key, element);
-                  publishReceiveTarget(destination, element);
-                }}
-                disabled={destination?.available !== true || activatingKey !== undefined || reordering}
-                onClick={() => {
-                  if (destination !== undefined) activate(destination);
-                }}
-              >
-                <span>{destination?.label ?? key}</span>
-                <small>{destination === undefined ? '暂不可用' : ({ scene: '子现场', context: '上下文', workflow: '工作流', collection: '集合' }[destination.kind])}</small>
-              </button>
-              <span data-lcos-railway-overflow-state>
-                {destination === undefined
-                  ? 'Surface 根入口由底部现场入口接管'
-                  : railwayReceiveLabel(presentation, destination.reason)}
-              </span>
-              <button type="button" data-lcos-railway-overflow-manage={key}
-                aria-label={`管理 ${destination?.label ?? key}`} aria-expanded={moreKey === key}
-                onClick={() => setMoreKey((current) => current === key ? undefined : key)}>
-                <MoreHorizontal size={16} aria-hidden />
-              </button>
-              {moreKey === key && <div data-lcos-railway-overflow-menu role="menu" aria-label={`${destination?.label ?? key} 更多操作`}>
-                <button type="button" role="menuitem" data-lcos-railway-more-action="open"
-                  disabled={destination?.available !== true || activatingKey !== undefined || reordering}
-                  onClick={() => { if (destination) activate(destination); }}><Eye size={14} aria-hidden />进入目的地</button>
-                {moveActions(key)}
-                <button type="button" role="menuitem" data-lcos-railway-overflow-remove={key}
-                  disabled={reordering} aria-label={`移出 ${destination?.label ?? key}`} onClick={() => removeDestination(key)}>
-                  <Trash2 size={14} aria-hidden />移出导航
-                </button>
-              </div>}
-            </div>
-          );
-        })}
-      </div>
+    onDragOver:(event:DragEvent<HTMLButtonElement>) => {
+      if (!drag.current || !Array.from(event.dataTransfer.types).includes(REORDER_MIME) || busy) return;
+      event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move';const rect=event.currentTarget.getBoundingClientRect();setReorderTarget({key:item.key,where:event.clientY<rect.top+rect.height/2?'before':'after'});
+    },
+    onDrop:(event:DragEvent<HTMLButtonElement>) => {
+      if (!drag.current || !Array.from(event.dataTransfer.types).includes(REORDER_MIME)) return; // Material Drop belongs to T3.
+      event.preventDefault();event.stopPropagation();
+      try {
+        const payload=JSON.parse(event.dataTransfer.getData(REORDER_MIME)) as {projectId:string;key:string};
+        if (payload.projectId!==projectId || payload.key!==drag.current || payload.key===item.key || busy) return;
+        const rect=event.currentTarget.getBoundingClientRect();void move(payload.key,item.key,event.clientY<rect.top+rect.height/2?'before':'after');
+      } catch { setNotice('排序数据无效，原顺序未改变。'); } finally {drag.current=undefined;setReorderTarget(undefined);}
+    },
+    onDragEnd:() => {drag.current=undefined;setReorderTarget(undefined);},
+  });};
+  const receiveState = (item:RailwayDestinationV1,elementKey:string) => railwayReceivePresentation({targetId:targetId(projectId,elementKey),enabled:item.available && item.accepts.length>0 && item.canvasId!==canvasId,dropState:drop,resolution});
+  const openManager = () => {cancelHide();setOverflowPeek(false);setPeek(undefined);setManage(true);setQuery('');};
+  const items: LcosRailwayViewItem[] = primary.map((item) => ({key:item.key,label:item.label,icon:Eye,
+    glyph:item.role==='receiver'?'normal':item.surface==='context'?'context':item.surface==='workflow'?'workflow':'project',
+    selected:item.workspaceId===activeWorkspaceId,disabled:!item.available||busy||!!activating||status!=='ready',
+    ...dragHandlers(item),reorderDropTarget:reorderTarget?.key===item.key,reorderDropPosition:reorderTarget?.key===item.key?reorderTarget.where:undefined,receivePresentation:receiveState(item,`rail:${item.key}`),
+    onElement:elementRef(`rail:${item.key}`),onPeekEnter:()=>enterPeek(item.key),onPeekLeave:leavePeek,onManage:openManager}));
+  const row = (item:RailwayDestinationV1,index:number) => <div key={item.key} className="lcos-railway-manage-row" data-railway-row={item.key}>
+    <button type="button" className="lcos-railway-row-target" aria-disabled={!item.available||busy||status!=='ready'}
+      ref={elementRef(`manager:${item.key}`)} {...dragHandlers(item)} onClick={()=>void activate(item)}
+      data-lcos-receive-state={receiveState(item,`manager:${item.key}`)}>
+      <FigmaShellGlyph name={item.role==='receiver'?'normal':item.surface==='context'?'context':item.surface==='workflow'?'workflow':'project'} size={20}/>
+      <span><strong>{item.label}</strong><small>{item.reason ?? (item.role==='receiver'?'打开原会话，不更改接收者':item.workspaceId===activeWorkspaceId?'当前现场':'进入现场 · 拖入材料可接收')}</small></span>
+    </button>
+    <div className="lcos-railway-row-actions">
+      <button type="button" aria-label={`上移 ${item.label}`} disabled={busy||status!=='ready'||index===0} onClick={()=>{const prev=destinations[index-1];if(prev)void move(item.key,prev.key,'before');}}><ArrowUp size={15}/></button>
+      <button type="button" aria-label={`下移 ${item.label}`} disabled={busy||status!=='ready'||index===destinations.length-1} onClick={()=>{const next=destinations[index+1];if(next)void move(item.key,next.key,'after');}}><ArrowDown size={15}/></button>
+      <button type="button" aria-label={`移出 ${item.label}`} disabled={busy||status!=='ready'} onClick={()=>void remove(item.key)}><Trash2 size={15}/></button>
     </div>
-  ) : undefined;
-
-  const receiverUserState = receiverEntry?.status === 'ready' ? receiverEntry.projection?.userState : undefined;
-  const receiverStatusText = receiverUserState === undefined ? (receiverEntry?.status === 'error' ? '状态读取失败' : '正在读取状态')
-    : ({ ready: '可以继续', thinking: '正在理解', working: '正在做事', needs_user: '等你回应', done: '本轮完成', unavailable: '暂时无法连接' }[receiverUserState]);
-  const receiver = activeReceiver === undefined
-    ? undefined
-    : (
-        <div data-lcos-railway-receiver-shell>
-          <button
-            ref={(element) => { receiverTargetElement.current = element; }}
-            type="button"
-            data-lcos-railway-receiver={activeReceiver.id}
-            data-lcos-drop-policy="open-only"
-            title={`${activeReceiver.label} · ${receiverStatusText}`}
-            aria-label={`打开承接会话 ${activeReceiver.label} · ${receiverStatusText}`}
-            onClick={() => openWindow('conversation', `会话窗口 · ${activeReceiver.label}`, activeReceiver.id)}
-          >
-            <span className="relative block h-7 w-7" aria-hidden>
-              <LcosReceiverIdentity projectId={projectId} conversationId={activeReceiver.id} size={28} />
-              {receiverUserState === undefined && <span className="absolute inset-1 rounded-full border border-current opacity-35" />}
-            </span>
-            <span data-lcos-railway-receiver-status data-user-state={receiverUserState ?? 'unknown'} title={receiverStatusText}>
-              {receiverStatusText}
-            </span>
+  </div>;
+  const anchor = focused ? elements.current.get(`rail:${focused.key}`)?.getBoundingClientRect() : addRef.current?.getBoundingClientRect();
+  const showReceiver=Boolean(receiver);
+  const receiverState=receiverEntry?.projection?.userState;
+  const receiverLabel=receiverState ? ({ready:'可以继续',thinking:'正在理解',working:'正在执行',needs_user:'等你回应',done:'本轮完成',unavailable:'暂时不可用'}[receiverState]) : '状态读取中';
+  const searchable=(snapshot?.candidates ?? []).filter((d)=>d.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  return <div ref={placement.ref} data-lcos-railway data-lcos-railway-version={snapshot?.order.version}
+    className="lcos-railway-host" style={{left:placement.rect.x,top:placement.rect.y}}>
+    <LcosRailwayView items={items} onSelect={(key)=>{const item=destinations.find((d)=>d.key===key);if(item)void activate(item);}}
+      canonicalTotal={destinations.length} overflowCount={hidden.length} overflowOpen={manage||receiveOverflowOpen||overflowPeek} onOverflowToggle={openManager}
+      onOverflowEnter={()=>{if(!manage&&!dropActive)setOverflowPeek(true);}} onOverflowLeave={()=>{if(!dropActive)setOverflowPeek(false);}}
+      overflow={receiveOverflowOpen||overflowPeek ? <div data-lcos-railway-overflow data-lcos-railway-receive-map={receiveOverflowOpen||undefined} role="dialog" aria-label={receiveOverflowOpen?'更多可接收目的地':'更多现场目的地'}>
+        <span data-lcos-railway-overflow-summary>{receiveOverflowOpen?'继续拖动到具体现场；不会打开管理页。':'悬停预览更多目的地；点击直接进入。'}</span>
+        <div data-lcos-railway-overflow-list>{hidden.map((item)=><div key={item.key} data-lcos-railway-overflow-row>
+          <button type="button" data-lcos-railway-overflow-open ref={elementRef(`overflow:${item.key}`)} disabled={!item.available||busy||status!=='ready'}
+            data-lcos-receive-state={receiveState(item,`overflow:${item.key}`)} aria-label={item.label} onClick={()=>void activate(item)}>
+            <strong>{item.label}</strong><small>{railwayReceiveLabel(receiveState(item,`overflow:${item.key}`),item.reason)}</small>
           </button>
-        </div>
-      );
-
-  const edgeOffsets = lcosHudEdgeOffsets(windowEnvironment, viewport);
-  const placement = useAvoidingHudPosition({ x: edgeOffsets.left, y: lcosHudSafeCenterY(windowEnvironment, viewport.height),
-    width: 52, height: Math.max(52, 16 + primaryDestinations.length * 42 - 6) }, { y: 'center' });
-
-  // An empty project has no Railway yet. Active Receiver and canonical
-  // compatibility rows are still real identities and keep the vertical chain visible.
-  if (
-    (snapshot?.order.orderedRefs.length ?? 0) === 0
-    && activeReceiver === undefined
-    && error === undefined
-    && receiverError === undefined
-  ) return <></>;
-
-
-  return (
-    <div
-      ref={placement.ref}
-      data-lcos-railway
-      role="presentation"
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape') return;
-        if (moreKey !== undefined) setMoreKey(undefined);
-        else if (overflowOpen) setOverflowOpen(false);
-        else if (peekKey !== undefined) setPeekKey(undefined);
-        else return;
-        event.preventDefault(); event.stopPropagation();
-      }}
-      data-lcos-railway-version={snapshot?.order.version}
-      data-lcos-railway-canonical-total={snapshot?.order.orderedRefs.length ?? 0}
-      className="pointer-events-auto fixed z-40 flex flex-col items-center gap-2"
-      style={{
-        left: placement.rect.x,
-        top: placement.rect.y,
-      }}
-    >
-      <LcosRailwayView
-        items={items}
-        canonicalTotal={snapshot?.order.orderedRefs.length ?? 0}
-        overflowCount={overflowRefs.length}
-        overflowOpen={overflowOpen}
-        onOverflowToggle={() => setOverflowOpen((open) => !open)}
-        overflow={overflow}
-        receiver={receiver}
-        onSelect={(key) => {
-          const destination = destinations.find((item) => item.key === key);
-          if (destination !== undefined) activate(destination);
-        }}
-        footer={error || receiverError ? <span role="status">{error ?? receiverError}<button type="button" className="ml-2 underline" onClick={refresh}>重试</button></span>
-          : notice ?? (dropState.status === 'failed' ? dropState.reason : undefined)}
-      />
-    </div>
-  );
+        </div>)}</div>
+      </div> : undefined}
+      receiver={showReceiver && receiver ? <div data-lcos-railway-receiver-shell><button type="button" ref={receiverRef} data-lcos-railway-receiver={receiver.id} data-lcos-drop-policy="open-only"
+        aria-label={`打开承接会话 ${receiver.label} · ${receiverLabel}`} title={`${receiver.label} · ${receiverLabel}`}
+        onClick={()=>openWindow('conversation',`会话窗口 · ${receiver.label}`,receiver.id)}>
+        <LcosReceiverIdentity projectId={projectId} conversationId={receiver.id} size={28}/>
+      </button></div>:undefined}
+      footer={notice||receiverError ? <span role="status">{notice??receiverError}{status==='error'&&<button type="button" onClick={refresh}>重试</button>}</span>:undefined}/>
+    <LcosIconButton ref={addRef} appearance="oreo" variant="secondary" shape="circle" size="md" floating data-railway-add
+      aria-label="管理现场目的地" title="加入或管理目的地" aria-expanded={manage} onClick={()=>manage?dismiss():openManager()}><Plus size={19}/></LcosIconButton>
+    {(manage||focused) && <Popover position={{x:anchor?.right??placement.rect.x+52,y:anchor?.top??placement.rect.y}}
+      offset={{x:10,y:0}} style={{...lcosGlassStyle,width:manage?Math.min(360,viewport.width-24):Math.min(300,viewport.width-24),maxHeight:viewport.height-24}}
+      className="lcos-railway-popover" contentRef={panelRef} onDismiss={()=>dismiss(true)} zIndex={80}>
+      <section role="dialog" aria-label={manage?'管理现场目的地':`${focused?.label} 目的地预览`}
+        onMouseEnter={cancelHide} onMouseLeave={manage?undefined:leavePeek} onFocusCapture={cancelHide}>
+        <header><strong>{manage?'现场目的地':focused?.label}</strong><button type="button" aria-label="关闭目的地面板" onClick={()=>dismiss(true)}><X size={17}/></button></header>
+        {manage ? <>
+          {status==='loading' && !snapshot && <p role="status">正在读取目的地…</p>}
+          {snapshot?.migrationRequired && <div className="lcos-railway-migration"><p>旧导航已按原身份列出，未识别的记录保留。确认后使用新版顺序。</p>
+            <button type="button" disabled={busy||status!=='ready'} onClick={()=>void update((s)=>s.order.orderedRefs,'旧记录已保留并更新，未创建任何现场。')}>保留记录并更新</button></div>}
+          <div className="lcos-railway-manage-list" aria-label="已加入的目的地">{destinations.length?destinations.map(row):<p>还没有加入目的地。下方只列出现有现场与已确认会话。</p>}</div>
+          {snapshot?.destinations.some(d=>d.role==='surface') && <details><summary>旧一级入口</summary>{snapshot.destinations.filter(d=>d.role==='surface').map(d=><div className="lcos-railway-legacy-root" key={d.key}><span>{d.label}（由底部入口接管）</span><button type="button" disabled={busy||status!=='ready'} onClick={()=>void remove(d.key)}>移出导航</button></div>)}</details>}
+          <label className="lcos-railway-candidate-search"><span>加入目的地</span><input type="search" autoFocus aria-label="搜索可加入目的地" value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索现有现场或会话"/></label>
+          <div className="lcos-railway-candidates">{searchable.map(item=><button type="button" key={item.key} disabled={!item.available||busy||status!=='ready'||snapshot?.migrationRequired}
+            aria-label={`加入 ${item.label}`} title={item.reason} onClick={()=>void update(s=>[...s.order.orderedRefs,item.ref],'目的地已加入。')}>
+            <span><strong>{item.label}</strong>{item.reason&&<small>{item.reason}</small>}</span><Plus size={16}/>
+          </button>)}{status==='ready'&&!searchable.length&&<p>{query.trim()?'没有匹配的现有目的地。':'没有更多可加入的目的地；这里不会自动创建现场。'}</p>}</div>
+        </> : focused && <>
+          {focused.canvasId&&focused.available ? <RailwayPeek canvasId={focused.canvasId}/> : <p>{focused.reason??'这是原会话入口；内容在会话窗口中读取。'}</p>}
+          <p>{focused.role==='receiver'?'这里只打开原会话，不更改当前接收者。':railwayReceiveLabel(receiveState(focused,`rail:${focused.key}`),focused.reason)}</p>
+          <div className="lcos-railway-peek-actions"><button type="button" disabled={!focused.available||busy||!!activating||status!=='ready'} onClick={()=>void activate(focused)}><Eye size={15}/>打开</button>
+            {focused.ref.kind === 'worksite' && focused.canvasId !== canvasId && <button type="button" disabled={placing||busy||!!activating||!focused.available||status!=='ready'} onClick={()=>void placePortal(focused)}><Plus size={15}/>{placing ? '保存入口…' : '放置入口'}</button>}
+            <button type="button" onClick={openManager}><MoreHorizontal size={15}/>管理</button></div>
+        </>}
+        {notice&&<p role="status">{notice}</p>}{status==='error'&&<button type="button" onClick={refresh}>重新读取目的地</button>}
+      </section>
+    </Popover>}
+  </div>;
 }

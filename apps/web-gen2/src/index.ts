@@ -13,7 +13,8 @@ export type { CoreEnvelope, CoreEnvelopeOk, CoreEnvelopeError } from './backend/
 export { CoreProjectClient } from './backend/projects.js';
 export type { ProjectListItem } from './backend/projects.js';
 
-export { CoreCollectionClient } from './backend/collections.js';
+export { CoreCollectionClient, collectionPreviewMembers, validateCollectionMembersSnapshot, collectionRemovalConfirmed } from './backend/collections.js';
+export type { CollectionMemberPreview } from './backend/collections.js';
 export type { CoreCollectionIdentity, CoreCollectionMemberRef, CoreCollectionMemberType, CoreCollectionMembership, CoreCollectionMembersSnapshot, CoreCollectionMembershipReceipt } from './backend/collections.js';
 
 export { CoreWorkflowClient } from './backend/workflows.js';
@@ -73,7 +74,7 @@ export type { HostSeam, HostSeamOptions, SemanticConnectIntent, SemanticConnectO
 export { hostExtensionFromSeam } from './integration/huabu/LcosCanvasAdapter.js';
 export type { HuabuCanvasHostExtension, HuabuCanvasHostOverlay } from './integration/huabu/LcosCanvasAdapter.js';
 
-export { resolvePresentationDensity, projectScreenSize, SCREEN_DENSITY_THRESHOLDS } from './presentation/nodePresentation.js';
+export { resolvePresentationDensity, resolveStablePresentationDensity, projectScreenSize, SCREEN_DENSITY_THRESHOLDS } from './presentation/nodePresentation.js';
 export type { PresentationDensity, InteractionPhase, ExplicitPresentationMode, NodePresentationInput } from './presentation/nodePresentation.js';
 
 export { resolveLcosNodeHostPresentation, resolveLcosInitialGeometryPreset } from './presentation/nodeHostPresentation.js';
@@ -84,7 +85,7 @@ export type { GlythShapeKey, GlythIdentityTone, GlythPresentationPose, GlythIden
 export { pointerModifiersOf, isAdditiveSelection, isReferencePick, isAdditiveSelectionExclusively } from './interaction/pointerIntent.js';
 export type { PointerModifiers } from './interaction/pointerIntent.js';
 
-export { sameEntityRef, createReferenceControllerState, openComposerReferences, toggleReference, removeReference, orderedReferences } from './interaction/referenceController.js';
+export { sameEntityRef, sameDraftReference, draftReferenceKey, createReferenceControllerState, openComposerReferences, toggleReference, removeReference, orderedReferences } from './interaction/referenceController.js';
 export type { ReferenceControllerState, EntityRefLike } from './interaction/referenceController.js';
 
 export {
@@ -296,3 +297,9 @@ export type {
   RfsExecuteResponse,
   RfsCapabilitiesResponse,
 } from './spatial/types.js';
+
+export { executionStatusLabel, runPresentation, resultSlotPresentation } from './presentation/executionPresentation.js';
+
+export { moveRailwayDestination } from './navigation/railwayOrder.js';
+
+export type { CanvasTextAddress, CanvasTextWrite, CanvasTextSnapshot } from './backend/artifacts.js';

@@ -21,11 +21,20 @@ import { isReferencePick, pointerModifiersOf } from '@local-creative-os/web-gen2
 import { getDragActivationDistance } from '@/handler/canvasGestureSession';
 import { nodeIdAtScreenPoint } from '@/handler/canvasNodeAtPoint';
 
-import { resolveDropIntent } from './drop/dropIntentResolver';
+import { resolveDropPointerTarget } from './drop/dropPointerResolution';
+import { canCommitDropRelease } from './drop/dropReleaseConsistency';
 import { useLcosDropStore } from './lcosDropState';
 import { useLcosReferenceStore } from './lcosReferenceState';
-import { markCarryCompleted } from './referenceClickSuppressor';
+import { beginCarryContextMenu, finishCarryContextMenu } from './referenceClickSuppressor';
+import { createRightCarryRecognizer } from './drop/rightCarry';
+import { sameCanvasDropNode, snapshotCanvasDropNodes } from './drop/nativeCanvasDropGeometry';
+import useCanvasStore from '@/store/canvasStore';
+import { toast } from '@/components/Common/Toast';
+import { draftReferenceUnavailableReason, snapshotDraftReference } from './composer/referenceSnapshot';
+import { useLcosShellStore } from './shell/lcosShellStore';
 import { markReferencePickCompleted } from './referenceClickSuppressor';
+import { composerInputKey } from './composer/composerInputJourney';
+import type { LcosNodeEntityRef } from './lcosReferenceState';
 
 import type { CanvasPointerRouterContext } from '@/handler/canvasPointerRouterContext';
 import type { PointerRecognizer } from '@/handler/pointerRouter';
@@ -47,6 +56,9 @@ export function createReferencePickRecognizer(): PointerRecognizer<
   let activePointerId: number | null = null;
   let startClient = { x: 0, y: 0 };
   let pendingNodeId: string | null = null;
+  let claimedNodeId: string | null = null;
+  let capturedRef: LcosNodeEntityRef | undefined;
+  let origin: { projectId: string | null; inputKey: string | undefined; canvasId: string | null } | null = null;
 
   const SLOP_PX = 4;
 
@@ -58,21 +70,25 @@ export function createReferencePickRecognizer(): PointerRecognizer<
       event.pointerType === 'mouse' &&
       event.button === 0 &&
       event.isPrimary &&
+      useLcosShellStore.getState().composerOpen &&
+      useLcosShellStore.getState().composerTarget !== null &&
       (isReferencePick(pointerModifiersOf(event))
         || (!event.shiftKey && !event.altKey && useLcosReferenceStore.getState().referencePickOwner !== null)),
     onDown: (event) => {
       const nodeId = nodeIdAtScreenPoint(event.clientX, event.clientY);
       // No node under the pointer → nothing to reference.
       if (!nodeId) return 'pass';
-      // Audit P0-3/P0-5: only nodes with a REAL CoreEntityRef (derived from
-      // ProjectionBinding) are referenceable. A native node without a binding
-      // is refused here — never fabricate note:<nodeId> — the adoption/adapter
-      // path (B00-R2b / Core adoption) is the only way to give it an identity.
+      const target = event.target as Element | null;
+      if (target?.closest?.('button, input, textarea, select, a[href], [contenteditable="true"], [data-lcos-relation-handle]')) return 'pass';
       const store = useLcosReferenceStore.getState();
-      if (!store.nodeEntityRefs.has(nodeId)) {
-        console.warn('[lcos] refusing to reference node without Core binding: ' + nodeId + ' (fail-close)');
-        return 'pass';
-      }
+      const shell = useLcosShellStore.getState();
+      // An unbound object still consumes the pick gesture. It must never fall
+      // through into ordinary selection, and no invented Core id is allowed.
+      const ref = store.nodeEntityRefs.get(nodeId);
+      capturedRef = ref ? snapshotDraftReference(ref) : undefined;
+      claimedNodeId = nodeId;
+      origin = { projectId: store.projectId, inputKey: composerInputKey(shell.composerTarget),
+        canvasId: useCanvasStore.getState().canvasId };
       activePointerId = event.pointerId;
       startClient = { x: event.clientX, y: event.clientY };
       pendingNodeId = nodeId;
@@ -99,20 +115,36 @@ export function createReferencePickRecognizer(): PointerRecognizer<
       if (event.pointerId !== activePointerId) return;
       event.preventDefault();
       event.stopPropagation();
-      if (pendingNodeId !== null) {
-        useLcosReferenceStore.getState().toggleNodeReference(pendingNodeId);
-        // React Flow selection listens to the trailing CLICK event, which
-        // pointer-level stopPropagation cannot cancel — swallow it here or
-        // the node also gets selected (looks like Ctrl became the select key).
-        markReferencePickCompleted();
+      if (pendingNodeId !== null && origin) {
+        const references = useLcosReferenceStore.getState();
+        const shell = useLcosShellStore.getState();
+        const live = references.nodeEntityRefs.get(pendingNodeId);
+        const sameInput = shell.composerOpen && shell.projectId === origin.projectId
+          && references.projectId === origin.projectId && composerInputKey(shell.composerTarget) === origin.inputKey
+          && useCanvasStore.getState().canvasId === origin.canvasId;
+        if (!sameInput) {
+          toast('输入或现场已改变，本次点取已取消。', { tone: 'danger' });
+        } else if (!capturedRef || !live || live.entityType !== capturedRef.entityType || live.entityId !== capturedRef.entityId) {
+          toast('这项内容尚未保存为可引用材料；已保留当前选择和草稿。', { tone: 'danger' });
+        } else if (!references.toggleEntityReference(capturedRef, shell.composerTarget?.intent)) {
+          toast(draftReferenceUnavailableReason(capturedRef, shell.composerTarget?.intent) ?? '引用尚未就绪。', { tone: 'danger' });
+        }
       }
+      if (claimedNodeId) markReferencePickCompleted(claimedNodeId);
       activePointerId = null;
       pendingNodeId = null;
+      claimedNodeId = null;
+      origin = null;
+      capturedRef = undefined;
     },
     onCancel: (event) => {
       if (event.pointerId !== activePointerId) return;
+      if (claimedNodeId) markReferencePickCompleted(claimedNodeId);
       activePointerId = null;
       pendingNodeId = null;
+      claimedNodeId = null;
+      origin = null;
+      capturedRef = undefined;
     },
   };
 }
@@ -146,22 +178,15 @@ export function advanceDropAtScreenPoint(
     top: 0,
     bottom: rect.height,
   });
-  const target = store.targetAt({ x: point.clientX, y: point.clientY });
-  const destination = target === undefined
-    ? undefined
-    : {
-        targetId: target.targetId,
-        previewPoint: {
-          x: point.clientX - rect.left,
-          y: point.clientY - rect.top,
-        },
-      };
-  const resolution = target === undefined
-    ? undefined
-    : store.carrySourceNodeId !== null && target.kind === 'canvas'
-      ? { status: 'ineligible' as const, targetId: target.targetId,
-          reason: '原对象保留在现场；请拖到会话、输入框或轨道目标' }
-      : resolveDropIntent(state.payload, target);
+  const { target, resolution } = resolveDropPointerTarget(state.payload,
+    store.targetAt({ x: point.clientX, y: point.clientY }), {
+      native: store.nativeSource !== null, rightCarry: store.carrySourceNodeId !== null,
+      ...(store.nativeSource?.blockedReason === undefined ? {} : { blockedReason: store.nativeSource.blockedReason }),
+    });
+  const destination = target === undefined ? undefined : {
+    targetId: target.targetId,
+    previewPoint: { x: point.clientX - rect.left, y: point.clientY - rect.top },
+  };
   const placementPoint = target?.kind === 'canvas'
     ? ctx.instance.screenToFlowPosition({
         x: point.clientX,
@@ -190,6 +215,10 @@ export function createDropRecognizer(): PointerRecognizer<
   CanvasPointerRouterContext
 > {
   let activePointerId: number | null = null;
+  const isNativeAssembly = (): boolean => {
+    const state = useLcosDropStore.getState().state;
+    return useLcosDropStore.getState().carrySourceNodeId !== null || useLcosDropStore.getState().nativeSource !== null || ('payload' in state && state.payload.kind === 'assembly');
+  };
 
   return {
     id: 'lcos/drop',
@@ -197,11 +226,13 @@ export function createDropRecognizer(): PointerRecognizer<
     onDown: () => 'pass' as const,
     observe: {
       onDown: (event) => {
+        if (isNativeAssembly()) { activePointerId = null; return; }
         if (event.pointerType !== 'mouse') return;
         if (useLcosDropStore.getState().state.status === 'idle') return;
         activePointerId = event.pointerId;
       },
       onMove: (event, ctx) => {
+        if (isNativeAssembly()) { activePointerId = null; return; }
         // Native drag sources can acquire the payload just after pointerdown;
         // accept the first subsequent move for the in-flight gesture instead
         // of silently missing the whole drop.
@@ -213,12 +244,14 @@ export function createDropRecognizer(): PointerRecognizer<
         advanceDropAtScreenPoint(event, ctx);
       },
       onUp: (event, ctx) => {
+        if (isNativeAssembly()) { activePointerId = null; return; }
         if (event.pointerId !== activePointerId) return;
+        const before = useLcosDropStore.getState();
         advanceDropAtScreenPoint(event, ctx);
         activePointerId = null;
         const store = useLcosDropStore.getState();
         const status = store.state.status;
-        if (status === 'preview' && store.resolution?.status === 'ready') {
+        if (canCommitDropRelease(before, store)) {
           const id = globalThis.crypto?.randomUUID?.() ?? `drop-${Date.now()}`;
           store.commitAt(id);
           return;
@@ -228,6 +261,9 @@ export function createDropRecognizer(): PointerRecognizer<
         }
       },
       onCancel: (event) => {
+        // Native HTML5 drag emits pointercancel when the browser takes over.
+        // Its drop/dragend transport, not this observer, ends that gesture.
+        if (isNativeAssembly()) { activePointerId = null; return; }
         if (event.pointerId !== activePointerId) return;
         activePointerId = null;
         const status = useLcosDropStore.getState().state.status;
@@ -252,88 +288,47 @@ export function createLcosRecognizers(): readonly PointerRecognizer<
   return [createReferencePickRecognizer(), createNodeCarryRecognizer(), createDropRecognizer()];
 }
 
-/** T3 Right Carry uses the existing router; no source geometry or selection writes. */
+/** T3 Right Carry shares the native pointer router and the existing drop owner. */
 export function createNodeCarryRecognizer(): PointerRecognizer<PointerEvent, CanvasPointerRouterContext> {
-  let pointerId: number | null = null;
-  let start = { x: 0, y: 0 };
-  let payload: DropPayload | null = null;
-  let sourceNodeId: string | null = null;
-  let locked = false;
-  let wrapper: HTMLDivElement | null = null;
-
-  const reset = (): void => {
-    if (pointerId !== null && wrapper?.hasPointerCapture?.(pointerId)) {
-      wrapper.releasePointerCapture(pointerId);
-    }
-    pointerId = null;
-    payload = null;
-    sourceNodeId = null;
-    locked = false;
-    wrapper = null;
+  const sourceScope = () => {
+    const canvas = useCanvasStore.getState();
+    const reference = useLcosReferenceStore.getState();
+    const projectId = useLcosShellStore.getState().projectId;
+    return projectId && canvas.canvasId && !canvas.isLoading && reference.projectId === projectId
+      && reference.bindingCanvasId === canvas.canvasId ? { projectId, canvasId: canvas.canvasId } : undefined;
   };
-  const stop = (event: PointerEvent): void => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  return {
-    id: 'lcos/node-carry',
-    canClaim: (event, ctx) => pointerId === null
-      && !ctx.interactivityLocked && !ctx.explicitToolActive
-      && event.pointerType === 'mouse' && event.isPrimary && event.button === 2
-      && useLcosDropStore.getState().state.status === 'idle',
-    onDown: (event, ctx) => {
+  const snapshot = (ids: readonly string[]) => snapshotCanvasDropNodes(ids,
+    useCanvasStore.getState().nodes, useLcosReferenceStore.getState().nodeEntityRefs);
+  return createRightCarryRecognizer({
+    acquire: (event) => {
       const target = event.target;
-      if (target instanceof Element && target.closest(
+      if (!(target instanceof Element) || target.closest(
         'input,textarea,select,button,a[href],[contenteditable="true"],.react-flow__handle,[data-resize-handle]',
-      )) return 'pass';
+      )) return undefined;
       const nodeId = nodeIdAtScreenPoint(event.clientX, event.clientY);
-      const ref = nodeId ? useLcosReferenceStore.getState().nodeEntityRefs.get(nodeId) : undefined;
-      if (!ref) return 'pass';
-      pointerId = event.pointerId;
-      start = { x: event.clientX, y: event.clientY };
-      payload = { kind: 'object', entityType: ref.entityType, entityId: ref.entityId,
-        ...(ref.descriptor?.artifactViewId ? { artifactViewId: ref.descriptor.artifactViewId } : {}) };
-      sourceNodeId = nodeId;
-      wrapper = ctx.wrapper;
-      stop(event);
-      return 'claim';
+      const scope = sourceScope();
+      const canvas = useCanvasStore.getState();
+      const primary = canvas.nodes.find((node) => node.id === nodeId);
+      const element = target.closest('.react-flow__node');
+      if (!scope || !primary || !element || !useLcosReferenceStore.getState().nodeEntityRefs.has(primary.id)) return undefined;
+      const ids = primary.selected ? canvas.nodes.filter((node) => node.selected).map((node) => node.id) : [primary.id];
+      const nodes = snapshot(ids);
+      return nodes.length === ids.length ? { scope, primaryNodeId: primary.id, nodes, element } : undefined;
     },
-    onMove: (event, ctx) => {
-      if (event.pointerId !== pointerId || payload === null) return;
-      stop(event);
-      if (!locked) {
-        if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < getDragActivationDistance('mouse')) return;
-        locked = true;
-        markCarryCompleted();
-        wrapper?.setPointerCapture?.(event.pointerId);
-        useLcosDropStore.getState().begin(payload, sourceNodeId ?? undefined);
-      }
-      advanceDropAtScreenPoint(event, ctx);
+    isCurrent: (source) => {
+      const scope = sourceScope();
+      const current = snapshot(source.nodes.map((node) => node.nodeId));
+      return scope?.projectId === source.scope.projectId && scope.canvasId === source.scope.canvasId
+        && source.nodes.every((node) => sameCanvasDropNode(node, current.find((item) => item.nodeId === node.nodeId)));
     },
-    onUp: (event, ctx) => {
-      if (event.pointerId !== pointerId) return;
-      if (locked) {
-        stop(event);
-        markCarryCompleted();
-        advanceDropAtScreenPoint(event, ctx);
-        const store = useLcosDropStore.getState();
-        if (store.state.status === 'preview' && store.resolution?.status === 'ready') {
-          store.commitAt(crypto.randomUUID());
-        } else if (store.state.status !== 'committing' && store.state.status !== 'failed') {
-          store.cancel();
-        }
-      }
-      // The shared drop observer commits the exact preview before this owner releases.
-      reset();
-    },
-    onCancel: (event) => {
-      if (event.pointerId !== pointerId) return;
-      if (locked) {
-        markCarryCompleted();
-        const store = useLcosDropStore.getState();
-        if (store.state.status !== 'committing') store.cancel();
-      }
-      reset();
-    },
-  };
+    read: () => useLcosDropStore.getState(),
+    begin: (payload, sourceNodeId, sourceNodeIds) => useLcosDropStore.getState().begin(payload, sourceNodeId, sourceNodeIds),
+    advance: advanceDropAtScreenPoint,
+    commit: () => useLcosDropStore.getState().commitAt(crypto.randomUUID()),
+    cancel: () => useLcosDropStore.getState().cancel(),
+    reject: (message) => toast(message, { tone: 'danger' }),
+    threshold: () => getDragActivationDistance('mouse'),
+    beginMenu: beginCarryContextMenu,
+    finishMenu: finishCarryContextMenu,
+  });
 }

@@ -47,7 +47,7 @@ export function createWindowRegion(id: string, windowIds: readonly string[], act
 }
 export function activateRegionWindow(region: LcosWindowRegion, windowId: string): LcosWindowRegion {
   const owner = region.groups.find((group) => group.windowIds.includes(windowId));
-  if (!owner) return region;
+  if (!owner || (owner.activeWindowId === windowId && region.activeGroupId === owner.id)) return region;
   return { ...region, activeGroupId: owner.id, groups: region.groups.map((group) => group === owner ? { ...group, activeWindowId: windowId } : group) };
 }
 export function removeRegionWindow(region: LcosWindowRegion, windowId: string): LcosWindowRegion | undefined {
@@ -95,4 +95,16 @@ export function moveRegionWindow(region: LcosWindowRegion, windowId: string, tar
   if (!remaining) return region;
   return { ...remaining, activeGroupId: targetGroupId, groups: remaining.groups.map((group) => group.id === targetGroupId
     ? { ...group, windowIds: [...group.windowIds, windowId], activeWindowId: windowId } : group) };
+}
+
+/** A tab position is a real sibling id, not an index from an earlier render.
+ * null means the end of this group; undefined is handled by the caller as no reorder.
+ */
+export function reorderRegionWindowBefore(region: LcosWindowRegion, windowId: string, beforeId: string | null): LcosWindowRegion {
+  const owner = region.groups.find((group) => group.windowIds.includes(windowId));
+  if (!owner || beforeId === windowId || beforeId !== null && !owner.windowIds.includes(beforeId)) return region;
+  const windowIds = owner.windowIds.filter((id) => id !== windowId);
+  windowIds.splice(beforeId === null ? windowIds.length : windowIds.indexOf(beforeId), 0, windowId);
+  if (windowIds.every((id, index) => id === owner.windowIds[index])) return region;
+  return { ...region, groups: region.groups.map((group) => group === owner ? { ...group, windowIds } : group) };
 }

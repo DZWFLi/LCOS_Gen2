@@ -14,6 +14,7 @@
 // sessions — the token is a single knob (was 520ms in Gen1).
 
 import type { AssemblySourceRefV1 } from '@local-creative-os/contracts';
+import type { EntityRefLike } from './referenceController.js';
 
 /** A point in the coordinate system the caller gives us (px by default). */
 export type SurfacePoint = { readonly x: number; readonly y: number };
@@ -29,12 +30,26 @@ export interface DropBounds {
 /**
  * What is being dropped. Closed four-shape union — never a taxonomy generator.
  */
+export interface DropObjectReference extends EntityRefLike {
+  readonly displayLabel?: string;
+}
+
 export type DropPayload =
-  | { readonly kind: 'object'; readonly entityType: string; readonly entityId: string; readonly artifactViewId?: string }
+  | { readonly kind: 'objects'; readonly objects: readonly DropObjectReference[] }
+  | ({ readonly kind: 'object' } & DropObjectReference)
   | { readonly kind: 'file'; readonly name: string; readonly size?: number; readonly mime?: string }
   | { readonly kind: 'text' | 'url'; readonly value: string }
   /** Assembly rows carry the canonical source ref; itemId alone is not an identity. */
-  | { readonly kind: 'assembly'; readonly itemId: string; readonly sourceRef: AssemblySourceRefV1 };
+  | {
+      readonly kind: 'assembly';
+      readonly itemId: string;
+      /** Exact version/source for reading, composing and applying. Never rewrite a View id. */
+      readonly sourceRef: AssemblySourceRefV1;
+      /** Warehouse-owned entity identity for canonical membership, distinct from its View. */
+      readonly entityRef?: { readonly type: string; readonly id: string };
+      /** Same captured reference used by the row's explicit add button. Not membership identity. */
+      readonly reference?: DropObjectReference;
+    };
 
 /**
  * The spatial intent the user has expressed by hovering a registered target.

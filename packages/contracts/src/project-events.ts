@@ -2,6 +2,7 @@ export type ProjectEventChannel = 'presentation' | 'work_state' | 'run' | 'propo
 
 export type ProjectEventType =
   | 'presentation.changed'
+  | 'railway.changed'
   | 'work_state.changed'
   | 'run.changed'
   | 'proposal.changed'

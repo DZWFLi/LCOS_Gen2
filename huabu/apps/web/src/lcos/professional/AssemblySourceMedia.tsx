@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { LcosButton } from '../ui/primitives/LcosButton';
+import { readAssemblyArtifactMedia } from './assemblyArtifactMedia';
 import { AssemblyMaterialView } from '../ui/professional/AssemblyMaterialView';
 
 import type { AssemblyMaterialViewProps } from '../ui/professional/AssemblyMaterialView';
@@ -49,24 +50,14 @@ function DeferredMedia({ load, ...props }: AssemblyMaterialViewProps & { readonl
 }
 
 /** Same revision/FileRecord channel as ArtifactReaderBody. No guessed asset URL or fixture cover. */
-export function AssemblyArtifactMedia({ client, projectId, artifactId, ...props }: AssemblyMaterialViewProps & {
-  readonly client: CoreArtifactClient; readonly projectId: string; readonly artifactId: string;
+export function AssemblyArtifactMedia({ client, projectId, artifactId, revisionId, ...props }: AssemblyMaterialViewProps & {
+  readonly client: CoreArtifactClient; readonly projectId: string; readonly artifactId: string; readonly revisionId?: string;
 }): React.JSX.Element {
   const load = useCallback(async (signal: AbortSignal): Promise<Media> => {
-    const [detail, revisions] = await Promise.all([client.getArtifactDetail(artifactId), client.listArtifactRevisions(artifactId)]);
-    if (signal.aborted) { return {}; }
-    if (String(detail.artifact.projectId) !== projectId) { throw new Error('材料不属于当前项目'); }
-    const revisionId = detail.currentRevisionId ?? detail.revisions[0]?.id;
-    const revision = revisions.find((entry) => String(entry.id) === String(revisionId) && String(entry.artifactId) === artifactId);
-    if (!revision) { return {}; }
-    if (detail.artifact.kind === 'image') { return { image: await client.getFileRecordContent(projectId, String(revision.fileRecordId), signal) }; }
-    if (detail.artifact.kind === 'markdown') { return { text: await client.getFileRecordText(projectId, String(revision.fileRecordId), signal) }; }
-    if (detail.artifact.kind === 'other') {
-      const bytes = await client.getFileRecordContent(projectId, String(revision.fileRecordId), signal);
-      if (bytes.type.startsWith('text/')) return { text: await bytes.text() };
-    }
-    return {};
-  }, [client, artifactId, projectId]);
+    const value = await readAssemblyArtifactMedia(client, projectId, artifactId, revisionId, signal);
+    return value.kind === 'image' && value.blob !== undefined ? { image: value.blob }
+      : value.kind === 'text' && value.text !== undefined ? { text: value.text } : {};
+  }, [client, artifactId, projectId, revisionId]);
   return <DeferredMedia {...props} load={load} />;
 }
 

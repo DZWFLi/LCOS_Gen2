@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef } from 'react';
+import { readerTabScrollLeft } from './readerTabScroll';
 import { LcosButton } from '../primitives/LcosButton';
 
 import type { ReactNode } from 'react';
@@ -28,13 +30,30 @@ export interface ReaderContentTabsViewProps {
  */
 export function ReaderContentTabsView({ label, items, onActivate,
   emptyContent = null }: ReaderContentTabsViewProps): React.JSX.Element {
+  const track = useRef<HTMLDivElement>(null);
+  const selectedId = items.find((item) => item.selected)?.id;
+  useLayoutEffect(() => {
+    const element = track.current;
+    if (element === null || selectedId === undefined) return;
+    const reveal = (): void => {
+      const tab = [...element.querySelectorAll<HTMLElement>('[data-lcos-reader-content-tab]')].find((node) => node.dataset.lcosReaderContentTab === selectedId);
+      if (!tab || element.clientWidth === 0) return;
+      const parent = element.getBoundingClientRect(), child = tab.getBoundingClientRect();
+      element.scrollLeft = readerTabScrollLeft({ scrollLeft: element.scrollLeft, viewportWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth, tabLeft: child.left - parent.left + element.scrollLeft, tabWidth: child.width });
+    };
+    reveal();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(reveal) : undefined;
+    observer?.observe(element);
+    return () => observer?.disconnect();
+  }, [selectedId]);
   return (
     <nav className="lcos-reader-content-tabs" aria-label={label} data-lcos-reader-content-tabs>
-      <div className="lcos-reader-content-tabs-track" data-lcos-reader-content-tabs-track>
+      <div ref={track} className="lcos-reader-content-tabs-track" data-lcos-reader-content-tabs-track>
         {items.length === 0 ? emptyContent : items.map((item) => (
           <LcosButton key={item.id} type="button" appearance="oreo"
             variant={item.selected ? 'primary' : 'secondary'}
-            data-lcos-reader-content-tab={item.id} data-selected={item.selected ? 'true' : undefined}
+            data-lcos-reader-content-tab={item.id} data-lcos-window-tab-value={item.id} data-selected={item.selected ? 'true' : undefined}
             disabled={item.disabled} aria-current={item.selected ? 'page' : undefined}
             aria-controls={item.panelId} title={item.disabledReason ?? item.label}
             onClick={() => onActivate(item.id)}>

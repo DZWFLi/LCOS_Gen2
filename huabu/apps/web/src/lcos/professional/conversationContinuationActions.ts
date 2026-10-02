@@ -1,4 +1,6 @@
 import type { CoreEntityRefLike } from '../referenceBridge';
+import type { ComposerReferenceViewItem } from '../ui/nearfield/composerViewTypes';
+import type { CollaborationProductErrorV1 } from '@local-creative-os/contracts';
 import type { OrderedRunReferenceV2 } from '@local-creative-os/contracts';
 
 export type ConversationContinuationAction =
@@ -66,19 +68,35 @@ export function buildSelectedContextReferences(
       if (!unsupportedEntityTypes.includes(ref.entityType)) unsupportedEntityTypes.push(ref.entityType);
       return;
     }
-    orderedReferences.push({ ref: mapped, order });
+    orderedReferences.push({ ref: mapped, order, ...(ref.mode ? { mode: ref.mode } : {}) });
   });
   return { orderedReferences, unsupportedEntityTypes };
 }
 
-function toRunReference(ref: CoreEntityRefLike): OrderedRunReferenceV2['ref'] | undefined {
+export function toRunReference(ref: CoreEntityRefLike): OrderedRunReferenceV2['ref'] | undefined {
   switch (ref.entityType) {
-    case 'artifact': return { type: 'artifact', artifactId: ref.entityId };
-    case 'view': return { type: 'view', viewId: ref.entityId };
+    case 'artifact': {
+      if (ref.revisionId) return { type: 'artifact', artifactId: ref.entityId, revisionId: ref.revisionId };
+      const viewId = (ref as CoreEntityRefLike & { artifactViewId?: string; descriptor?: { artifactViewId?: string } }).artifactViewId
+        ?? (ref as CoreEntityRefLike & { descriptor?: { artifactViewId?: string } }).descriptor?.artifactViewId;
+      return viewId ? { type: 'view', viewId } : { type: 'artifact', artifactId: ref.entityId };
+    }
+    case 'artifactView':
+    case 'view': return ref.artifactId && ref.revisionId
+      ? { type: 'artifact', artifactId: ref.artifactId, revisionId: ref.revisionId }
+      : { type: 'view', viewId: ref.entityId };
     case 'scope': return { type: 'scope', scopeId: ref.entityId };
     case 'workspace': return { type: 'workspace', workspaceId: ref.entityId };
     case 'conversation': return { type: 'conversation', conversationSessionId: ref.entityId };
-    case 'component': return { type: 'component', componentId: ref.entityId };
+    case 'component': return { type: 'component', componentId: ref.entityId, ...(ref.presentationId ? { presentationId: ref.presentationId } : {}) };
     default: return undefined;
   }
+}
+
+/** Acknowledgement/immutable preview for one UI request. Lives in the existing Shell, not Core truth. */
+export interface ContinuationUiRequest {
+  readonly intent: ConversationContinuationIntent;
+  readonly items: readonly ComposerReferenceViewItem[];
+  readonly status: 'sending' | 'accepted' | 'error';
+  readonly error?: CollaborationProductErrorV1;
 }

@@ -5,7 +5,7 @@ import type { DropAssemblyApplyIntent } from './dropTypes';
 const refs: readonly AssemblySourceRefV1[] = [{ kind: 'artifactView', id: 'view-a' }, { kind: 'note', id: 'b' }, { kind: 'resource', id: 'c' }];
 const intent: DropAssemblyApplyIntent = { kind: 'assembly-apply', targetId: 'canvas:one', targetRef: { kind: 'main' }, sourceRefs: refs };
 const item = (index: number, status: AssemblyApplyItemResultV1['status'], channel: AssemblyApplyItemResultV1['channel']): AssemblyApplyItemResultV1 => ({ sourceRef: refs[index]!, status, channel });
-const resolve = (items: AssemblyApplyItemResultV1[]) => assemblyDropReceipt(intent, 'one', { schemaVersion: 1, projectId: 'p', allApplied: true, results: items });
+const resolve = (items: AssemblyApplyItemResultV1[]) => assemblyDropReceipt(intent, 'one', { schemaVersion: 1, projectId: 'p', allApplied: true, results: items }, 'p');
 describe('canonical Assembly Drop outcomes', () => {
   it('HTTP/allApplied success cannot hide mixed failure and unsupported outcomes', () => {
     const receipt = resolve([item(0, 'applied', 'presentation-membership'), item(1, 'failed', 'error'), item(2, 'skipped', 'unsupported')]);
@@ -32,7 +32,7 @@ describe('canonical Assembly Drop outcomes', () => {
     const sources = [{ kind: 'skill', id: 'same', source: 'system', version: '1' }, { kind: 'skill', id: 'same', source: 'user', version: '2' }] as const;
     const receipt = assemblyDropReceipt({ ...intent, sourceRefs: sources }, 'tx', { schemaVersion: 1, projectId: 'p', allApplied: false, results: [
       { sourceRef: sources[0], status: 'applied', channel: 'relation' }, { sourceRef: sources[1], status: 'failed', channel: 'error' },
-    ] });
+    ] }, 'p');
     expect(receipt.retrySourceRefs).toEqual([sources[1]]);
   });
 });

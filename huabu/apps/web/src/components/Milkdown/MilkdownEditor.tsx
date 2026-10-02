@@ -33,6 +33,8 @@ import {
   uploadImage as uploadImageApi,
 } from '@/api/artifact';
 
+import { toast } from '@/components/Common/Toast';
+
 import { attachBlockDragListeners } from './blockDrag';
 import { createMilkdown, type MilkdownInstance } from './createMilkdown';
 import { markdownEquals, normalizeMarkdown } from './markdownUtils';
@@ -85,6 +87,8 @@ export interface MilkdownEditorProps {
    * overlays). Called with `null` on unmount.
    */
   onReady?: (instance: MilkdownInstance | null) => void;
+  /** Initialization failed; the owner retains its draft and offers a retry. */
+  onError?: (error: Error) => void;
   /**
    * Fires when the user drags a block (or a multi-block selection) out
    * of the editor — typically used by note nodes to construct the
@@ -107,15 +111,19 @@ export function MilkdownEditor(props: MilkdownEditorProps): React.JSX.Element {
     decorations,
     onExternalUpdate,
     onReady,
+    onError,
     onBlockDragStart,
   } = props;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<MilkdownInstance | null>(null);
+  const applyingExternalRef = useRef(false);
   /** Most recent value either set on or emitted from the editor. */
   const lastSyncedRef = useRef<string>(normalizeMarkdown(markdown));
-  /** Markdown queued while the async mount is in flight. */
-  const pendingMarkdownRef = useRef<string | null>(null);
+  // Read the latest props after async creation. A→B→A must cancel B, not leave
+  // it queued merely because A equals the value used to start creation.
+  const latestRef = useRef({ markdown, editable, decorations, onError });
+  latestRef.current = { markdown, editable, decorations, onError };
   /** Track latest `onChange` without re-mounting the editor. */
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -137,8 +145,20 @@ export function MilkdownEditor(props: MilkdownEditorProps): React.JSX.Element {
   // the first attempt before the second mount runs.
   useEffect(() => {
     let cancelled = false;
-    const root = rootRef.current;
-    if (!root) return;
+    const host = rootRef.current;
+    if (!host) return;
+    // Own one mount per effect. A cancelled async instance may finish/destroy
+    // after a replacement is alive; it must not share that replacement's DOM.
+    const root = document.createElement('div');
+    host.append(root);
+    let ownedInstance: MilkdownInstance | null = null;
+    let unsubscribe: (() => void) | undefined;
+    const reportError = (reason: unknown) => {
+      if (cancelled) return;
+      const error = reason instanceof Error ? reason : new Error(String(reason));
+      if (latestRef.current.onError) latestRef.current.onError(error);
+      else toast(`正文编辑器载入失败：${error.message}`, { tone: 'danger' });
+    };
 
     // Install the drag-out listeners up-front: they are no-ops while
     // `onBlockDragStartRef.current` is undefined, and self-update via
@@ -151,9 +171,10 @@ export function MilkdownEditor(props: MilkdownEditorProps): React.JSX.Element {
     });
 
     void (async () => {
+      const initialMarkdown = normalizeMarkdown(latestRef.current.markdown);
       const instance = await createMilkdown({
         root,
-        initialMarkdown: lastSyncedRef.current,
+        initialMarkdown,
         editable,
         placeholder,
         toolbarMode: 'huabu',
@@ -176,12 +197,14 @@ export function MilkdownEditor(props: MilkdownEditorProps): React.JSX.Element {
         },
       });
 
+      ownedInstance = instance;
       if (cancelled) {
         await instance.destroy();
         return;
       }
 
-      instance.onMarkdownUpdated((raw) => {
+      unsubscribe = instance.onMarkdownUpdated((raw) => {
+        if (cancelled || applyingExternalRef.current) return;
         const next = normalizeMarkdown(raw);
         if (next === lastSyncedRef.current) return;
         lastSyncedRef.current = next;
@@ -189,27 +212,27 @@ export function MilkdownEditor(props: MilkdownEditorProps): React.JSX.Element {
       });
 
       instanceRef.current = instance;
+      const latest = latestRef.current;
+      const next = normalizeMarkdown(latest.markdown);
+      lastSyncedRef.current = next;
+      if (!markdownEquals(initialMarkdown, next)) applyExternal(instance, next);
+      instance.setReadonly(!latest.editable);
+      instance.setBlockDecorations(latest.decorations?.blocks ?? []);
+      // Consumers may focus/read the document here, so catch-up must precede it.
       onReadyRef.current?.(instance);
-
-      // Apply any prop change that landed during the async mount.
-      const pending = pendingMarkdownRef.current;
-      pendingMarkdownRef.current = null;
-      if (pending !== null && pending !== lastSyncedRef.current) {
-        lastSyncedRef.current = pending;
-        applyExternal(instance, pending);
-      }
-    })();
+    })().catch(reportError);
 
     return () => {
       cancelled = true;
       detachDrag();
-      const instance = instanceRef.current;
-      instanceRef.current = null;
+      unsubscribe?.();
+      if (instanceRef.current === ownedInstance) instanceRef.current = null;
       onReadyRef.current?.(null);
-      if (instance) void instance.destroy();
+      root.remove();
+      if (ownedInstance) void ownedInstance.destroy().catch(() => undefined);
     };
-    // Intentionally mount-only: `editable`, `placeholder` are handled by
-    // dedicated effects below. We never want to tear down on prop changes.
+    // Mount-only: markdown, editable and decorations reconcile below; the
+    // placeholder is the initial factory option. Prop changes retain selection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -218,11 +241,7 @@ export function MilkdownEditor(props: MilkdownEditorProps): React.JSX.Element {
     if (markdownEquals(markdown, lastSyncedRef.current)) return;
     const next = normalizeMarkdown(markdown);
     const instance = instanceRef.current;
-    if (!instance) {
-      // Mount still in flight — queue the value for application.
-      pendingMarkdownRef.current = next;
-      return;
-    }
+    if (!instance) return; // latestRef is consumed when creation settles.
     lastSyncedRef.current = next;
     applyExternal(instance, next);
   }, [markdown]);
@@ -266,7 +285,11 @@ export function MilkdownEditor(props: MilkdownEditorProps): React.JSX.Element {
         if (md !== null) oldMarkdownByKey.set(k, md);
       }
     }
-    instance.setMarkdown(incomingMarkdown);
+    // ProseMirror may serialize equivalent table/math markup differently.
+    // External synchronization is not a user edit and must not dirty/save it.
+    applyingExternalRef.current = true;
+    try { instance.setMarkdown(incomingMarkdown); }
+    finally { applyingExternalRef.current = false; }
     if (cb) {
       const after = instance.snapshotBlocks();
       const newKeys = after.keys;

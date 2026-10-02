@@ -2,13 +2,6 @@
 // Licensed under the MIT license.
 
 import {
-  autoUpdate,
-  flip,
-  offset,
-  shift,
-  useFloating,
-} from '@floating-ui/react';
-import {
   AlignCenterHorizontal,
   AlignCenterVertical,
   AlignEndHorizontal,
@@ -20,16 +13,14 @@ import {
   UnfoldVertical,
   Ungroup,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
+import { ToolbarPopover } from './ToolbarPopover';
 
 import { Button } from './Button';
 import { cn } from './cn';
 import { ColorPicker, type ColorPreset } from './ColorPicker';
-import { FLOATING_CHROME_PROPS } from './floatingChrome';
 import {
   Select as BaseSelect,
   type SelectOption as BaseSelectOption,
@@ -279,21 +270,6 @@ function ToolbarColorPicker({
   onOpenChange,
   children,
 }: ToolbarColorPickerProps) {
-  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
-  const isOpen = open ?? uncontrolledOpen;
-  const setIsOpen = (nextOpen: boolean) => {
-    if (open === undefined) setUncontrolledOpen(nextOpen);
-    onOpenChange?.(nextOpen);
-  };
-  const { refs, floatingStyles, isPositioned } = useFloating({
-    open: isOpen,
-    placement: 'top',
-    middleware: [offset(8), flip({ padding: 8 }), shift({ padding: 8 })],
-    whileElementsMounted: autoUpdate,
-  });
-
-  useCloseOnEscape(isOpen, () => setIsOpen(false));
-
   // Resolve the token to a CSS color for the trigger swatch.
   // Legacy hex / CSS keyword passes through unchanged.
   const triggerColor =
@@ -319,70 +295,14 @@ function ToolbarColorPicker({
     />
   );
 
-  return (
-    <div
-      ref={(node) => {
-        refs.setReference(node);
-      }}
-      className="flex items-center"
-    >
-      <Button
-        variant="ghost"
-        iconOnly
-        size="sm"
-        title={title}
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsOpen(!isOpen);
-        }}
-        className={cn(
-          'bg-bg-default enabled:hover:bg-hover h-6 w-7 rounded-md',
-          isOpen && 'ring-info ring-1',
-          triggerClassName,
-        )}
-      >
-        {children ?? defaultTrigger}
-      </Button>
-
-      {isOpen
-        ? createPortal(
-            <>
-              <div
-                role="presentation"
-                className="fixed inset-0 z-40"
-                {...FLOATING_CHROME_PROPS}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsOpen(false);
-                }}
-              />
-              <div
-                ref={refs.setFloating}
-                role="presentation"
-                {...FLOATING_CHROME_PROPS}
-                className={cn(FLOATING_TOOLBAR_POPOVER_CLASS, 'px-1.5 py-1')}
-                style={{
-                  ...floatingStyles,
-                  visibility: isPositioned ? 'visible' : 'hidden',
-                }}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ColorPicker
-                  colors={colors}
-                  activeToken={value}
-                  onSelect={(t) => {
-                    onSelect(t);
-                    setIsOpen(false);
-                  }}
-                />
-              </div>
-            </>,
-            document.body,
-          )
-        : null}
-    </div>
-  );
+  return <ToolbarPopover label={title} trigger={children ?? defaultTrigger}
+    triggerClassName={cn('bg-bg-default enabled:hover:bg-hover h-6 w-7 rounded-md', triggerClassName)}
+    {...(open === undefined ? {} : { open })}
+    {...(onOpenChange === undefined ? {} : { onOpenChange })}
+    className={cn(FLOATING_TOOLBAR_POPOVER_CLASS, 'px-1.5 py-1')}>
+    {(close) => <ColorPicker colors={colors} activeToken={value}
+      onSelect={(token) => { onSelect(token); close(); }} />}
+  </ToolbarPopover>;
 }
 
 // ─── ToolbarSizePicker ────────────────────────────────────────────────────────
@@ -772,6 +692,8 @@ function ToolbarSizePicker({
 // ─── ToolbarAlignPicker ───────────────────────────────────────────────────────
 
 interface ToolbarAlignPickerProps {
+  onTidy?: (() => void) | undefined;
+  onDistribute?: ((axis: 'x' | 'y') => void) | undefined;
   /** Called when the user picks a horizontal or vertical alignment. */
   onAlign: (direction: ToolbarAlignDirection) => void;
   /** Called when the user clicks "Spread Apart". */
@@ -798,34 +720,13 @@ interface ToolbarAlignPickerProps {
  *    selection" placement.
  */
 function ToolbarAlignPicker({
+  onTidy, onDistribute,
   onAlign,
   onSpread,
   title,
 }: ToolbarAlignPickerProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Close on outside click. Mirrors the dismissal model used by
-  // `ToolbarColorPicker` so all toolbar popovers behave identically.
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as HTMLElement)
-      ) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [isOpen]);
-
-  // Close on Escape — the popover sits over the canvas, so Escape
-  // should dismiss the picker without deselecting nodes.
-  useCloseOnEscape(isOpen, () => setIsOpen(false));
-
   const pick = (direction: ToolbarAlignDirection) => {
     onAlign(direction);
     setIsOpen(false);
@@ -876,36 +777,8 @@ function ToolbarAlignPicker({
   ];
 
   return (
-    <div ref={containerRef} className="relative flex items-center">
-      <Button
-        variant="ghost"
-        iconOnly
-        size="sm"
-        title={title ?? t('toolbar.align.title')}
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsOpen(!isOpen);
-        }}
-        className="text-fg-muted hover:bg-bg-default"
-      >
-        <AlignHorizontalDistributeCenter />
-      </Button>
-
-      {isOpen && (
-        <>
-          <div
-            role="presentation"
-            className="fixed inset-0 z-40"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsOpen(false);
-            }}
-          />
-          <div
-            role="presentation"
-            className="border-edge-default shadow-bottom animate-in fade-in zoom-in bg-surface absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-lg border p-1.5 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
+    <ToolbarPopover label={title ?? t('toolbar.align.title')} trigger={<AlignHorizontalDistributeCenter />}
+      open={isOpen} onOpenChange={setIsOpen}>
             {/* Single flex row: horizontal aligns, vertical divider,
                 vertical aligns, vertical divider, Spread. Flex lets
                 each button render at its natural ~21px width with
@@ -954,10 +827,14 @@ function ToolbarAlignPicker({
                 <Ungroup />
               </Button>
             </div>
-          </div>
-        </>
-      )}
-    </div>
+            {(onTidy || onDistribute) && <div className="lcos-selection-layout-options">
+              {onTidy && <Button variant="ghost" size="sm" aria-label="整齐排列所选对象" onClick={()=>{onTidy();setIsOpen(false);}}>整齐排列</Button>}
+              {onDistribute && <>
+                <Button variant="ghost" size="sm" aria-label="横向等距" onClick={()=>{onDistribute('x');setIsOpen(false);}}>横向等距</Button>
+                <Button variant="ghost" size="sm" aria-label="纵向等距" onClick={()=>{onDistribute('y');setIsOpen(false);}}>纵向等距</Button>
+              </>}
+            </div>}
+    </ToolbarPopover>
   );
 }
 
@@ -970,6 +847,7 @@ export const FloatingToolbar = Object.assign(Root, {
   Group,
   Select: ToolbarSelect,
   ColorPicker: ToolbarColorPicker,
+  Popover: ToolbarPopover,
   SizePicker: ToolbarSizePicker,
   NumberInput: ToolbarNumberInput,
   AlignPicker: ToolbarAlignPicker,

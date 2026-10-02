@@ -7,9 +7,10 @@
 // Spatial truth stays in Huabu (RFS); domain truth stays in Local Core (HttpClient).
 // This file owns no geometry and no second spatial runtime.
 
+import { worksiteProjectionInput } from '../spatial/worksiteProjectionInput.js';
 import { HttpClient } from '../backend/client.js';
 import { CoreProjectClient } from '../backend/projects.js';
-import { CoreCollectionClient } from '../backend/collections.js';
+import { CoreCollectionClient, collectionPreviewMembers } from '../backend/collections.js';
 import { CoreConversationClient } from '../backend/conversations.js';
 import { CoreAssemblyClient } from '../backend/assembly.js';
 import { CoreRailwayClient } from '../backend/railway.js';
@@ -30,6 +31,8 @@ import { ProjectToSpaceProjection, type ArtifactProjectionSource, type Projected
 import { viewPresentationByArtifact } from '../spatial/reconciliationRunner.js';
 import { RelationProjection, type CoreEntityRef, type CoreRelationWriter, type RelationKind } from '../spatial/relationProjection.js';
 import { ReconciliationRunner } from '../spatial/reconciliationRunner.js';
+import { runPresentation, resultSlotPresentation } from '../presentation/executionPresentation.js';
+import { validateExecutionProjection } from '../spatial/reconcileExecutionProjection.js';
 import { describeProjectedEntity, buildContentPreview } from '../presentation/projectedNodeDescriptor.js';
 import { resolveVisualFamily } from '../presentation/visualFamily.js';
 import { HostLifecycleReconciler, type ReconcileTrigger } from './lifecycleReconciler.js';
@@ -135,6 +138,7 @@ export class Gen2Host {
       relations: this.relations,
       conversations: this.conversations,
       collections: this.collections,
+      runs: this.runs,
       nodeProjector: this.nodeProjector,
       relationProjector: this.relationProjector,
       bindings: this.bindings,
@@ -219,7 +223,7 @@ export class Gen2Host {
   async listNodeBindings(): Promise<
     {
       spatialId: string;
-      entityType: CoreEntityRef['entityType'];
+      entityType: EntityType;
       entityId: string;
       descriptor?: ProjectedNodeDescriptor;
     }[]
@@ -228,7 +232,7 @@ export class Gen2Host {
     const facts = await this.readEntityFacts();
     const out: {
       spatialId: string;
-      entityType: CoreEntityRef['entityType'];
+      entityType: import('../spatial/projectionBinding.js').EntityType;
       entityId: string;
       descriptor?: ProjectedNodeDescriptor;
     }[] = [];
@@ -238,7 +242,7 @@ export class Gen2Host {
         b.canvasId === this.canvasId &&
         b.spatialKind === 'node'
       ) {
-        const entityType = b.entityType as CoreEntityRef['entityType'];
+        const entityType = b.entityType;
         const known = facts.get(`${entityType}:${b.entityId}`);
         out.push({
           spatialId: b.spatialId,
@@ -263,17 +267,12 @@ export class Gen2Host {
     }
 
     const targetWorkspace = graph?.workspaces?.find((workspace) => String(workspace.canvasId ?? '') === this.canvasId);
-    const selectedViews = viewPresentationByArtifact(
-      graph?.artifactViews ?? [],
-      {
-        ...(targetWorkspace?.scopeId === undefined ? {} : { scopeId: String(targetWorkspace.scopeId) }),
-        ...(targetWorkspace === undefined ? {} : { focusedViewIds: new Set(targetWorkspace.focusedViewIds.map(String)) }),
-      },
-    );
+    const worksiteInput = worksiteProjectionInput(graph, targetWorkspace);
+    const selectedViews = viewPresentationByArtifact(worksiteInput.views, {focusedViewIds: worksiteInput.preferredViews});
     // artifact → selected view revision → current revision fallback → FileRecord.
     // Never use the first revision in an API array: reversed history must not
     // change the rendered species or the bytes staged into Huabu.
-    const revisionById = new Map<string, { id?: unknown; fileRecordId?: unknown; runId?: unknown }>();
+    const revisionById = new Map<string, { id?: unknown; fileRecordId?: unknown; runId?: unknown; status?: 'draft' | 'current' | 'superseded' }>();
     for (const revision of graph?.artifactRevisions ?? []) {
       const revisionId = String(revision.id ?? '');
       if (revisionId !== '') revisionById.set(revisionId, revision);
@@ -300,6 +299,7 @@ export class Gen2Host {
         entityType: 'artifact',
         entityId,
         title: String(artifact.title ?? artifact.id),
+        ...(selectedRevision?.status === undefined ? {} : { revisionStatus: selectedRevision.status }),
         artifactKind: String(artifact.kind),
         ...(selectedViews.get(entityId)?.viewId === undefined ? {} : { artifactViewId: selectedViews.get(entityId)?.viewId }),
         ...(selectedRevisionId === '' ? {} : { presentedRevisionId: selectedRevisionId }),
@@ -320,6 +320,11 @@ export class Gen2Host {
       map.set(`artifact:${facts.entityId}`, facts);
     }
 
+    for (const note of graph?.notes ?? []) {
+      map.set(`note:${note.id}`, {entityType: 'note', entityId: String(note.id), artifactKind: 'text',
+        title: String(note.body).split(/\r?\n/, 1)[0]?.slice(0, 80) || '笔记', preview: String(note.body)});
+    }
+
     // Scope presentation facts stay derived from the Core graph. Workflow
     // scopes are the Main collection entries; the projector owns their spatial
     // identity, while this descriptor lets the single node junction choose the
@@ -338,44 +343,23 @@ export class Gen2Host {
 
     try {
       const collections = await this.collections.list(this.projectId);
-      const artifactsById = new Map((graph?.artifacts ?? []).map((item) => [String(item.id), String(item.title ?? item.id)]));
-      const notesById = new Map((graph?.notes ?? []).map((item) => [String(item.id), String(item.body ?? item.id).split(/\r?\n/, 1)[0]?.slice(0, 48) || String(item.id)]));
-      const workspacesById = new Map((graph?.workspaces ?? []).map((item) => [String(item.id), String(item.name ?? item.id)]));
-      const collectionNames = new Map(collections.map((item) => [String(item.id), item.title]));
-      const conversationsById = new Map((await this.conversations.listConnectedConversations(this.projectId)).map((item) => [String(item.id), String(item.label ?? item.id)]));
+      // Collection metadata comes from the same members read used by the overview
+      // and Assembly. An unrelated conversation failure must not erase all folders.
       await Promise.all(collections.map(async (collection) => {
-        const snapshot = await this.collections.members(this.projectId, String(collection.id));
-        const memberLabels = snapshot.members.flatMap((member) => {
-          const { type, id } = member.memberRef;
-          const title = type === 'artifact' ? artifactsById.get(id)
-            : type === 'note' ? notesById.get(id)
-              : type === 'collection' ? collectionNames.get(id)
-                : type === 'workspace' ? workspacesById.get(id)
-                  : type === 'conversation' ? conversationsById.get(id)
-                    : undefined;
-          return title === undefined ? [] : [title];
-        });
-        const members = snapshot.members.map(({ memberRef }) => {
-          const { type, id } = memberRef;
-          const label = type === 'artifact' ? artifactsById.get(id)
-            : type === 'note' ? notesById.get(id)
-              : type === 'collection' ? collectionNames.get(id)
-                : type === 'workspace' ? workspacesById.get(id)
-                  : type === 'conversation' ? conversationsById.get(id)
-                    : undefined;
-          const typeLabel = ({ artifact: '材料', note: '笔记', collection: '集合', scope: '范围', workspace: '工作区', conversation: '会话', run: '运行' } as const)[type];
-          return { ...memberRef, label: label ?? `${typeLabel} · ${id}` };
-        });
-        map.set(`collection:${collection.id}`, {
-          entityType: 'collection',
-          entityId: String(collection.id),
-          title: collection.title,
-          artifactKind: 'collection',
-          sourceKind: 'collection',
-          collectionMemberCount: snapshot.members.length,
-          collectionMemberLabels: memberLabels,
-          collectionMembers: members,
-        });
+        const identity: ProjectedEntityFacts = { entityType: 'collection', entityId: String(collection.id),
+          title: collection.title, artifactKind: 'collection', sourceKind: 'collection' };
+        try {
+          const snapshot = await this.collections.members(this.projectId, String(collection.id));
+          const previews = collectionPreviewMembers(snapshot);
+          map.set(`collection:${collection.id}`, { ...identity, title: snapshot.collection.title,
+            collectionMemberCount: snapshot.members.length,
+            collectionMemberLabels: previews.map((member) => member.label),
+            collectionMembers: previews.map(({type,id,label}) => ({type,id,label})),
+          });
+        } catch (error) {
+          map.set(`collection:${collection.id}`, identity);
+          console.warn('[lcos] 集合成员尚未读回，保留集合身份，不显示空集合。', error);
+        }
       }));
     } catch (error) {
       console.warn('[lcos] 读取 canonical Collection membership 失败；不显示虚构成员。', error);
@@ -398,6 +382,14 @@ export class Gen2Host {
       console.warn('[lcos] 读取承接会话失败，Glyth 将退回无描述的诚实降级', error);
     }
 
+    try {
+      const execution = await this.runs.readExecutionProjection(this.projectId);
+      validateExecutionProjection(execution, this.projectId);
+      for (const run of execution.runs) map.set(`run:${run.id}`, runPresentation(run));
+      for (const slot of execution.resultSlots) map.set(`result-slot:${slot.id}`, resultSlotPresentation(slot, execution));
+    } catch (error) {
+      console.warn('[lcos] Execution state read failed; no ready/success state will be fabricated.', error);
+    }
     return map;
   }
 

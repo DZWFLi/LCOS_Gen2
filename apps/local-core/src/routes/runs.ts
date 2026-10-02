@@ -1,3 +1,4 @@
+import { parseOrderedReferences } from './ordered-references.js'
 import type {
   AgentExecutionPlanV1,
   BuildContextManifestV0Input,
@@ -92,6 +93,15 @@ export async function handleRunsRoute(ctx: RunsRouteContext): Promise<boolean> {
     return true
   }
 
+  const executionMatch = /^\/projects\/([^/]+)\/execution-projection$/.exec(pathname)
+  if (method === 'GET' && executionMatch !== null) {
+    const metadata = routeRequireMetadata(ctx); if (metadata === undefined) return true
+    const projectId = decodeURIComponent(executionMatch[1] ?? '')
+    if (routeRequireProject(projectId, { metadata, response, helpers: ctx.helpers }) === undefined) return true
+    sendJson(response, 200, { ok: true, value: metadata.getProjectExecutionProjection(projectId) })
+    return true
+  }
+
   const runReviewMatch = /^\/runs\/([^/]+)\/review$/.exec(pathname)
   if (method === 'GET' && runReviewMatch !== null) {
     if (runtimeReview === undefined) {
@@ -169,19 +179,14 @@ export async function handleRunsRoute(ctx: RunsRouteContext): Promise<boolean> {
         sendJson(response, 400, failure('INVALID_ARGUMENT', 'Run requires instruction and outputIntent (create|revise|analyze); revise also requires an explicit target.'))
         return true
       }
+      const orderedReferences = input.orderedReferences === undefined ? undefined : parseOrderedReferences(input.orderedReferences)
+      if (orderedReferences && 'error' in orderedReferences) { sendJson(response, 400, failure('INVALID_ARGUMENT', orderedReferences.error)); return true }
       sendJson(response, 201, {
         ok: true,
         value: await runtimeApplication.create(projectId, {
           ...(input as unknown as CreateRuntimeRunInput),
           // F6 P0-D2：orderedReferences 元素形状校验（ref.type × 必填 id 字段）。
-          ...(Array.isArray(input.orderedReferences) ? { orderedReferences: input.orderedReferences.flatMap((item) => {
-            if (!isRecord(item) || !isRecord(item.ref)) return []
-            const ref = item.ref as Record<string, unknown>
-            const type = String(ref.type)
-            const idField = type === 'artifact' ? 'artifactId' : type === 'view' ? 'viewId' : type === 'scope' ? 'scopeId' : type === 'workspace' ? 'workspaceId' : type === 'conversation' ? 'conversationSessionId' : type === 'component' ? 'componentId' : ''
-            if (idField === '' || typeof ref[idField] !== 'string') return []
-            return [item as never]
-          }) } : {}),
+          ...(orderedReferences === undefined ? {} : { orderedReferences: orderedReferences.value }),
         }),
       })
     } catch (error: unknown) {
@@ -321,8 +326,10 @@ export async function handleRunsRoute(ctx: RunsRouteContext): Promise<boolean> {
       sendJson(response, 400, failure('INVALID_ARGUMENT', 'Agent Plan contract is invalid.'))
       return true
     }
+    const orderedReferences = input.orderedReferences === undefined ? undefined : parseOrderedReferences(input.orderedReferences)
+    if (orderedReferences && 'error' in orderedReferences) { sendJson(response, 400, failure('INVALID_ARGUMENT', orderedReferences.error)); return true }
     try {
-      const value = validateAgentExecutionPlan({ ...input, projectId } as unknown as AgentExecutionPlanV1)
+      const value = validateAgentExecutionPlan({ ...input, projectId, ...(orderedReferences ? { orderedReferences: orderedReferences.value } : {}) } as unknown as AgentExecutionPlanV1)
       sendJson(response, 200, { ok: true, value })
     } catch (error: unknown) {
       sendJson(response, 400, failure('VALIDATION', error instanceof Error ? error.message : 'Agent Plan validation failed.'))
@@ -348,6 +355,8 @@ export async function handleRunsRoute(ctx: RunsRouteContext): Promise<boolean> {
       sendJson(response, 400, failure('INVALID_ARGUMENT', 'Run proposal requires prompt, requestedProvider, contextItems and editTargets.'))
       return true
     }
+    const orderedReferences = input.orderedReferences === undefined ? undefined : parseOrderedReferences(input.orderedReferences)
+    if (orderedReferences && 'error' in orderedReferences) { sendJson(response, 400, failure('INVALID_ARGUMENT', orderedReferences.error)); return true }
     try {
       sendJson(response, 200, {
         ok: true,
@@ -364,14 +373,7 @@ export async function handleRunsRoute(ctx: RunsRouteContext): Promise<boolean> {
           ...(isRecord(input.resultPolicy) ? { resultPolicy: input.resultPolicy as unknown as CreateRunProposal['resultPolicy'] } : {}),
           // F6 B6（P0-F）：Unified Execution Contract 原样保留——Proposal 不压回 artifact-only。
           ...(isRecord(input.receiverRef) && typeof input.receiverRef.connectedConversationId === 'string' ? { receiverRef: input.receiverRef as unknown as NonNullable<CreateRunProposal['receiverRef']> } : {}),
-          ...(Array.isArray(input.orderedReferences) ? { orderedReferences: input.orderedReferences.flatMap((item) => {
-            if (!isRecord(item) || !isRecord(item.ref)) return []
-            const ref = item.ref as Record<string, unknown>
-            const type = String(ref.type)
-            const idField = type === 'artifact' ? 'artifactId' : type === 'view' ? 'viewId' : type === 'scope' ? 'scopeId' : type === 'workspace' ? 'workspaceId' : type === 'conversation' ? 'conversationSessionId' : type === 'component' ? 'componentId' : ''
-            if (idField === '' || typeof ref[idField] !== 'string') return []
-            return [item as never]
-          }) } : {}),
+          ...(orderedReferences === undefined ? {} : { orderedReferences: orderedReferences.value }),
           ...(typeof input.resultSlotId === 'string' ? { resultSlotId: input.resultSlotId } : {}),
         }),
       })

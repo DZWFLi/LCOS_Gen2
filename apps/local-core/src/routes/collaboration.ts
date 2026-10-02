@@ -5,7 +5,7 @@ import type { ConversationImportService } from '../conversation-import-service.j
 import type { ContinuationProviderAdapterV1 } from '@local-creative-os/contracts'
 import type { SqliteMetadataRepository } from '../metadata-repository.js'
 import { routeRequireProject, type RouteHttpHelpers } from './route-context.js'
-import { parseOrderedReferences } from './conversation-continuation.js'
+import { parseOrderedReferences } from './ordered-references.js'
 
 export interface CollaborationRouteContext {
   readonly method: string
@@ -110,6 +110,14 @@ export async function handleCollaborationRoute(ctx: CollaborationRouteContext): 
     }
     if (ctx.conversations.getProjection(projectId, connected.conversationSessionId) === undefined) {
       ctx.helpers.sendJson(ctx.response, 409, ctx.helpers.failure('CONFLICT', 'Connected conversation session is missing from Core.'))
+      return true
+    }
+    // Completed-turn fast paths still have to agree with the original explicit input.
+    // The continuation service checks this too, but an already complete turn returns before it.
+    const original = ctx.metadata.getContinuationOperationJournal(projectId, raw.continuationOperationId)
+      ?.promptReceipts?.find((item) => item.messageId === raw.messageId)
+    if (original !== undefined && JSON.stringify(original.explicitReferences ?? original.orderedReferences) !== JSON.stringify(orderedReferences ?? [])) {
+      ctx.helpers.sendJson(ctx.response, 409, ctx.helpers.failure('CONFLICT', 'This messageId already belongs to a different reference set; the original send was not changed.'))
       return true
     }
     try {

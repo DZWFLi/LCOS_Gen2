@@ -32,6 +32,10 @@ export type LcosNodeCommandId =
   | 'answer-input'
   | 'review-result'
   | 'view-progress'
+  | 'recover-session'
+  | 'session-diagnostics'
+  | 'session-options'
+  | 'cancel-work'
   | 'reference'
   | 'color-pin'
   // 画布机械（复用 Huabu 既有命令，不重写 store）
@@ -71,6 +75,7 @@ export interface LcosNodeCommandInput {
   readonly capabilities: readonly NodeCapability[];
   /** 是否已在 Composer 草稿引用里（真实 presentation state）。 */
   readonly referenced: boolean;
+  readonly execution?: { readonly runId?: string; readonly status: string };
   /** Real, current Collaboration projection; absence is not a ready session. */
   readonly conversation?: CollaborationSessionProjectionV1;
   /** note 节点当前高度模式（'auto' 时给出"固定高度"动作）。 */
@@ -136,16 +141,7 @@ function openCommand(input: LcosNodeCommandInput): LcosNodeCommand | undefined {
  * capability 闸门只在传入 capabilities 非空且明确不含 'reference' 时给真实原因
  * （空数组 = 未取到 descriptor，不假装 Core 不支持）。
  */
-function referenceCommand(input: LcosNodeCommandInput): LcosNodeCommand {
-  const unsupported = input.capabilities.length > 0 && !input.capabilities.includes('reference');
-  return {
-    id: 'reference',
-    label: input.referenced ? '取消引用' : '加入引用',
-    group: '关系',
-    capability: 'reference',
-    ...(unsupported ? { disabledReason: '该 Core 物种不支持引用' } : {}),
-  };
-}
+
 
 /** R5 session actions: state and capabilities come from the existing projection only. */
 function conversationCommands(input: LcosNodeCommandInput): LcosNodeCommand[] {
@@ -162,16 +158,21 @@ function conversationCommands(input: LcosNodeCommandInput): LcosNodeCommand[] {
       ? { disabledReason: capabilityReasons?.[capability] ?? '当前会话暂不支持此操作' }
       : {}),
   });
-  // Never send another continuation into an active run.
-  if (userState === 'thinking' || userState === 'working') {
-    return [action('view-progress', '查看进度'), open];
-  }
   // A pending input takes precedence over a pending return. Both remain reachable in WorkView.
   if (session.activity.pendingInputId !== undefined) {
     return [action('answer-input', '回答', 'canAnswerInput'), open];
   }
   if (session.recentReturns.some((item) => item.status === 'pending_review')) {
     return [action('review-result', '复核', 'canApprove'), open];
+  }
+  if (session.recovery?.state !== undefined && session.recovery.state !== 'none') {
+    return [{ id: capabilities.canRecover ? 'recover-session' : 'session-diagnostics',
+      label: capabilities.canRecover ? '处理恢复' : '核对状态', group: '进入', primary: true }, open];
+  }
+  // Never send another continuation into an active run.
+  if (userState === 'thinking' || userState === 'working') {
+    return [action('view-progress', '查看进度'), open,
+      ...(capabilities.canCancel && session.activity.activeRunId ? [{ id: 'cancel-work' as const, label: '停止当前任务', group: '进入' as const, primary: false }] : [])];
   }
   if (userState === 'ready' || userState === 'done') {
     return [action('compose', '继续', 'canSend'), open];
@@ -186,6 +187,13 @@ function conversationCommands(input: LcosNodeCommandInput): LcosNodeCommand[] {
  */
 export function buildLcosNodeCommands(input: LcosNodeCommandInput): readonly LcosNodeCommand[] {
   const bound = !isLcosNodeDeleteAllowed(input);
+  if (bound && (input.entityType === 'run' || input.entityType === 'result-slot')) {
+    // A native note carrier does not make a Run an editable note or a supported
+    // OrderedRunReference. Reserve writes for the canonical Run detail actions.
+    return input.entityType === 'run' || input.execution?.runId
+      ? [{ id: 'open', label: input.execution?.status === 'review' ? '复核结果' : input.execution?.status === 'waiting_input' ? '回答' : '查看任务', group: '进入', primary: true }]
+      : [];
+  }
   const hostSurface = input.nodeType === 'text' && !bound
     ? undefined
     : input.nodeType === undefined ? undefined : ARC_SURFACES[input.nodeType];
@@ -203,7 +211,12 @@ export function buildLcosNodeCommands(input: LcosNodeCommandInput): readonly Lco
   // 进入
   const isConversation = bound && input.entityType === 'conversation';
   const open = openCommand(input);
-  if (isConversation) commands.push(...conversationCommands(input));
+  if (isConversation) {
+    commands.push(...conversationCommands(input));
+    commands.push({ id: 'session-options', label: '续用与新建会话', group: '进入', primary: false });
+    if (!commands.some((command) => command.id === 'session-diagnostics'))
+      commands.push({ id: 'session-diagnostics', label: '连接诊断', group: '进入', primary: false });
+  }
   else if (open) commands.push(open);
   if (bound && !isConversation) {
     // Composer 由当前选中对象的近场 Arc 显式呼出；Assembly 保持独立项目级入口。
@@ -211,7 +224,6 @@ export function buildLcosNodeCommands(input: LcosNodeCommandInput): readonly Lco
   }
 
   // 关系
-  if (bound) commands.push(referenceCommand(input));
   if (bound) commands.push({ id: 'color-pin', label: '标为颜色组', group: '关系' });
 
   // 编辑
@@ -267,7 +279,6 @@ const PRIMARY_ELIGIBLE: ReadonlySet<LcosNodeCommandId> = new Set([
   'answer-input',
   'review-result',
   'view-progress',
-  'reference',
   'convert-note',
   'auto-height',
   'open-large',

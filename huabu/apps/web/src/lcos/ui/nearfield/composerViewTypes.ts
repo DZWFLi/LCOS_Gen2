@@ -9,6 +9,8 @@ export type ComposerVisualState =
 export interface ComposerReferenceViewItem {
   readonly key: string;
   readonly label: string;
+  readonly versionLabel?: string | undefined;
+  readonly onOpen?: (() => void) | undefined;
   readonly thumbnailSrc?: string | undefined;
   readonly icon?: ReactNode;
   readonly unavailableReason?: string | undefined;
@@ -17,6 +19,8 @@ export interface ComposerReferenceViewItem {
 }
 
 export interface ComposerVisualAction {
+  readonly pressed?: boolean;
+  readonly icon?: ReactNode;
   readonly label: string;
   readonly disabled?: boolean | undefined;
   readonly disabledReason?: string | undefined;
@@ -37,6 +41,7 @@ export interface LcosComposerViewProps {
   /** Explicit reference/input surface; receiver identity is deliberately outside. */
   readonly referenceSurfaceRef?: Ref<HTMLDivElement> | undefined;
   readonly referenceDropActive?: boolean | undefined;
+  readonly onSelect?: (() => void) | undefined;
   readonly onTextChange: ChangeEventHandler<HTMLTextAreaElement>;
   readonly onKeyDown: KeyboardEventHandler<HTMLTextAreaElement>;
   readonly onClose: () => void;

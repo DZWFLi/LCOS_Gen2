@@ -1,7 +1,9 @@
 import { useLayoutEffect, useState } from 'react';
 
 import { createWindowRegion, normalizeWindowRegion, windowIdsForRegion } from '../shell/windowRegionTopology';
-import { needsCompactProfessionalStageV1, professionalFloatingBoundsV1 } from './professionalWindowStageLayout';
+import { needsCompactProfessionalStageV1, deriveProfessionalStageRegionPlacementsV1 } from './professionalWindowStageLayout';
+
+import { PROFESSIONAL_SPLITTER_SIZE, PROFESSIONAL_PANE_MIN_WIDTH, PROFESSIONAL_PANE_MIN_HEIGHT } from './professionalGestureGeometry';
 
 import type { ProfessionalRectV1 } from '@local-creative-os/web-gen2';
 import type { LcosWindow } from '../shell/lcosShellStore';
@@ -33,7 +35,7 @@ export function useProfessionalViewport(): ProfessionalRectV1 {
 }
 
 function preferredWidthFor(window: LcosWindow): number {
-  return window.bodyKey === 'reader' ? 1120 : window.bodyKey === 'assembly' ? 640 : 520;
+  return window.bodyKey === 'reader' ? 1120 : window.bodyKey === 'assembly' ? (window.composerOriginKey ? 1000 : 640) : window.bodyKey === 'portal-preview' ? 472 : 520;
 }
 
 /**
@@ -72,18 +74,23 @@ export function visibleWindowIdsForStage(
       regionId: region.id,
       layout: region.layout,
       preferredWidth,
+      bodyKey: groups[0]?.activeWindow.bodyKey,
+      ...(region.rect === undefined ? {} : { rect: region.rect }),
       ...(region.dockWidth === undefined ? {} : { dockWidth: region.dockWidth }),
     }];
   });
+  const placements = new Map(deriveProfessionalStageRegionPlacementsV1({ viewport, regions: layoutEntries })
+    .map((entry) => [entry.regionId, entry.rect]));
   const compact = effectiveRegions.some((region) => {
-    if (region.splitDirection === undefined) return false;
-    const bounds = region.layout === 'docked-right' ? viewport : professionalFloatingBoundsV1(viewport);
-    const width = Math.min(bounds.width,
-      region.layout === 'docked-right' ? region.dockWidth ?? bounds.width : region.rect?.width ?? bounds.width);
-    const height = Math.min(bounds.height, region.layout === 'floating' ? region.rect?.height ?? bounds.height : bounds.height);
-    // A split is still one physical region. The multi-region capacity check
-    // cannot detect two unreadable columns inside a single narrow window.
-    return region.splitDirection === 'vertical' ? width < 720 : height < 560;
+    if (region.splitDirection === undefined || region.groups.length < 2) return false;
+    const rect = placements.get(region.id);
+    if (rect === undefined) return false;
+    const readerShell = windowIdsForRegion(region).every((id) => windowsById.get(id)?.bodyKey === 'reader');
+    // Measure the same effective geometry as Stage, including its shared Reader
+    // chrome and splitter. Saved/default dimensions alone miss docked rows.
+    return region.splitDirection === 'vertical'
+      ? rect.width < PROFESSIONAL_PANE_MIN_WIDTH * 2 + PROFESSIONAL_SPLITTER_SIZE
+      : rect.height - (readerShell ? 48 : 0) < PROFESSIONAL_PANE_MIN_HEIGHT * 2 + PROFESSIONAL_SPLITTER_SIZE;
   }) || needsCompactProfessionalStageV1(viewport, layoutEntries);
 
   if (compact) {

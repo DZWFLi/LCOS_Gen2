@@ -44,7 +44,7 @@ it('Escape leaves canvas pick first, preserving Composer, prompt and explicit re
   const host = document.createElement('div'); document.body.append(host); const root = createRoot(host); roots.push(root);
   let closed = 0;
   await act(async () => root.render(<LcosComposerHost projectId="project-a" workspaceId="workspace-a" anchor={null} open inline onClose={() => { closed++; }} />));
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="点取画布引用"]')?.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="从画布添加引用"]')?.click());
   expect(useLcosReferenceStore.getState().referencePickOwner).not.toBeNull();
   await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   expect(closed).toBe(0); expect(useLcosReferenceStore.getState().referencePickOwner).toBeNull();
@@ -52,4 +52,21 @@ it('Escape leaves canvas pick first, preserving Composer, prompt and explicit re
   expect(document.activeElement).toBe(host.querySelector('textarea'));
   await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   expect(closed).toBe(1);
+});
+
+it('explains unsupported task references before send and lets the user remove them without losing the prompt', async () => {
+  const refs = useLcosReferenceStore.getState(); refs.setProject('project-a');
+  refs.addEntityToDraft({ entityType: 'artifact', entityId: 'image', revisionId: 'r1', mimeType: 'image/png', displayLabel: '参考图片' });
+  const shell = useLcosShellStore.getState();
+  shell.openComposer({ nodeId: 'node', title: '任务', anchor: { x: 0, y: 0, width: 1, height: 1 }, intent: 'delegate' });
+  shell.setComposerPrompt('保留这段创作要求');
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  await act(async () => root.render(<LcosComposerHost projectId="project-a" workspaceId="workspace-a" anchor={null} open inline onClose={() => {}} />));
+  expect(host.querySelector('[data-lcos-composer-reference-blocked]')?.textContent).toContain('当前任务暂不能读取图片');
+  expect(host.querySelector<HTMLButtonElement>('button[title*="当前任务暂不能读取"]')?.disabled).toBe(true);
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="移除引用 参考图片"]')!.click());
+  expect(host.querySelector('[data-lcos-composer-reference-blocked]')).toBeNull();
+  expect(useLcosReferenceStore.getState().draft.orderedEntityRefs).toHaveLength(0);
+  expect(useLcosShellStore.getState().composerPrompt).toBe('保留这段创作要求');
 });

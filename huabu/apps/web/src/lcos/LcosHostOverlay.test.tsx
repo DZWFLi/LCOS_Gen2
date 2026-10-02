@@ -53,14 +53,14 @@ const previewState: SemanticDropState = {
 describe('LcosHostOverlay (A07)', () => {
   it('idle shows neither composer-docked drop preview nor composer chrome', () => {
     const container = render(<LcosHostOverlay />);
-    expect(container.querySelector('[data-lcos-drop-preview]')).toBeNull();
+    expect(document.body.querySelector('[data-lcos-drop-preview]')).toBeNull();
     expect(container.querySelector('[data-lcos-composer]')).toBeNull();
   });
 
   it('drop in flight renders the drop preview through the arbitrated container', () => {
     useLcosDropStore.setState({ state: previewState });
-    const container = render(<LcosHostOverlay />);
-    const el = container.querySelector('[data-lcos-drop-preview]');
+    render(<LcosHostOverlay />);
+    const el = document.body.querySelector('[data-lcos-drop-preview]');
     expect(el).not.toBeNull();
     expect(el?.textContent).toContain('材料');
   });
@@ -82,7 +82,7 @@ describe('LcosHostOverlay (A07)', () => {
     const container = render(<LcosHostOverlay />);
     expect(container.querySelector('[data-lcos-composer]')).toBeNull();
     // Not in preview yet either.
-    expect(container.querySelector('[data-lcos-drop-preview]')).toBeNull();
+    expect(document.body.querySelector('[data-lcos-drop-preview]')).toBeNull();
   });
 
   it('有草稿但没有明确目标时不产出 composer', () => {

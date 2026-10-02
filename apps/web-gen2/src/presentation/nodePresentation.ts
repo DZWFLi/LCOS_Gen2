@@ -99,3 +99,26 @@ export function projectScreenSize(
     screenHeight: worldHeight * zoom,
   };
 }
+
+/** Use the same screen-density resolver with a symmetric dead band. The
+ * previous result is a component-local presentation value, never persisted.
+ * Hysteresis is supplied by the host's existing semantic-zoom configuration. */
+export function resolveStablePresentationDensity(
+  input: NodePresentationInput,
+  previous: PresentationDensity | undefined,
+  hysteresis: number,
+): PresentationDensity {
+  const density = resolvePresentationDensity(input);
+  if (input.phase === 'editing' || previous === undefined || previous === density) return density;
+  const levels: readonly PresentationDensity[] = ['mark', 'summary', 'working', 'reading'];
+  const promoting = levels.indexOf(density) > levels.indexOf(previous);
+  const band = Number.isFinite(hysteresis) ? Math.max(0, hysteresis) : 0;
+  const delta = promoting ? -band : band;
+  const stable = resolvePresentationDensity({
+    ...input,
+    screenWidth: input.screenWidth + delta,
+    screenHeight: input.screenHeight + delta,
+  });
+  return (promoting ? levels.indexOf(stable) > levels.indexOf(previous)
+    : levels.indexOf(stable) < levels.indexOf(previous)) ? stable : previous;
+}

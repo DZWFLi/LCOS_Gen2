@@ -1,3 +1,5 @@
+import { assemblyBorrowsComposer } from '../composer/composerPresentationOwner';
+import { useProfessionalViewport, visibleWindowIdsForStage } from './professionalStageVisibility';
 // ConversationWorkViewBody — Conversation Work View（Gate 4 conversation-first 结构）。
 //
 // 信息架构（收敛方案 V1 §13 + Batch B）：
@@ -13,13 +15,15 @@
 // B1：本组件不再访问 collaboration.conversations / .runs / .continuations。
 
 import { CoreCollaborationClient, CoreConversationClient } from '@local-creative-os/web-gen2';
-import { Boxes, CheckCheck, ChevronDown, ChevronRight, CircleHelp, GitFork, Info, Loader, Play, User, XCircle } from 'lucide-react';
+import { Square, Boxes, CheckCheck, ChevronDown, ChevronRight, CircleHelp, GitFork, Info, Loader, Play, User, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ArtifactReturnSection } from './ArtifactReturnSection';
 import { RecoverySection } from './RecoverySection';
 import { WaitingInputSection } from './WaitingInputSection';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { cancelConversationRun } from '../collaboration/conversationCommands';
+import { glythSessionLabel } from '../collaboration/glythInteraction';
 import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
 import { useCollaborationSession } from '../collaboration/useCollaborationSession';
 import { selectConfirmedSendOperation } from '../composer/confirmedConversationOperation';
@@ -31,7 +35,7 @@ import { ConversationEventView } from '../ui/professional/ConversationEventView'
 import { ConversationIdentityView } from '../ui/professional/ConversationIdentityView';
 
 import type { LcosComposerTarget } from '../shell/lcosShellStore';
-import type { CollaborationDiagnosticsV1, CollaborationTimelineItemV1, CollaborationUserStateV1, ConversationIdentityChainV1, ConversationSessionV1 } from '@local-creative-os/contracts';
+import type { CollaborationDiagnosticsV1, CollaborationTimelineItemV1, ConversationIdentityChainV1, ConversationSessionV1 } from '@local-creative-os/contracts';
 
 /**
  * Conversation owns only its own composer intents. An Assembly-originated
@@ -52,15 +56,6 @@ export interface ConversationWorkViewBodyProps {
   readonly connectedConversationId?: string;
 }
 
-const USER_STATE_LABEL: Readonly<Record<CollaborationUserStateV1, string>> = {
-  ready: '可继续',
-  thinking: '正在理解',
-  working: '正在执行',
-  needs_user: '等你回应',
-  done: '本轮完成',
-  unavailable: '暂时不可用',
-};
-
 const TIMELINE_KIND_META: Readonly<Record<CollaborationTimelineItemV1['kind'], { label: string; Icon: typeof Play }>> = {
   user_message: { label: '你', Icon: User },
   agent_message: { label: '协作者', Icon: User },
@@ -75,7 +70,12 @@ const TIMELINE_KIND_META: Readonly<Record<CollaborationTimelineItemV1['kind'], {
   system_note: { label: '系统提示', Icon: Info },
 };
 
-export function ConversationWorkViewBody({
+export function ConversationWorkViewBody(props: ConversationWorkViewBodyProps): React.JSX.Element {
+  // Changing the canonical target ends all local form/async lifetimes. Regrouping the same target does not.
+  return <ConversationWorkViewSession key={JSON.stringify([props.projectId, props.connectedConversationId])} {...props} />;
+}
+
+function ConversationWorkViewSession({
   projectId,
   connectedConversationId,
 }: ConversationWorkViewBodyProps): React.JSX.Element {
@@ -85,6 +85,11 @@ export function ConversationWorkViewBody({
   const [diagnostics, setDiagnostics] = useState<CollaborationDiagnosticsV1 | undefined>(undefined);
   const [diagnosticsState, setDiagnosticsState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [cancelRunId, setCancelRunId] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const cancelRequest = useRef<AbortController | null>(null);
+  const contextRead = useRef<AbortController | null>(null);
   const [sessionLinkOpen, setSessionLinkOpen] = useState(false);
   const [sessionLinkState, setSessionLinkState] = useState<'idle' | 'loading' | 'ready' | 'error' | 'saving'>('idle');
   const [identityChain, setIdentityChain] = useState<ConversationIdentityChainV1 | undefined>();
@@ -99,6 +104,9 @@ export function ConversationWorkViewBody({
   const [manualImportTarget, setManualImportTarget] = useState<{ workspaceId: string; scopeId: string }>();
   const diagnosticsRequest = useRef<AbortController | null>(null);
   const sessionLinkWriteRequest = useRef<AbortController | null>(null);
+  const journeyWindows = useLcosShellStore((s) => s.windows);
+  const journeyRegions = useLcosShellStore((s) => s.windowRegions);
+  const journeyViewport = useProfessionalViewport();
   const composerOpen = useLcosShellStore((s) => s.composerOpen);
   const composerTarget = useLcosShellStore((s) => s.composerTarget);
   const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
@@ -109,7 +117,10 @@ export function ConversationWorkViewBody({
   // Gate 4：产品状态唯一来源 = Collaboration projection（SSE 驱动刷新）。
   const entry = useCollaborationSession(projectId, connectedConversationId ?? null);
   const projection = entry?.status === 'ready' ? entry.projection : undefined;
-  const timeline = entry?.status === 'ready' ? entry.timeline ?? [] : [];
+  const timeline = entry?.timeline ?? [];
+  const refreshSession = useCallback(() => {
+    if (connectedConversationId) void useCollaborationSessionStore.getState().refresh(projectId, connectedConversationId);
+  }, [projectId, connectedConversationId]);
   // B2：工程细节（Diagnostics）只经 readDiagnostics seam 读取，不再由 controller 拼装。
   const loadDiagnostics = useCallback((): void => {
     diagnosticsRequest.current?.abort();
@@ -121,6 +132,7 @@ export function ConversationWorkViewBody({
       .readDiagnostics(projectId, connectedConversationId, controller.signal)
       .then((value) => {
         if (controller.signal.aborted) return;
+        if (value?.conversationId !== connectedConversationId) { setDiagnostics(undefined); setDiagnosticsState('error'); return; }
         setDiagnostics(value);
         setDiagnosticsState('ready');
       })
@@ -163,7 +175,7 @@ export function ConversationWorkViewBody({
 
   const linkSelectedSession = useCallback(async (): Promise<void> => {
     if (!connectedConversationId || !selectedSessionId || sessionLinkState !== 'ready') return;
-    sessionLinkWriteRequest.current?.abort();
+    if (sessionLinkWriteRequest.current) return;
     const controller = new AbortController();
     sessionLinkWriteRequest.current = controller;
     setSessionLinkState('saving');
@@ -194,7 +206,7 @@ export function ConversationWorkViewBody({
       setSessionLinkNotice('至少填入一条真实消息，才能创建资料会话。');
       return;
     }
-    sessionLinkWriteRequest.current?.abort();
+    if (sessionLinkWriteRequest.current) return;
     const controller = new AbortController();
     sessionLinkWriteRequest.current = controller;
     setSessionLinkState('saving');
@@ -225,10 +237,48 @@ export function ConversationWorkViewBody({
 
   useEffect(() => {
     setDiagnostics(undefined);
-    setDiagnosticsOpen(false);
     loadDiagnostics();
     return () => diagnosticsRequest.current?.abort();
-  }, [loadDiagnostics]);
+  }, [loadDiagnostics, projection]);
+
+  useEffect(() => () => { cancelRequest.current?.abort(); contextRead.current?.abort(); }, []);
+
+  const stopCurrentRun = async (): Promise<void> => {
+    if (!connectedConversationId || !cancelRunId || cancelRequest.current) return;
+    const controller = new AbortController(); cancelRequest.current = controller;
+    setCancelBusy(true); setActionNotice(null);
+    try {
+      await cancelConversationRun(collaboration, projectId, connectedConversationId, cancelRunId, controller.signal);
+      if (controller.signal.aborted) return;
+      setActionNotice('停止请求已确认，正在刷新任务状态'); setCancelRunId(null); refreshSession();
+    } catch (error) {
+      if (!controller.signal.aborted) setActionNotice(error instanceof Error ? error.message : '停止请求未确认，请核对任务状态');
+    } finally {
+      if (cancelRequest.current === controller) cancelRequest.current = null;
+      if (!controller.signal.aborted) setCancelBusy(false);
+    }
+  };
+
+  const readBoundMaterial = async (entityRef: { readonly type: string; readonly id: string; readonly viewId?: string }, title: string): Promise<void> => {
+    contextRead.current?.abort();
+    const controller = new AbortController(); contextRead.current = controller;
+    setActionNotice(null);
+    try {
+      const graph = await session.projects.getProjectGraph(projectId);
+      if (controller.signal.aborted || useLcosShellStore.getState().projectId !== projectId) return;
+      const requestedViewId = entityRef.viewId ?? (entityRef.type === 'view' || entityRef.type === 'artifactView' ? entityRef.id : undefined);
+      const view = requestedViewId === undefined ? undefined : graph?.artifactViews.find((candidate) => String(candidate.id) === requestedViewId);
+      const artifactId = view ? String(view.artifactId) : entityRef.type === 'artifact' ? entityRef.id : undefined;
+      if ((requestedViewId !== undefined && !view) || !artifactId || !graph?.artifacts.some((artifact) => String(artifact.id) === artifactId)
+        || (view && entityRef.type === 'artifact' && String(view.artifactId) !== entityRef.id)) {
+        setActionNotice('原引用或版本暂不可读取，未替换成最新版本'); return;
+      }
+      useLcosShellStore.getState().openReader(`阅读 · ${title}`, artifactId,
+        view?.revisionId ? { revisionId: String(view.revisionId) } : undefined);
+    } catch {
+      if (!controller.signal.aborted) setActionNotice('原引用读取失败，请重试');
+    }
+  };
 
   if (!connectedConversationId) {
     return (
@@ -239,16 +289,16 @@ export function ConversationWorkViewBody({
   }
 
   const userRecoveryOperations = diagnostics?.operations.filter((operation) =>
-    operation.allowedActions.some(({ action }) => action !== 'cancel_request'),
+    operation.allowedActions.length > 0,
   ) ?? [];
 
-  const workComposerOpen = conversationComposerOwnsTarget(
+  const workComposerOpen = !assemblyBorrowsComposer(composerTarget, journeyWindows,
+    visibleWindowIdsForStage(journeyWindows, journeyRegions, journeyViewport).windowIds) && conversationComposerOwnsTarget(
     composerOpen,
     composerTarget,
     connectedConversationId,
   );
 
-  const userState = projection?.userState;
   const hasPendingInput = projection?.activity.pendingInputId !== undefined;
   const hasPendingReview = projection?.recentReturns.some((row) => row.status === 'pending_review') ?? false;
   // B3：send 与 delegate 心智必须分开。send 只有在 projection capability
@@ -261,7 +311,7 @@ export function ConversationWorkViewBody({
    * not a license to invent an operation id or silently create a Run.
    */
   const continuationOperation = selectConfirmedSendOperation(diagnostics, connectedConversationId);
-  const canContinueCurrentConversation = canSend && continuationOperation !== undefined;
+  const canContinueCurrentConversation = canSend && diagnosticsState === 'ready' && continuationOperation !== undefined;
   const continueComposerReason = !canSend
     ? (sendReason ?? '当前协作方式暂不支持直接追加消息')
     : continuationOperation === undefined
@@ -281,7 +331,7 @@ export function ConversationWorkViewBody({
       <ConversationIdentityView
         title={projection?.identity.title ?? connectedConversationId}
         {...(projection?.identity.subtitle === undefined ? {} : { subtitle: projection.identity.subtitle })}
-        stateLabel={userState === undefined ? '状态读取中…' : USER_STATE_LABEL[userState]}
+        stateLabel={glythSessionLabel(projection, entry?.status)}
         identity={<User className="h-3.5 w-3.5" />}
         actions={
           <div className="flex items-center gap-1.5">
@@ -320,6 +370,18 @@ export function ConversationWorkViewBody({
           </div>
         )}
       </ConversationIdentityView>
+
+      {entry?.status === 'error' && <LcosSurfaceFeedback presentation="error" message="会话状态读取失败，已有记录未被删除" onAction={refreshSession} actionLabel="重新读取" />}
+      {projection?.capabilities.canCancel && projection.activity.activeRunId && <section data-lcos-cancel-work-host className="flex flex-wrap items-center gap-2 px-3 py-2">
+        {cancelRunId === null ? <button type="button" data-lcos-cancel-work onClick={() => setCancelRunId(projection.activity.activeRunId ?? null)} className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs">
+          <Square size={13} aria-hidden />停止当前任务
+        </button> : <>
+          <span className="text-xs">停止这次执行，保留会话与已生成的内容？</span>
+          <button type="button" data-lcos-confirm-cancel disabled={cancelBusy} onClick={() => { void stopCurrentRun(); }}>{cancelBusy ? '请求中…' : '确认停止'}</button>
+          <button type="button" disabled={cancelBusy} onClick={() => setCancelRunId(null)}>继续执行</button>
+        </>}
+      </section>}
+      {actionNotice && <p role="status" className="break-words px-3 text-xs">{actionNotice}</p>}
 
       {sessionLinkOpen && (
         <section data-lcos-session-link className="flex flex-col gap-2 rounded-xl p-3" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
@@ -383,17 +445,19 @@ export function ConversationWorkViewBody({
       )}
 
       {userRecoveryOperations.length > 0 && <section data-lcos-user-recovery aria-label="需要处理的恢复操作">
-        <RecoverySection collaboration={collaboration} projectId={projectId} operations={userRecoveryOperations}
-          onRefreshed={() => loadDiagnostics()} />
+        <RecoverySection conversationId={connectedConversationId} collaboration={collaboration} projectId={projectId} operations={userRecoveryOperations}
+          onRefreshed={() => { loadDiagnostics(); refreshSession(); }} />
       </section>}
 
       {/* Timeline / Work Events */}
       <section className="flex flex-col gap-2" data-lcos-conversation-timeline>
         {entry === undefined || entry.status === 'loading' ? (
           <LcosSurfaceFeedback presentation="loading" message="读取会话进展…" />
+        ) : entry.status === 'error' || entry.timelineStatus === 'error' ? (
+          <LcosSurfaceFeedback presentation="error" message="工作记录暂时读取失败，不代表没有记录" onAction={refreshSession} actionLabel="重新读取记录" />
         ) : timeline.length === 0 ? (
           <div className="rounded-xl px-3 py-2 text-xs" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}`, color: lcosTokens.color.muted }}>
-            还没有工作记录——委托一个新任务开始
+            还没有可显示的工作记录
           </div>
         ) : (
           timeline.map((item) => {
@@ -422,12 +486,12 @@ export function ConversationWorkViewBody({
 
       {/* inline WaitingInput：needs_user / pendingInput 存在时才出现 */}
       {hasPendingInput && (
-        <WaitingInputSection collaboration={collaboration} projectId={projectId} conversationId={connectedConversationId} />
+        <WaitingInputSection enabled={projection?.capabilities.canAnswerInput === true} disabledReason={projection?.capabilityReasons?.canAnswerInput} key={projection?.activity.pendingInputId} collaboration={collaboration} projectId={projectId} conversationId={connectedConversationId} />
       )}
 
       {/* inline Review：有待复核产出时才出现 */}
       {hasPendingReview && (
-        <ArtifactReturnSection collaboration={collaboration} projectId={projectId} conversationId={connectedConversationId} />
+        <ArtifactReturnSection refreshKey={projection?.recentReturns.map((row) => `${row.returnId}:${row.status}`).join('|')} collaboration={collaboration} projectId={projectId} conversationId={connectedConversationId} />
       )}
 
       {/* Composer：同一只 Composer 承担两种明确 intent。
@@ -489,6 +553,8 @@ export function ConversationWorkViewBody({
               <button
                 type="button"
                 data-lcos-open-work-composer
+                disabled={projection?.capabilities.canDelegate !== true}
+                title={projection?.capabilityReasons?.canDelegate}
                 onClick={() =>
                   openComposer({
                     nodeId: `conversation:${connectedConversationId}`,
@@ -522,11 +588,14 @@ export function ConversationWorkViewBody({
       {(projection?.relation.boundContext?.length ?? 0) > 0 && (
         <section data-lcos-conversation-bound-context className="flex flex-col gap-1.5 px-3 py-2">
           <h4 className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>会话上下文</h4>
+          <p className="text-[11px]" style={{ color: lcosTokens.color.muted }}>这些材料会持续供此会话使用；输入框里的引用只用于本轮消息。</p>
           <div className="flex flex-wrap gap-1.5">
             {projection?.relation.boundContext?.map(({ entityRef, title }) => (
-              <span key={`${entityRef.type}:${entityRef.id}:${entityRef.viewId ?? ''}`}
-                title={title} className="max-w-full truncate rounded-full px-2 py-1 text-[11px]"
-                style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>{title}</span>
+              ['artifact', 'view', 'artifactView'].includes(entityRef.type) ? <button type="button" key={`${entityRef.type}:${entityRef.id}:${entityRef.viewId ?? ''}`}
+                data-lcos-bound-material onClick={() => { void readBoundMaterial(entityRef, title); }}
+                title={`阅读原引用 · ${title}`} className="max-w-full truncate rounded-full px-2 py-1 text-[11px]"
+                style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>{title}</button>
+                : <span key={`${entityRef.type}:${entityRef.id}:${entityRef.viewId ?? ''}`} title={title} className="text-xs">{title}</span>
             ))}
           </div>
         </section>
@@ -534,12 +603,12 @@ export function ConversationWorkViewBody({
 
       {/* Context View：relation 只读预览 */}
       {projection !== undefined && projection.relation.targetRefs.length > 0 && (
-        <section
+        <details
           data-lcos-conversation-context
           className="flex flex-col gap-1.5 rounded-xl p-3"
           style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}
         >
-          <h4 className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>历史引用</h4>
+          <summary className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>历史引用标识（只读）</summary>
           <div className="flex flex-wrap gap-1.5">
             {projection.relation.targetRefs.map((ref) => (
               <span key={ref} className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>
@@ -547,17 +616,18 @@ export function ConversationWorkViewBody({
               </span>
             ))}
           </div>
-        </section>
+        </details>
       )}
 
       {/* Diagnostics：工程细节经 readDiagnostics seam（collapsed 默认） */}
-      <section
+      <section data-lcos-diagnostics-host
         className="flex flex-col gap-2 rounded-xl p-3"
         style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}
       >
         <button
           type="button"
           data-lcos-diagnostics-toggle
+          aria-expanded={diagnosticsOpen}
           onClick={() => setDiagnosticsOpen((prev) => !prev)}
           className="flex items-center gap-1.5 text-left text-xs font-semibold"
           style={{ color: lcosTokens.color.muted }}
@@ -585,11 +655,11 @@ export function ConversationWorkViewBody({
                   {diagnostics.identity !== undefined ? ' · 身份链已读' : ''}
                   {diagnostics.reach !== undefined && 'connected' in (diagnostics.reach as object) ? ' · 可达已读' : ''}
                 </div>
-                <RecoverySection
+                <RecoverySection diagnostics conversationId={connectedConversationId}
                   collaboration={collaboration}
                   projectId={projectId}
-                  operations={diagnostics.operations.filter((operation) => !userRecoveryOperations.includes(operation))}
-                  onRefreshed={() => loadDiagnostics()}
+                  operations={diagnostics.operations}
+                  onRefreshed={() => { loadDiagnostics(); refreshSession(); }}
                 />
               </>
             )}

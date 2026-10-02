@@ -45,6 +45,7 @@ import type {
   WorkspaceFrameBounds,
   WorkspaceViewport,
   WorkspaceMembership,
+  WorkspaceEntityMembership,
   WorkspaceMembershipSource,
 } from '../../domain/src/index.js'
 import type { ManifestResourceRefV0 } from './resources.js'
@@ -77,6 +78,8 @@ export type {
 export type { ReorganizePreviewV0, ReorganizeProposalV0 } from './reorganize.js'
 export type { CompiledContextPromptV1, ContextCacheTelemetryV1, ContextPromptCachePlanV1 } from './context-prompt.js'
 export { CONTEXT_PROMPT_SERIALIZER_V1 } from './context-prompt.js'
+export * from './railway.js'
+
 export type { MutationChangeItemV1, MutationChangeSetV1, MutationRelationSnapshotV1, CurationWriteConflictReasonV1, CurationWriteConflictV1, CurationTextUpdateOutcomeV1 } from './curation-patch.js'
 export { buildCurationConflictHintV1 } from './curation-patch.js'
 export type { SpaceListNodeV0, SpaceListResultV0, SpaceReadResultV0, SpaceSearchNodeV0, SpaceSearchResultV0 } from './space-vfs.js'
@@ -172,6 +175,9 @@ export interface ProjectGraphSnapshot {
   /** Canonical containment membership; independent from spatial parentId and old presentation member refs. */
   readonly collectionMemberships?: readonly CollectionMembership[]
   readonly workspaces: readonly Workspace[]
+  /** Read projection of existing working-set membership tables; not bootstrap write input. */
+  readonly workspaceMemberships?: readonly WorkspaceMembership[]
+  readonly workspaceEntityMemberships?: readonly WorkspaceEntityMembership[]
   readonly artifacts: readonly Artifact[]
   readonly artifactViews: readonly ArtifactView[]
   readonly relations: readonly Relation[]
@@ -274,6 +280,8 @@ export interface BuildContextManifestV0Input {
   readonly targetRevisionId?: string
   /** ActiveContext/current selection. This belongs to the dynamic tail. */
   readonly contextArtifactIds?: readonly string[]
+  /** Explicit task references preserve the selected revision and user order. */
+  readonly orderedReferences?: readonly import('./run-assembly.js').OrderedRunReferenceV2[]
   /** Saved Context membership in frozen user order. This belongs to the stable prefix. */
   readonly stableContextItems?: readonly ContextManifestStableItemV1[]
   readonly savedContextId?: string
@@ -962,3 +970,5 @@ export * from './boundary-evaluator.js'
 export * from './collaboration-contract.js'
 
 export * from './workflow-import.js'
+
+export type { CollectionMemberPreview } from './collection-preview.js';

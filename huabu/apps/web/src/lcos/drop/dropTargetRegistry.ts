@@ -21,7 +21,10 @@ export class DropTargetRegistry {
 
   register(target: DropTargetRegistration): () => void {
     this.targets.set(target.targetId, target);
-    return () => this.unregister(target.targetId);
+    // An old effect's cleanup must not remove a replacement registration.
+    return () => {
+      if (this.targets.get(target.targetId) === target) this.unregister(target.targetId);
+    };
   }
 
   unregister(targetId: string): void {
@@ -56,9 +59,13 @@ export class DropTargetRegistry {
   hitTest(point: {
     readonly x: number;
     readonly y: number;
-  }): DropTargetRegistration | undefined {
+  }, ignoredNodeIds: ReadonlySet<string> = new Set()): DropTargetRegistration | undefined {
     return this.snapshot().find(
-      (target) => target.enabled && contains(target.rect, point),
+      // A disabled visible receiver is a rejection, NOT a hole onto the canvas.
+      (target) => (target.nodeId === undefined || !ignoredNodeIds.has(target.nodeId)) && Number.isFinite(target.rect.left) && Number.isFinite(target.rect.top)
+        && Number.isFinite(target.rect.width) && Number.isFinite(target.rect.height)
+        && target.rect.width > 0 && target.rect.height > 0
+        && contains(target.rect, point) && (target.acceptsPoint?.(point) ?? true),
     );
   }
 }

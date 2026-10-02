@@ -1,0 +1,233 @@
+/* G1 source: DZWFLi/LCOS-local-creativeOS@3e99769
+ * apps/web/src/interaction-system.css: Collection morphology
+ * apps/web/src/foundation.css: duration tokens; LcosGlyphs.tsx: original SVG.
+ * No global G1 theme, canvas engine or data store is imported.
+ */
+.lcos-simple-collection {
+  --lcos-ui-context-rgb: 81, 109, 156;
+  --lcos-ui-ink: rgba(37, 34, 44, .93);
+  --lcos-dur-fast: .2s;
+  --lcos-dur-normal: .3s;
+  --lcos-z-canvas-base: 1;
+  --lcos-z-content-bounds: 3;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  isolation: isolate;
+  outline: none;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: default;
+}
+.lcos-simple-collection, .lcos-simple-collection * { box-sizing: border-box; }
+/* G1 object hover/press treatment, scoped to its body, not the native geometry. */
+.lcos-simple-collection > .lcos-object {
+  transition: transform 165ms cubic-bezier(.18, .84, .28, 1), filter 165ms ease, box-shadow 165ms ease;
+}
+.lcos-simple-collection:hover:not(.dragging) > .lcos-object { transform: translateY(-1.5px); filter: saturate(1.02); }
+.lcos-simple-collection.selected:not(.dragging) > .lcos-object { transform: translateY(-1px); }
+.lcos-simple-collection.dragging > .lcos-object { transform: scale(.985) translateY(-2px); filter: drop-shadow(0 12px 24px rgba(43, 37, 61, .13)); }
+/* Verbatim declaration blocks from LCOS-local-creativeOS@3e99769:
+ * apps/web/src/interaction-system.css, Collection morphology, 2734–2954.
+ * Selector prefixes are scoped to the G2 collection adapter. Declarations are retained.
+ */
+.lcos-simple-collection .lcos-collection-object.is-collection {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: block;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  isolation: isolate;
+}
+.lcos-simple-collection .lcos-collection-stack {
+  position: absolute;
+  z-index: var(--lcos-z-canvas-base);
+  inset: 0 9px 21px 9px;
+  pointer-events: none;
+}
+.lcos-simple-collection .lcos-collection-stack-sheet {
+  position: absolute;
+  left: 14px;
+  right: 12px;
+  top: 2px;
+  height: 64px;
+  overflow: hidden;
+  border: 1px solid rgba(49, 52, 62, .09);
+  border-radius: 9px 11px 8px 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(244,245,243,.98));
+  box-shadow: 0 5px 14px rgba(34, 39, 48, .055);
+  transform-origin: 50% 92%;
+  transition:
+    transform var(--lcos-dur-normal) cubic-bezier(.22,1,.36,1),
+    opacity var(--lcos-dur-fast) ease,
+    filter var(--lcos-dur-fast) ease;
+}
+.lcos-simple-collection .lcos-collection-stack-sheet > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+.lcos-simple-collection .lcos-collection-stack-sheet > i {
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  width: 48%;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(44, 48, 58, .11);
+  box-shadow: 0 8px 0 rgba(44,48,58,.075), 0 16px 0 rgba(44,48,58,.06);
+}
+.lcos-simple-collection .lcos-collection-stack-sheet > b {
+  position: absolute;
+  right: 9px;
+  bottom: 7px;
+  max-width: 64%;
+  overflow: hidden;
+  color: rgba(42, 45, 54, .34);
+  font-size: 7.5px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcos-simple-collection .lcos-collection-stack-sheet.stack-sheet-0 { transform: translate(-4px, 1px) rotate(-2.5deg); }
+.lcos-simple-collection .lcos-collection-stack-sheet.stack-sheet-1 { transform: translate(4px, 4px) rotate(2deg); opacity: .93; }
+.lcos-simple-collection .lcos-collection-stack-sheet.stack-sheet-2 { transform: translate(0, 8px) rotate(.3deg); opacity: .88; }
+.lcos-simple-collection .lcos-collection-folder-face {
+  position: absolute;
+  z-index: var(--lcos-z-content-bounds);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 76px;
+  padding: 22px 38px 12px 13px;
+  overflow: visible;
+  border: 1px solid rgba(var(--lcos-ui-context-rgb), .14);
+  border-radius: 13px 14px 15px 15px;
+  color: var(--lcos-ui-ink);
+  background:
+    linear-gradient(145deg, rgba(250,252,255,.98), rgba(var(--lcos-ui-context-rgb), .075)),
+    rgba(248,250,252,.98);
+  box-shadow:
+    0 8px 20px rgba(35, 42, 54, .075),
+    inset 0 1px 0 rgba(255,255,255,.92);
+  transition:
+    transform var(--lcos-dur-fast) cubic-bezier(.22,1,.36,1),
+    border-color var(--lcos-dur-fast) ease,
+    box-shadow var(--lcos-dur-fast) ease,
+    background-color var(--lcos-dur-fast) ease;
+}
+.lcos-simple-collection .lcos-collection-folder-tab {
+  position: absolute;
+  left: 12px;
+  top: -11px;
+  min-width: 68px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid rgba(var(--lcos-ui-context-rgb), .13);
+  border-bottom-color: rgba(255,255,255,.18);
+  border-radius: 9px 10px 4px 4px;
+  color: rgba(var(--lcos-ui-context-rgb), .72);
+  background: linear-gradient(180deg, rgba(252,253,255,.99), rgba(var(--lcos-ui-context-rgb), .07));
+  box-shadow: 0 -2px 7px rgba(36,42,53,.03), inset 0 1px 0 rgba(255,255,255,.92);
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: .045em;
+}
+.lcos-simple-collection .lcos-collection-folder-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.lcos-simple-collection .lcos-collection-folder-copy small {
+  color: rgba(44, 49, 61, .42);
+  font-size: 8.5px;
+  line-height: 1.1;
+}
+.lcos-simple-collection .lcos-collection-folder-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(34, 39, 49, .86);
+  font-size: 11px;
+  font-weight: 640;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lcos-simple-collection .lcos-collection-folder-mark {
+  position: absolute;
+  right: 13px;
+  bottom: 14px;
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  color: rgba(var(--lcos-ui-context-rgb), .60);
+  opacity: .86;
+}
+.lcos-simple-collection .lcos-collection-folder-mark svg { width: 18px; height: 18px; }
+.lcos-simple-collection .lcos-collection-folder-state {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(var(--lcos-ui-context-rgb), .10);
+  border-radius: 50%;
+  color: rgba(var(--lcos-ui-context-rgb), .55);
+  background: rgba(255,255,255,.55);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  transition: transform var(--lcos-dur-fast) cubic-bezier(.22,1,.36,1), background-color var(--lcos-dur-fast) ease;
+}
+.lcos-simple-collection:hover .lcos-collection-folder-face,
+.lcos-simple-collection.selected .lcos-collection-folder-face {
+  transform: translateY(-2px);
+  border-color: rgba(var(--lcos-ui-context-rgb), .24);
+  box-shadow: 0 12px 27px rgba(35,42,54,.10), inset 0 1px 0 rgba(255,255,255,.94);
+}
+.lcos-simple-collection:hover .lcos-collection-stack-sheet.stack-sheet-0 { transform: translate(-7px, -3px) rotate(-4deg); }
+.lcos-simple-collection:hover .lcos-collection-stack-sheet.stack-sheet-1 { transform: translate(7px, 0) rotate(3.4deg); }
+.lcos-simple-collection:hover .lcos-collection-stack-sheet.stack-sheet-2 { transform: translate(1px, 4px) rotate(.4deg); }
+.lcos-simple-collection .lcos-collection-object.is-collection.is-expanded .lcos-collection-folder-face {
+  border-color: rgba(var(--lcos-ui-context-rgb), .22);
+  background:
+    linear-gradient(145deg, rgba(251,253,255,.99), rgba(var(--lcos-ui-context-rgb), .095)),
+    rgba(248,250,252,.99);
+}
+.lcos-simple-collection .lcos-collection-object.is-collection.is-expanded .lcos-collection-folder-state { transform: rotate(180deg); background: rgba(255,255,255,.78); }
+.lcos-simple-collection .lcos-collection-object.is-collection.is-expanded .lcos-collection-stack-sheet.stack-sheet-0 { transform: translate(-8px, -9px) rotate(-4deg); opacity: .68; }
+.lcos-simple-collection .lcos-collection-object.is-collection.is-expanded .lcos-collection-stack-sheet.stack-sheet-1 { transform: translate(8px, -6px) rotate(3.5deg); opacity: .62; }
+.lcos-simple-collection .lcos-collection-object.is-collection.is-expanded .lcos-collection-stack-sheet.stack-sheet-2 { transform: translate(1px, -3px) rotate(.5deg); opacity: .56; }
+
+/* The G2 owner retains selection, keyboard, receipt and error behavior.
+   These action slots do not change G1's face size or original interior padding. */
+.lcos-simple-collection:focus-visible { outline: 2px solid var(--gen2-accent, #7b70be); outline-offset: 4px; border-radius: 14px; }
+.lcos-simple-collection-action { position: absolute; right: 10px; bottom: 10px; z-index: 4; display: flex; align-items: center; font-size: 11px; }
+.lcos-simple-collection-action button { display: inline-flex; align-items: center; gap: 3px; padding: 5px; border: 0; border-radius: 6px; background: var(--gen2-surface, #fff); cursor: pointer; }
+.lcos-simple-collection-action button:hover { background: #edf0f5; }
+.lcos-simple-collection-error { position: absolute; left: 12px; top: 10px; z-index: 4; display: flex; gap: 4px; align-items: center; padding: 4px 6px; border: 1px solid var(--gen2-border,#ddd); border-radius: 6px; background: var(--gen2-surface,#fff); font-size: 10px; cursor: pointer; }
+.lcos-simple-collection .lcos-collection-sheet-retry { position: absolute; top: 6px; left: 9px; z-index: 1; display: inline-flex; padding: 3px 5px; border: 1px solid #e0dce5; border-radius: 4px; background: #fff; color: #6b5a6c; font-size: 10px; pointer-events: auto; }
+/* Error controls must remain reachable while the original sheets overlap. */
+.lcos-simple-collection .stack-sheet-1 .lcos-collection-sheet-retry { left: 55px; }
+.lcos-simple-collection .stack-sheet-2 .lcos-collection-sheet-retry { left: 101px; }
+@media (prefers-reduced-motion: reduce) {
+  .lcos-simple-collection, .lcos-simple-collection * { transition-duration: 1ms !important; }
+}

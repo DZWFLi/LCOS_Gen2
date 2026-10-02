@@ -1,3 +1,4 @@
+import { toggleCollectionHost } from './collectionHost';
 // LcosSpeciesBodies — 节点物种 body 注册表（Figma Main/NodeSpecies 语义；宪法 P11 内容优先）。
 // 形态语言：结构化区分（图标/边框/角标/比例/状态位），不只靠颜色。
 // 所有 body 只接收中性 slot input（nodeId/nodeType/data），不直连 Core/Huabu store（只读 data）。
@@ -11,8 +12,6 @@ import {
 } from '@local-creative-os/web-gen2';
 import {
   Bookmark,
-  ChevronDown,
-  ChevronUp,
   CircleDot,
   Puzzle,
   Router,
@@ -23,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { resolveArtifactUrl } from '@/api/artifact';
+import { toast } from '@/components/Common/Toast';
 import { DropdownMenu, DropdownMenuItem } from '@/components/Common/DropdownMenu';
 import { useLcosNodePresentation } from '@/lcos-seam/nodePresentation';
 import useCanvasStore from '@/store/canvasStore';
@@ -35,10 +35,10 @@ import { beginChildWorksiteNavigation } from '../navigation/childWorksiteNavigat
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { lcosTokens } from '../ui/lcosTokens';
 import { CollectionNodePresentation } from './CollectionNodePresentation';
-import { collectionExpansionGeometry } from './collectionExpandLayout';
 import { NodeColorPinMarkers } from './NodeColorPinMarkers';
 import { NodeReferenceMarker } from './NodeReferenceMarker';
 import { useLcosDropStore } from '../lcosDropState';
+import { isDropPointExposed, isCollectionHostPointExposed } from '../drop/dropOcclusion';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
 
 import type { CanvasNodeBodySlotInput } from '@/lcos-seam/types';
@@ -52,6 +52,7 @@ export const SPECIES_ACCENT: Readonly<Record<LcosNodeSpecies, string>> = {
   draft: lcosTokens.color.pinAmber,
   'context-reference': lcosTokens.color.pinTeal,
   run: lcosTokens.color.pinViolet,
+  'result-slot': lcosTokens.color.muted,
   decision: lcosTokens.color.accent,
   glyth: lcosTokens.color.inverse,
   collection: lcosTokens.color.info,
@@ -129,9 +130,9 @@ export function LcosSpeciesBodyContent({
   workflowDisabledReason,
   collectionMemberCount,
   collectionMemberLabels,
-  collectionMembers,
+  collectionMembers, collectionId,
   onRemoveCollectionMember,
-  collectionFrameExpanded,
+  collectionFrameExpanded, collectionActivationSuppressed, collectionSelected, collectionDragging,
   collectionFrameDisabledReason,
   onToggleCollectionFrame,
 }: {
@@ -155,9 +156,13 @@ export function LcosSpeciesBodyContent({
   workflowDisabledReason?: string;
   collectionMemberCount?: number;
   collectionMemberLabels?: readonly string[];
+  collectionId?: string;
   collectionMembers?: readonly { readonly type: 'artifact' | 'note' | 'collection' | 'scope' | 'workspace' | 'conversation' | 'run'; readonly id: string; readonly label: string }[];
   onRemoveCollectionMember?: (memberRef: { readonly type: 'artifact' | 'note' | 'collection' | 'scope' | 'workspace' | 'conversation' | 'run'; readonly id: string }) => Promise<boolean>;
   collectionFrameExpanded?: boolean;
+  collectionActivationSuppressed?: boolean;
+  collectionSelected?: boolean;
+  collectionDragging?: boolean;
   collectionFrameDisabledReason?: string;
   onToggleCollectionFrame?: () => Promise<boolean>;
   /**
@@ -286,8 +291,9 @@ export function LcosSpeciesBodyContent({
     case 'collection':
     case 'workflow-collection':
       return (
-        <div style={{ ...root, overflow: 'visible' }} data-lcos-species={species}>
+        <div style={{ ...root, height: '100%', overflow: 'visible' }} data-lcos-species={species}>
           <CollectionNodePresentation
+            projectId={projectId} collectionId={collectionId}
             kind={species}
             title={title}
             density={density}
@@ -296,16 +302,9 @@ export function LcosSpeciesBodyContent({
             {...(species === 'collection' && collectionMemberLabels !== undefined ? { memberLabels: collectionMemberLabels } : {})}
             {...(species === 'collection' && collectionMembers !== undefined ? { members: collectionMembers } : {})}
             {...(species === 'collection' && onRemoveCollectionMember !== undefined ? { onRemoveMember: onRemoveCollectionMember } : {})}
-            {...(species === 'collection' && onToggleCollectionFrame !== undefined ? { spaceAction: <button type="button"
-              data-lcos-collection-space-action
-              aria-expanded={collectionFrameExpanded === true}
-              aria-label={collectionFrameExpanded ? '收起集合空间' : '展开集合到画布'}
-              title={collectionFrameDisabledReason ?? (collectionFrameExpanded ? '收起集合空间并恢复成员位置' : '使用 Huabu Frame 在当前画布展开集合成员')}
-              disabled={collectionFrameDisabledReason !== undefined}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => { event.stopPropagation(); void onToggleCollectionFrame(); }}>
-              {collectionFrameExpanded ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
-            </button> } : {})}
+            {...(species === 'collection' ? { folder: { expanded: collectionFrameExpanded, selected: collectionSelected, dragging: collectionDragging,
+              disabledReason: collectionFrameDisabledReason, onToggle: onToggleCollectionFrame,
+              suppressActivation: collectionActivationSuppressed } } : {})}
             {...(worldWidth === undefined ? {} : { worldWidth })}
             {...(worldHeight === undefined ? {} : { worldHeight })}
             {...(workflowAction === undefined ? {} : { action: workflowAction })}
@@ -382,80 +381,45 @@ function LcosSpeciesBody({
   const collectionFrame = canvasNodes.find((node) => node.type === 'frame'
     && (node.data as Record<string, unknown> | undefined)?.lcosCollectionId === ref?.entityId);
   const collectionFrameCollapsed = collectionFrame !== undefined && collapsedFrameIds.has(collectionFrame.id);
-  const collectionMembers = descriptor?.collectionMembers ?? [];
-  const collectionMemberNodeIds = useMemo(() => {
-    if (species !== 'collection' || collectionMembers.length === 0) return [];
-    const refs = useLcosReferenceStore.getState().nodeEntityRefs;
-    const available = new Set(canvasNodes.map((node) => node.id));
-    const ids = collectionMembers.flatMap((member) => [...refs].flatMap(([nodeId, entityRef]) =>
-      available.has(nodeId) && entityRef.entityType === member.type && entityRef.entityId === member.id ? [nodeId] : []));
-    return [...new Set(ids)];
-  }, [canvasNodes, collectionMembers, projectId, species, ref?.entityId]);
-  const collectionFrameBlocked = useMemo(() => {
-    if (species !== 'collection' || ref?.entityType !== 'collection' || collectionFrame) return false;
-    const ids = new Set([input.nodeId, ...collectionMemberNodeIds]);
-    const expandedNestedCollectionIds = new Set(collectionMembers.filter((member) => member.type === 'collection')
-      .filter((member) => canvasNodes.some((node) => node.type === 'frame'
-        && (node.data as Record<string, unknown> | undefined)?.lcosCollectionId === member.id))
-      .map((member) => member.id));
-    const containsExpandedNestedCollection = collectionMembers.some((member) => member.type === 'collection'
-      && expandedNestedCollectionIds.has(member.id));
-    return containsExpandedNestedCollection || canvasNodes.some((node) => ids.has(node.id) && node.parentId !== undefined && node.parentId !== null);
-  }, [canvasNodes, collectionFrame, collectionMemberNodeIds, collectionMembers, input.nodeId, ref?.entityType, species]);
-  const collectionFrameDisabledReason = species !== 'collection' ? undefined
-    : collectionFrameBlocked ? '成员已有其他空间宿主；先收起嵌套集合或从原 Frame 中移出再展开'
-      : collectionFrame === undefined && collectionMemberNodeIds.length === 0 ? '当前画布尚无可承载的成员投影' : undefined;
+  const collectionPickActive = useLcosReferenceStore((state) => state.referencePickOwner !== null);
+  const collectionActivationSuppressed = collectionPickActive || canvasNodes.filter((node) => node.selected).length > 1;
+  const collectionFrameDisabledReason = species === 'collection' && ref?.entityType !== 'collection' ? '集合身份尚未确认' : undefined;
+  const collectionOpening = useRef(false);
   const toggleCollectionFrame = async (): Promise<boolean> => {
-    if (ref?.entityType !== 'collection' || collectionFrameDisabledReason !== undefined) return false;
-    const state = useCanvasStore.getState();
-    if (collectionFrame) {
-      if (collectionFrameCollapsed) {
-        const currentChildren = canvasNodes.filter((node) => node.parentId === collectionFrame.id);
-        const childIds = new Set(currentChildren.map((node) => node.id));
-        const additions = collectionMemberNodeIds.filter((nodeId) => {
-          const member = canvasNodes.find((node) => node.id === nodeId);
-          return !childIds.has(nodeId) && member !== undefined && !member.parentId;
-        });
-        if (additions.length > 0) {
-          const geometryUpdates = collectionExpansionGeometry(canvasNodes, input.nodeId, additions, currentChildren.map((node) => node.id));
-          if (geometryUpdates.length > 0) state.setNodeGeometry(geometryUpdates);
-          for (const nodeId of additions) state.moveNodeIntoFrame(nodeId, collectionFrame.id);
-        }
-      }
-      state.toggleFrameCollapse(collectionFrame.id);
-      return true;
-    }
-    const frameMembers = collectionMemberNodeIds;
-    if (frameMembers.length === 0) return false;
-    state.selectNodes(frameMembers);
-    const geometryUpdates = collectionExpansionGeometry(canvasNodes, input.nodeId, collectionMemberNodeIds);
-    state.frameSelectedNodes({ label: title, collectionId: ref.entityId, collectionNodeId: input.nodeId, geometryUpdates });
-    return true;
-  };
-  const removeCollectionMember = async (memberRef: { readonly type: 'artifact' | 'note' | 'collection' | 'scope' | 'workspace' | 'conversation' | 'run'; readonly id: string }): Promise<boolean> => {
-    if (projectId === null || ref?.entityType !== 'collection') return false;
+    if (ref?.entityType !== 'collection' || !projectId || !canvasId || collectionOpening.current) return false;
+    const sameSource = () => useCanvasStore.getState().canvasId === canvasId
+      && useLcosReferenceStore.getState().projectId === projectId
+      && useLcosReferenceStore.getState().nodeEntityRefs.get(input.nodeId)?.entityType === 'collection'
+      && useLcosReferenceStore.getState().nodeEntityRefs.get(input.nodeId)?.entityId === ref.entityId;
+    if (!sameSource()) return false;
+    if (useCanvasStore.getState().nodes.some((node) => node.type === 'frame' && node.data?.lcosCollectionId === ref.entityId))
+      return toggleCollectionHost(() => useCanvasStore.getState(), ref.entityId, input.nodeId, title, []);
+    const before = useCanvasStore.getState();
+    const owner = before.nodes.find((node) => node.id === input.nodeId);
+    if (!owner) return false;
+    const initialSelection = before.nodes.filter((node) => node.selected).map((node) => node.id).join('\0');
+    const initialPosition = { ...owner.position };
+    const initialParent = owner.parentId;
+    collectionOpening.current = true;
     try {
-      const receipt = await workflowSession.collections.removeMember(projectId, ref.entityId, memberRef);
-      if (receipt.status === 'removed') {
-        // Membership and Huabu parentage are separate truths. Once the
-        // semantic member is removed, detach its matching spatial projection
-        // only when it is currently hosted by this Collection's Frame. The
-        // Huabu command preserves its absolute position while removing the
-        // stale visual host relationship.
-        const memberNode = canvasNodes.find((node) => {
-          const entityRef = useLcosReferenceStore.getState().nodeEntityRefs.get(node.id);
-          return entityRef?.entityType === memberRef.type
-            && entityRef.entityId === memberRef.id
-            && node.parentId === collectionFrame?.id;
-        });
-        if (memberNode !== undefined) useCanvasStore.getState().moveNodeOutOfFrame(memberNode.id);
-        useLcosReferenceStore.getState().requestNodeBindingRefresh();
-      }
-      return receipt.status === 'removed' || receipt.status === 'not-member';
-    } catch (error) {
-      console.warn('[lcos] Collection member removal failed; membership remains unchanged.', error);
+      // A missing descriptor is not an empty collection. Read its real members
+      // before making the first physical host; later opens preserve that host.
+      const snapshot = await workflowSession.collections.members(projectId, ref.entityId);
+      if (!sameSource()) return false;
+      const live = useCanvasStore.getState();
+      const liveOwner = live.nodes.find((node) => node.id === input.nodeId);
+      if (!liveOwner || liveOwner.dragging || liveOwner.parentId !== initialParent
+        || liveOwner.position.x !== initialPosition.x || liveOwner.position.y !== initialPosition.y
+        || live.nodes.filter((node) => node.selected).map((node) => node.id).join('\0') !== initialSelection) return false;
+      const bindings = useLcosReferenceStore.getState().nodeEntityRefs;
+      const memberIds = snapshot.members.flatMap((member) => [...bindings].filter(([id, entity]) =>
+        live.nodes.some((node) => node.id === id) && entity.entityType === member.memberRef.type
+          && entity.entityId === member.memberRef.id).map(([id]) => id));
+      return toggleCollectionHost(() => useCanvasStore.getState(), ref.entityId, input.nodeId, title, memberIds);
+    } catch {
+      if (sameSource()) toast('成员暂未读到，原内容已保留；再次点击集合可重读。', {tone:'danger'});
       return false;
-    }
+    } finally { collectionOpening.current = false; }
   };
   const isSourceMaterial = species === 'source' || species === 'draft';
   const visualFamily = isSourceMaterial
@@ -465,6 +429,7 @@ function LcosSpeciesBody({
         mimeType: descriptor?.mimeType,
         sourceKind: descriptor?.sourceKind,
         managed: descriptor?.managed,
+        revisionStatus: descriptor?.revisionStatus,
       })
     : 'unknown';
   const presentationMediaSrc = input.data.presentationMediaSrc;
@@ -511,14 +476,46 @@ function LcosSpeciesBody({
     return registerDropTarget({
       targetId,
       kind: 'collection-membership',
+      nodeId: input.nodeId,
       label: title,
       rect,
       readRect,
+      acceptsPoint: (point) => isDropPointExposed(element, point),
       priority: 30,
       enabled: true,
       semantic: { kind: 'collection-membership', collectionId: ref.entityId },
     });
-  }, [activeSurface, projectId, ref?.entityId, ref?.entityType, registerDropTarget, species, title]);
+  }, [activeSurface, projectId, ref?.entityId, ref?.entityType, registerDropTarget, species, title, input.nodeId]);
+  useEffect(() => {
+    if (species !== 'collection' || ref?.entityType !== 'collection' || !collectionFrame || collectionFrameCollapsed) return;
+    const frameId = collectionFrame.id;
+    const findFrame = () => [...(useCanvasStore.getState().canvasWrapper?.querySelectorAll('.react-flow__node') ?? [])]
+      .find((element) => element.getAttribute('data-id') === frameId);
+    const readRect = () => {
+      const state = useCanvasStore.getState();
+      const node = state.nodes.find((candidate) => candidate.id === frameId);
+      if (!node || node.hidden || state.collapsedFrameIds.has(frameId)) return undefined;
+      const element = findFrame();
+      return element?.isConnected ? rectFromDomRect(element.getBoundingClientRect()) : undefined;
+    };
+    const rect = readRect();
+    if (!rect) return;
+    return registerDropTarget({
+      targetId: `collection-host:${frameId}`, nodeId: frameId,
+      kind: 'collection-membership', label: title, priority: 15,
+      rect, readRect,
+      acceptsPoint: (point) => {
+        const state = useCanvasStore.getState();
+        const element = findFrame();
+        return Boolean(element && state.canvasWrapper
+          && isCollectionHostPointExposed(element, state.canvasWrapper, point,
+            state.nodes.filter((node) => node.parentId === frameId).map((node) => node.id)));
+      },
+      enabled: collectionFrame.data.locked !== true,
+      ...(collectionFrame.data.locked === true ? { ineligibleReason: '该集合空间已锁定' } : {}),
+      semantic: { kind: 'collection-membership', collectionId: ref.entityId },
+    });
+  }, [species, ref?.entityType, ref?.entityId, collectionFrame?.id, collectionFrame?.data.locked, collectionFrameCollapsed, registerDropTarget, title]);
   const workflowUnavailableReason = projectId === null
     ? '项目身份尚未就绪'
     : ref?.entityType !== 'scope'
@@ -614,8 +611,10 @@ function LcosSpeciesBody({
         collectionMemberCount={descriptor?.collectionMemberCount}
         collectionMemberLabels={descriptor?.collectionMemberLabels}
         collectionMembers={descriptor?.collectionMembers}
-        onRemoveCollectionMember={species === 'collection' ? removeCollectionMember : undefined}
-        collectionFrameExpanded={collectionFrame !== undefined && !collectionFrameCollapsed}
+        collectionId={species === 'collection' && ref?.entityType === 'collection' ? ref.entityId : undefined}
+        collectionSelected={canvasNodes.some((node) => node.id === input.nodeId && node.selected === true)}
+        collectionDragging={canvasNodes.some((node) => node.id === input.nodeId && node.dragging === true)}
+        collectionActivationSuppressed={collectionActivationSuppressed} collectionFrameExpanded={collectionFrame !== undefined && !collectionFrameCollapsed}
         collectionFrameDisabledReason={collectionFrameDisabledReason}
         onToggleCollectionFrame={species === 'collection' ? toggleCollectionFrame : undefined}
       />

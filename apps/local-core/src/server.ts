@@ -1183,6 +1183,7 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
         allowedRoot: options.allowedRoot,
         maxDocumentPreviewBytes: MAX_DOCUMENT_PREVIEW_BYTES,
         createProjectIdFn: createProjectId,
+        projectEvents,
         ...(conversationContinuation === undefined ? {} : { continuation: conversationContinuation }),
         helpers: routeHelpers,
       })) return
@@ -1417,6 +1418,7 @@ export function createLocalCoreServer(options: LocalCoreServerOptions = {}): Loc
         warehouse,
         resultSlots,
         assemblyApply,
+        ...(mutationSafety === undefined ? {} : { mutationSafety }),
         projectSummary,
         skillCatalog,
         skillPackages,

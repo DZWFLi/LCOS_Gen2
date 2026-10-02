@@ -1,3 +1,4 @@
+import { railwayStableKeyV1 } from '@local-creative-os/contracts';
 import type { ProjectViewRailRefV0 } from '@local-creative-os/contracts';
 
 export type RailwayReorderPlacementV1 = 'before' | 'after';
@@ -48,4 +49,18 @@ export function removeRailwayRefV1(
 ): readonly ProjectViewRailRefV0[] {
   const index = orderedRefs.findIndex((ref) => railwayRefKeyV1(ref) === removedKey);
   return index < 0 ? orderedRefs : orderedRefs.filter((_, candidate) => candidate !== index);
+}
+
+/** Canonical V1 list manipulation. Hidden roots and unresolved records keep their order. */
+export function moveRailwayDestination(
+  refs: readonly import('@local-creative-os/contracts').RailwayStoredRefV1[],
+  source: string, target: string, placement: 'before' | 'after',
+): typeof refs {
+  const from = refs.findIndex((ref) => railwayStableKeyV1(ref) === source);
+  const to = refs.findIndex((ref) => railwayStableKeyV1(ref) === target);
+  if (from < 0 || to < 0 || from === to) return refs;
+  const next = refs.filter((_,index) => index !== from);
+  const index = next.findIndex((ref) => railwayStableKeyV1(ref) === target);
+  next.splice(index + (placement === 'after' ? 1 : 0), 0, refs[from]!);
+  return next.every((ref,index) => ref === refs[index]) ? refs : next;
 }

@@ -1,0 +1,21 @@
+.lcos-execution-body { width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--gen2-text);outline:none;user-select:none; }
+.lcos-execution-mark { width:66px;height:66px;flex:none;color:#4d7664;overflow:visible; }
+.lcos-execution-ring { fill:#e4ece8;stroke:#91aea0;stroke-width:1px; }
+.lcos-execution-body:focus-visible .lcos-execution-ring { stroke:var(--gen2-accent);stroke-width:2px; }
+.lcos-execution-label { font:400 12px/19px 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;color:var(--gen2-muted);max-width:100%;white-space:nowrap;text-overflow:ellipsis;overflow:hidden; }
+.lcos-execution-mark[data-state="failed"] {color:var(--lcos-status-danger)}
+.lcos-execution-mark[data-state="failed"] .lcos-execution-ring {fill:#f6eded;stroke:#c79797}
+.lcos-execution-mark[data-state="waiting_input"],.lcos-execution-mark[data-state="review"] {color:#96743c}
+.lcos-execution-mark[data-state="waiting_input"] .lcos-execution-ring,.lcos-execution-mark[data-state="review"] .lcos-execution-ring {fill:#f3eee3;stroke:#c0ad87}
+.lcos-execution-mark[data-state="unavailable"],.lcos-execution-mark[data-state="cancelled"] {color:#7c8280}
+.lcos-execution-mark[data-state="unavailable"] .lcos-execution-ring,.lcos-execution-mark[data-state="cancelled"] .lcos-execution-ring {fill:#f0f1f0;stroke:#b9bdbb}
+.lcos-execution-orbit {transform-origin:33px 33px;animation:lcos-process-orbit 1.6s linear infinite}
+@keyframes lcos-process-orbit {to{transform:rotate(360deg)}}
+.lcos-result-slot-body {box-sizing:border-box;border:1px dashed #a6b7ae;border-radius:16px;background:rgba(241,246,243,.5);gap:12px;padding:18px;color:#688275;}
+.lcos-result-slot-body:focus-visible {outline:2px solid var(--gen2-accent);outline-offset:3px}
+.lcos-result-reservation {display:flex;gap:5px;align-items:end;height:30px;opacity:.7}
+.lcos-result-reservation span {width:6px;height:20px;border:1px solid currentColor;border-radius:2px}
+.lcos-result-reservation span:nth-child(2) {height:30px}.lcos-result-reservation span:nth-child(3) {height:24px}
+.lcos-result-title {font:400 12px/1.5 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lcos-execution-body[data-lcos-density="mark"] {gap:4px}.lcos-execution-body[data-lcos-density="mark"] .lcos-execution-label {display:none}
+@media(prefers-reduced-motion:reduce){.lcos-execution-orbit{animation:none}}

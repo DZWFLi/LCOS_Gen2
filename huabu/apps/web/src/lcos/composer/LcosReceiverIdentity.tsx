@@ -10,8 +10,7 @@ export function LcosReceiverIdentity({ projectId, conversationId, size }: {
   readonly size: number;
 }): React.JSX.Element | null {
   const entry = useCollaborationSession(projectId, conversationId);
-  if (entry?.status !== 'ready' || entry.projection === undefined) return null;
-  const userState = entry.projection.userState;
-  const pose = resolveGlythPresentation(glythInputFromCollaborationState(userState));
-  return <GlythBodyView pose={pose} userState={userState} size={size} left={0} top={0} />;
+  const userState = entry?.status === 'ready' && entry.projection !== undefined ? entry.projection.userState : undefined;
+  const pose = resolveGlythPresentation(glythInputFromCollaborationState(userState ?? 'ready'));
+  return <GlythBodyView pose={pose} userState={userState} paused={userState === undefined} size={size} left={0} top={0} />;
 }

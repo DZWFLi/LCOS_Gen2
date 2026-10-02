@@ -15,13 +15,14 @@ export interface PortalPreviewViewProps {
   readonly onOpen?: () => void;
   /** Production caller may know that the preview has no resolvable Workspace. */
   readonly openDisabled?: boolean;
+  readonly openBusy?: boolean;
   readonly openDisabledReason?: string;
   readonly onRetry?: () => void;
   readonly onZoom?: () => void;
   readonly children?: ReactNode;
 }
 
-export function PortalPreviewView({ state, title, detail, onOpen, openDisabled, openDisabledReason, onRetry, onZoom, children }: PortalPreviewViewProps): React.JSX.Element {
+export function PortalPreviewView({ state, title, detail, onOpen, openDisabled, openBusy, openDisabledReason, onRetry, onZoom, children }: PortalPreviewViewProps): React.JSX.Element {
   const presentation = portalPreviewPresentation(state);
   const descriptionId = useId();
   const hasSceneSlot = children !== null && children !== undefined && children !== false;
@@ -50,7 +51,7 @@ export function PortalPreviewView({ state, title, detail, onOpen, openDisabled, 
           type="button" className="lcos-portal-open" onClick={onOpen}
           disabled={openIsDisabled}
           title={openDisabledReason}
-        >打开现场</button> : null}
+        >{openBusy ? '正在打开…' : '打开现场'}</button> : null}
         {openDisabledReason ? <span className="lcos-portal-open-reason" role="status">{openDisabledReason}</span> : null}
         <div className="lcos-portal-preview-stage" data-lcos-portal-stage={state}>
           {showsScene ? children : <div className="lcos-portal-state-copy" role="status">

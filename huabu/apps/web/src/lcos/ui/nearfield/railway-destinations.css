@@ -1,0 +1,31 @@
+/* Reuse the adopted 52px destination island; management is transient, not a sidebar. */
+.lcos-railway-host {position:fixed;z-index:40;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:auto;width:52px;}
+.lcos-railway-popover {box-sizing:border-box;overflow:auto;overscroll-behavior:contain;border-radius:16px;color:var(--gen2-text);font:400 12px/1.5 var(--lcos-hud-font, sans-serif);padding:14px;}
+.lcos-railway-popover header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.lcos-railway-popover header strong {font-size:14px;font-weight:600;}
+.lcos-railway-popover button {font:inherit;cursor:pointer;color:inherit;border:0;background:transparent;}
+.lcos-railway-popover button:disabled {opacity:.45;cursor:not-allowed;}
+.lcos-railway-popover button:focus-visible,.lcos-railway-popover input:focus-visible {outline:2px solid var(--lcos-pin-violet,#7165dc);outline-offset:2px;}
+.lcos-railway-popover p,.lcos-railway-popover small {color:var(--gen2-muted);overflow-wrap:anywhere;}
+.lcos-railway-popover p {margin:8px 0;}
+.lcos-railway-popover small {display:block;font-size:11px;line-height:1.5;font-weight:400;}
+.lcos-railway-popover strong {font-weight:500;overflow-wrap:anywhere;}
+.lcos-railway-manage-row {display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--lcos-color-border-subtle);}
+.lcos-railway-popover .lcos-railway-row-target {display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:6px;border-radius:10px;text-align:left;}
+.lcos-railway-row-target>svg {flex-shrink:0;}
+.lcos-railway-row-target[aria-disabled='true'] {opacity:.55;}
+.lcos-railway-row-target[data-lcos-receive-state='receive-hot'] {box-shadow:inset 0 0 0 2px var(--lcos-pin-teal);}
+.lcos-railway-row-actions {display:flex;gap:2px;}
+.lcos-railway-row-actions button {padding:5px;border-radius:6px;}
+.lcos-railway-row-actions button:hover:not(:disabled),.lcos-railway-candidates button:hover:not(:disabled) {background:var(--gen2-raised);}
+.lcos-railway-candidate-search {display:flex;flex-direction:column;gap:8px;margin-top:16px;}
+.lcos-railway-candidate-search input {font:inherit;min-width:0;width:100%;box-sizing:border-box;color:inherit;padding:8px 10px;border:1px solid var(--lcos-color-border-subtle);border-radius:8px;background:var(--lcos-hud-surface);}
+.lcos-railway-candidates button {display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;padding:10px 6px;border-radius:8px;}
+.lcos-railway-candidates button>svg {flex-shrink:0;}
+.lcos-railway-migration {margin:8px 0;padding:10px;background:var(--gen2-raised);border-radius:10px;}
+.lcos-railway-migration button,.lcos-railway-peek-actions button {display:inline-flex;align-items:center;gap:6px;background:var(--lcos-hud-surface);border:1px solid var(--lcos-color-border-subtle);border-radius:8px;padding:6px 10px;}
+.lcos-railway-peek-actions {display:flex;gap:8px;margin-top:12px;}
+.lcos-railway-legacy-root {display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;}
+[data-lcos-railway-footer] {position:absolute;top:100%;margin-top:8px;left:0;max-width:min(220px,calc(100vw - 48px));width:max-content;font:400 11px/1.5 var(--lcos-hud-font,sans-serif);overflow-wrap:anywhere;}
+@media (max-width:480px) {.lcos-railway-popover {padding:12px;}.lcos-railway-row-actions {flex-direction:column;}.lcos-railway-popover .lcos-railway-row-target {padding:4px;}}
+@media (prefers-reduced-motion:reduce) {[data-lcos-family='railway'],[data-lcos-railway-item] {transition:none;}}

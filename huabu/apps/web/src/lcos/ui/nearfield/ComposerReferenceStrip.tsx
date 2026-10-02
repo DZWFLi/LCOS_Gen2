@@ -24,12 +24,16 @@ export function ComposerReferenceStrip({
           data-unavailable={item.unavailableReason !== undefined || undefined}
           title={item.unavailableReason ?? item.label}
         >
-          <span className="lcos-composer-reference-icon">
-            {item.thumbnailSrc
-              ? <img src={item.thumbnailSrc} alt="" loading="lazy" />
-              : item.icon ?? <LcosNearfieldGlyph name="attach" size={14} />}
-          </span>
-          <span className="lcos-composer-reference-label">{item.label}</span>
+          {item.onOpen ? <button type="button" className="lcos-composer-reference-open" onClick={item.onOpen}
+            aria-label={`查看引用 ${item.label}${item.versionLabel ? ` · ${item.versionLabel}` : ''}`}>
+            <span className="lcos-composer-reference-icon">{item.thumbnailSrc
+              ? <img src={item.thumbnailSrc} alt="" loading="lazy" /> : item.icon ?? <LcosNearfieldGlyph name="attach" size={14} />}</span>
+            <span className="lcos-composer-reference-label">{item.label}</span>
+            {item.versionLabel && <small>{item.versionLabel}</small>}
+          </button> : <><span className="lcos-composer-reference-icon">{item.thumbnailSrc
+            ? <img src={item.thumbnailSrc} alt="" loading="lazy" /> : item.icon ?? <LcosNearfieldGlyph name="attach" size={14} />}</span>
+            <span className="lcos-composer-reference-label">{item.label}</span>
+            {item.versionLabel && <small>{item.versionLabel}</small>}</>}
           {item.onRemove !== undefined && (
             <LcosIconButton
               type="button"

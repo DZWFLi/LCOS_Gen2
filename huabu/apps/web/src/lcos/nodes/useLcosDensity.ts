@@ -7,65 +7,44 @@
 //
 // 两条降级：
 //   1. 无呈现上下文（预览/测试等不在 NodeWrapper 子树内）→ 退化为纯 zoom 阶梯。
-//   2. 画布节点密度过高（80/150/300 档）→ 封顶信息档，避免整屏重内容。
+//   2. 可见画布节点密度过高（150/300 档）→ 封顶信息档，避免整屏重内容。
 //
 // 只读呈现数据，不写任何 store；不做领域语义判断。
 
-import { resolvePresentationDensity, type PresentationDensity } from '@local-creative-os/web-gen2';
-import { useViewport } from '@xyflow/react';
+import { resolveStablePresentationDensity, type PresentationDensity, type NodePresentationInput } from '@local-creative-os/web-gen2';
+import { useStore, useViewport } from '@xyflow/react';
+import { useEffect, useRef } from 'react';
+import { densityFromZoom, finishPresentationDensity } from './densityBudget';
+export { densityFromZoom, densityCapForNodeCount, capDensity } from './densityBudget';
+import { visibleFlowNodeCount } from './visibleNodeCount';
+import { SEMANTIC_ZOOM_CONFIG } from '@/config/semanticZoom';
 
 import { useLcosNodePresentation } from '@/lcos-seam/nodePresentation';
-import useCanvasStore from '@/store/canvasStore';
 
-/** 无呈现上下文时的纯 zoom 阶梯（退化路径，非主判定）。 */
-export function densityFromZoom(zoom: number): PresentationDensity {
-  return zoom < 0.25 ? 'mark' : zoom < 0.55 ? 'summary' : zoom < 0.9 ? 'working' : 'reading';
-}
-
-/**
- * 节点总数 → 密度封顶档。null = 不封顶。
- * 80 以下不干预；150 以上封到 working（去掉 reading 档的长正文）；
- * 300 以上封到 summary（只留身份+角标）。
- */
-export function densityCapForNodeCount(nodeCount: number): PresentationDensity | null {
-  if (nodeCount > 300) return 'summary';
-  if (nodeCount > 150) return 'working';
-  return null;
-}
-
-const DENSITY_RANK: Readonly<Record<PresentationDensity, number>> = {
-  mark: 0,
-  summary: 1,
-  working: 2,
-  reading: 3,
-};
-
-/** 把已解析密度压到封顶档，绝不向上提升。 */
-export function capDensity(
-  density: PresentationDensity,
-  cap: PresentationDensity | null,
-): PresentationDensity {
-  if (!cap) return density;
-  return DENSITY_RANK[density] <= DENSITY_RANK[cap] ? density : cap;
-}
 
 /** 当前节点应呈现的信息档。 */
-export function useLcosDensity(): PresentationDensity {
+export function useLcosDensity(interactionPhase?: NodePresentationInput['phase']): PresentationDensity {
   const presentation = useLcosNodePresentation();
   const { zoom } = useViewport();
-  const nodeCount = useCanvasStore((s) => s.nodes.length);
+  const nodeCount = useStore(visibleFlowNodeCount);
+  const phase = interactionPhase ?? presentation?.phase;
+  const previous = useRef<PresentationDensity | undefined>(undefined);
 
   const resolved = presentation
-    ? resolvePresentationDensity({
+    ? resolveStablePresentationDensity({
         worldWidth: presentation.worldWidth,
         worldHeight: presentation.worldHeight,
         zoom: presentation.zoom,
         dpr: presentation.dpr,
         screenWidth: presentation.screenWidth,
         screenHeight: presentation.screenHeight,
-        phase: presentation.phase,
-      })
+        phase: phase ?? presentation.phase,
+      }, previous.current, SEMANTIC_ZOOM_CONFIG.hysteresis)
     : densityFromZoom(zoom);
 
-  return capDensity(resolved, densityCapForNodeCount(nodeCount));
+  // Capacity only reduces background information, never the active editor.
+  const result = finishPresentationDensity(resolved, nodeCount, phase);
+  // Remember the uncapped result so population changes do not become zoom thresholds.
+  useEffect(() => { previous.current = resolved; }, [resolved]);
+  return result;
 }

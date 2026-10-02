@@ -1,3 +1,4 @@
+import { portalDropTargetForCanvas, usePortalDropWorkspaceContext } from '../drop/PortalDropWorkspaceContext';
 // LcosActionArc — LCOS 节点命令的**节点近场 / 右键**入口（T3-A02，R2 返工）。
 //
 // 形态（对照 T3-A02「selection/node near-field overlay」）：
@@ -47,6 +48,8 @@ import {
   CanvasFloatingPopover,
   type CanvasAnchorRect,
 } from '@/components/Common/CanvasFloatingPopover';
+import { toast } from '@/components/Common/Toast';
+import { draftReferenceUnavailableReason, snapshotDraftReference } from '../composer/referenceSnapshot';
 import { useHeightMode } from '@/components/Nodes/shared/height/useHeightMode';
 import { shouldStandDownLegacyNodeToolbar } from '@/lcos-seam/chromeModeSlot';
 import useCanvasStore from '@/store/canvasStore';
@@ -124,15 +127,18 @@ function primaryCommandIcon(command: LcosNodeCommand): React.JSX.Element {
 }
 
 export function LcosActionArc(): React.JSX.Element | null {
+  const portalContext = usePortalDropWorkspaceContext();
   const nodes = useCanvasStore((s) => s.nodes);
   const canvasId = useCanvasStore((s) => s.canvasId);
   const shellProjectId = useLcosShellStore((s) => s.projectId);
   const identitiesReady = useLcosReferenceStore((s) => s.projectId !== null && s.projectId === shellProjectId
     && s.bindingCanvasId === canvasId && s.bindingIdentitiesReady);
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const inspectorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [contextNodeId, setContextNodeId] = useState<string | null>(null);
   const [inspector, setInspector] = useState<'size' | 'accent' | null>(null);
   const [sizeDraft, setSizeDraft] = useState<{ width: number; height: number } | null>(null);
-  const composerOpen = useLcosShellStore((state) => state.composerOpen);
   const canvasEngaged = useCanvasAttentionStore((state) => state.isCanvasEngaged);
   const colorPins = useOptionalLcosColorPins();
   const projectId = useLcosReferenceStore((state) => state.projectId);
@@ -164,7 +170,8 @@ export function LcosActionArc(): React.JSX.Element | null {
 
   // 选择变化即收起"更多"，避免浮层停在旧节点上。
   useEffect(() => {
-    setMoreOpen(false);
+    if (contextNodeId && contextNodeId !== nodeId) setContextNodeId(null);
+    if (contextNodeId !== nodeId) setMoreOpen(false);
     setInspector(null);
     setSizeDraft(null);
   }, [nodeId]);
@@ -191,17 +198,17 @@ export function LcosActionArc(): React.JSX.Element | null {
       ...(targetCanvasId ? { targetCanvasId } : {}),
       capabilities: [...capabilities],
       referenced,
+      ...(ref?.descriptor?.execution ? { execution: ref.descriptor.execution } : {}),
       ...(conversation === undefined ? {} : { conversation }),
       ...(node.type === 'note' ? { noteHeightMode: heightMode === 'auto' ? 'auto' : 'fixed' } : {}),
     });
   }, [node, nodeId, ref, draftRefs, heightMode, conversation]);
 
-  // Right click selects the object and exposes its existing near-field Arc.
-  // The compact Arc is the one command surface; do not replace it with a second
-  // full-height grouped menu that duplicates the same commands.
+  // Right click opens the existing command model as a local management menu.
+  // An open Composer must not consume that independent operation.
   useEffect(() => {
     const onContextMenu = (event: MouseEvent): void => {
-      if (composerOpen || !identitiesReady) return;
+      if (!identitiesReady) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
       if (target.closest('input, textarea, select, [contenteditable="true"], a[href]')) return;
@@ -217,27 +224,21 @@ export function LcosActionArc(): React.JSX.Element | null {
         targetNode.type ?? '',
         targetRef?.entityType !== undefined && targetRef.entityId !== undefined,
       )) return;
+      const selection = useCanvasStore.getState().nodes.filter((item) => item.selected);
+      // The group toolbar owns a right-click on any selected member.
+      if (selection.length > 1 && selection.some((item) => item.id === targetNodeId)) return;
       event.preventDefault();
-      useCanvasStore.getState().selectNodes([targetNodeId]);
-      setMoreOpen(false);
+      setContextNodeId(targetNodeId);
+      if (selection.length !== 1 || selection[0]?.id !== targetNodeId) useCanvasStore.getState().selectNodes([targetNodeId]);
+      setMoreOpen(true);
     };
     window.addEventListener('contextmenu', onContextMenu);
     return () => window.removeEventListener('contextmenu', onContextMenu);
-  }, [composerOpen, nodes, identitiesReady]);
-
-  useEffect(() => {
-    if (!moreOpen && inspector === null) return;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
-      event.preventDefault(); event.stopPropagation(); setMoreOpen(false); setInspector(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [moreOpen, inspector]);
+  }, [nodes, identitiesReady]);
 
   // Canvas attention is the shared visibility owner. Reader/Assembly focus
   // steps the Arc aside; returning focus to the canvas restores it.
-  if (!node || !nodeId || composerOpen || !canvasEngaged) return <AnimatePresence />;
+  if (!node || !nodeId || (!canvasEngaged && !moreOpen)) return <AnimatePresence />;
 
   const box = flowBoxOf(node);
   const absolutePosition = useCanvasStore.getState().rfInstance?.getInternalNode(nodeId)?.internals.positionAbsolute ?? node.position;
@@ -259,7 +260,11 @@ export function LcosActionArc(): React.JSX.Element | null {
     const presentedRevisionId = ref?.descriptor?.presentedRevisionId ?? ref?.descriptor?.currentRevisionId;
     switch (command.id) {
       case 'open':
-        if (node.type === 'canvasRef') shell.openWindow('portal-preview', `入口 · ${title}`, target, 'canvas');
+        if (ref?.entityType === 'run' || ref?.entityType === 'result-slot') {
+          const runId = ref.entityType === 'run' ? ref.entityId : ref.descriptor?.execution?.runId;
+          if (runId) shell.openWindow('run-review', `任务 · ${ref.descriptor?.title ?? title}`, runId);
+        }
+        else if (node.type === 'canvasRef' || node.type === 'spacePreview') shell.openWindow('portal-preview', `入口 · ${title}`, target, 'canvas', {workspaceId: ref?.entityType === 'workspace' ? ref.entityId : portalDropTargetForCanvas(portalContext,target)?.workspaceId,sourceNodeId:nodeId});
         else if (ref?.entityType === 'conversation')
           shell.openWindow('conversation', `会话窗口 · ${title}`, ref.entityId);
         else if (ref?.entityType === 'artifact')
@@ -271,6 +276,10 @@ export function LcosActionArc(): React.JSX.Element | null {
       case 'answer-input':
       case 'review-result':
       case 'view-progress':
+      case 'recover-session':
+      case 'session-diagnostics':
+      case 'session-options':
+      case 'cancel-work':
         if (ref?.entityType === 'conversation') {
           shell.openWindow('conversation', `会话窗口 · ${title}`, ref.entityId);
           cancelSectionFocus.current = focusConversationSection(ref.entityId, command.id);
@@ -287,7 +296,7 @@ export function LcosActionArc(): React.JSX.Element | null {
                 intent: 'continue' as const,
                 receiverConversationId: ref.entityId,
               }
-            : { intent: 'delegate' as const }),
+            : { intent: 'delegate' as const, targetReferences: ref ? [snapshotDraftReference(ref)] : [] }),
           ...(shell.activeWorkspaceId === null
             ? {}
             : { workspaceId: shell.activeWorkspaceId }),
@@ -295,7 +304,9 @@ export function LcosActionArc(): React.JSX.Element | null {
         setMoreOpen(false);
         break;
       case 'reference':
-        useLcosReferenceStore.getState().toggleNodeReference(nodeId);
+        if (!useLcosReferenceStore.getState().toggleNodeReference(nodeId, shell.composerTarget?.intent)) {
+          toast(draftReferenceUnavailableReason(ref ? snapshotDraftReference(ref) : undefined, shell.composerTarget?.intent) ?? '引用尚未就绪。', { tone: 'danger' });
+        }
         break;
       case 'color-pin':
         if (colorPins !== null && ref !== undefined && shell.projectId !== null) {
@@ -347,7 +358,7 @@ export function LcosActionArc(): React.JSX.Element | null {
     items: commands.filter((command) => command.group === group),
   })).filter((entry) => entry.items.length > 0);
   const grouped = commandGroups.map((entry) => ({
-    ...entry, items: entry.items.filter((command) => !primary.includes(command)),
+    ...entry, items: entry.items.filter((command) => contextNodeId === nodeId || !primary.includes(command)),
   })).filter((entry) => entry.items.length > 0);
 
   const arcGeometry = resolveActionArcGeometry(primary.length + 1);
@@ -387,11 +398,11 @@ export function LcosActionArc(): React.JSX.Element | null {
             </ActionArcOrb>
           ))}
           <ActionArcOrb
-            more
+            more buttonRef={moreButtonRef}
             point={arcPoints[primary.length]}
             label={moreOpen ? '收起更多命令' : '更多命令'}
             expanded={moreOpen}
-            onClick={() => { setMoreOpen((v) => !v); setInspector(null); }}
+            onClick={() => { setContextNodeId(null); setMoreOpen((v) => !v); setInspector(null); }}
           >
             <LcosNearfieldGlyph name="more" size={17} />
           </ActionArcOrb>
@@ -401,6 +412,8 @@ export function LcosActionArc(): React.JSX.Element | null {
       </CanvasFloatingPopover>
       {moreOpen && (
         <CanvasFloatingPopover key={`${nodeId}-more`}
+          onDismiss={() => { setMoreOpen(false); setContextNodeId(null); setInspector(null); }}
+          referenceElement={moreButtonRef} ariaLabel="节点管理"
           anchor={{ x: anchor.x + anchor.width, y: anchor.y, width: 0, height: 0 }}
           open side="right-start" offset={8} crossAxisOffset={-8}
           style={{ zIndex: 30 }}
@@ -421,7 +434,7 @@ export function LcosActionArc(): React.JSX.Element | null {
                 if (command.id === 'size' || command.id === 'accent') return (
                   <button key={command.id} type="button" data-lcos-command={command.id}
                     aria-haspopup="dialog" aria-expanded={inspector === command.id}
-                    onClick={() => setInspector(command.id === 'size' ? 'size' : 'accent')}
+                    onClick={(event) => { inspectorButtonRef.current = event.currentTarget; setInspector(command.id === 'size' ? 'size' : 'accent'); }}
                     className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-[11px]"
                     style={{ color: lcosTokens.color.text }}>
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md" style={{ background: lcosTokens.color.raised }}>
@@ -446,10 +459,10 @@ export function LcosActionArc(): React.JSX.Element | null {
               })}
             </div>
           </LcosActionArcMotionHost>
-        </CanvasFloatingPopover>
-      )}
-      {moreOpen && inspector !== null && (
+      {inspector !== null && (
         <CanvasFloatingPopover key={`${nodeId}-${inspector}-inspector`}
+          onDismiss={() => setInspector(null)} referenceElement={inspectorButtonRef}
+          ariaLabel={inspector === 'size' ? '调整节点尺寸' : '选择节点强调色'}
           anchor={{ x: anchor.x + anchor.width, y: anchor.y, width: 0, height: 0 }}
           open side="right-start" offset={248} crossAxisOffset={-8}
           style={{ zIndex: 31 }} nearbyControls={{ excludeNodeId: nodeId, maxShift: 48 }}>
@@ -494,6 +507,8 @@ export function LcosActionArc(): React.JSX.Element | null {
               </div>
             )}
           </LcosActionArcMotionHost>
+        </CanvasFloatingPopover>
+      )}
         </CanvasFloatingPopover>
       )}
     </AnimatePresence>

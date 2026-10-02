@@ -20,6 +20,9 @@ import type {
 } from '@local-creative-os/contracts'
 import { PROJECT_GLYPH_MARK_REPERTOIRE, PROJECT_TINT_TOKENS } from '@local-creative-os/contracts'
 import type { ProjectId, RunId } from '@local-creative-os/domain'
+import { RailwayDestinationService } from '../railway-destination-service.js'
+import { RailwayReceiveService } from '../railway-receive-service.js'
+import type { MutationSafetyService } from '../mutation-safety-service.js'
 import type { ConversationIdentityService } from '../conversation-identity-service.js'
 import type { ResultSlotService } from '../result-slot-service.js'
 import type { WarehouseService } from '../warehouse-service.js'
@@ -34,6 +37,7 @@ import { routeRequireProject, type RouteHttpContext, type RouteHttpHelpers } fro
 
 export interface F6AssemblyRouteContext extends RouteHttpContext {
   readonly helpers: RouteHttpHelpers
+  readonly mutationSafety?: MutationSafetyService
   readonly warehouse: WarehouseService | undefined
   readonly resultSlots: ResultSlotService | undefined
   readonly conversationIdentity: ConversationIdentityService | undefined
@@ -50,6 +54,34 @@ export async function handleF6AssemblyRoute(ctx: F6AssemblyRouteContext): Promis
   const { method, pathname, url, request, response, controller, metadata, warehouse, resultSlots, conversationIdentity, assemblyApply, projectSummary, skillCatalog, skillPackages, skillProposals, companionProjections } = ctx
   const { sendJson, failure, readJsonBody, isRecord } = ctx.helpers
 
+  const portalTarget = /^\/projects\/([^/]+)\/workspaces\/([^/]+)\/portal-target$/.exec(pathname)
+  if (portalTarget && method === 'GET') {
+    const projectId = decodeURIComponent(portalTarget[1]!)
+    if (!routeRequireProject(projectId, {metadata,response,helpers:ctx.helpers})) return true
+    const value = new RailwayDestinationService(metadata).resolveWorkspace(projectId, decodeURIComponent(portalTarget[2]!))
+    sendJson(response,200,{ok:true,value})
+    return true
+  }
+
+  const railwayReceive = /^\/projects\/([^/]+)\/(railway|portal)\/receive(?:\/([^/]+))?$/.exec(pathname)
+  if (railwayReceive && (method === 'POST' || method === 'GET')) {
+    const projectId = decodeURIComponent(railwayReceive[1]!)
+    if (!routeRequireProject(projectId, {metadata,response,helpers:ctx.helpers})) return true
+    if (!ctx.mutationSafety) { sendJson(response,503,failure('UNAVAILABLE','目的地接收服务尚未配置。')); return true }
+    const service = new RailwayReceiveService(metadata,ctx.mutationSafety)
+    try {
+      if (method === 'GET' && railwayReceive[3]) {
+        const value = service.lookup(projectId,decodeURIComponent(railwayReceive[3]),railwayReceive[2] === 'portal')
+        sendJson(response,value ? 200 : 404,value ? {ok:true,value} : failure('NOT_FOUND','尚未查到本次投递回执，请勿改换操作编号重发。'))
+      } else if (method === 'POST' && !railwayReceive[3]) {
+        const body: unknown = await readJsonBody(request,controller.signal)
+        const value = railwayReceive[2] === 'portal' ? service.receivePortal(projectId,body,controller.signal) : service.receive(projectId,body,controller.signal)
+        sendJson(response,200,{ok:true,value})
+      } else { sendJson(response,400,failure('INVALID_ARGUMENT','投递请求路径无效。')) }
+    } catch (error) { sendJson(response,409,failure('CONFLICT',error instanceof Error ? error.message : '本次投递未确认。')) }
+    return true
+  }
+
   // ---------- P0-B4：Semantic Drop 统一 apply ----------
   const applyMatch = /^\/projects\/([^/]+)\/assembly\/apply$/.exec(pathname)
   if (method === 'POST' && applyMatch !== null) {
@@ -64,7 +96,7 @@ export async function handleF6AssemblyRoute(ctx: F6AssemblyRouteContext): Promis
       sendJson(response, 400, failure('INVALID_ARGUMENT', 'Assembly apply body must be valid JSON.'))
       return true
     }
-    if (!isRecord(input) || input.schemaVersion !== 1 || !Array.isArray(input.sourceRefs) || !isRecord(input.targetRef)) {
+    if (!isRecord(input) || input.projectId !== projectId || input.schemaVersion !== 1 || !Array.isArray(input.sourceRefs) || !isRecord(input.targetRef)) {
       sendJson(response, 400, failure('INVALID_ARGUMENT', 'Assembly apply requires schemaVersion 1, sourceRefs[], targetRef.'))
       return true
     }
@@ -102,11 +134,22 @@ export async function handleF6AssemblyRoute(ctx: F6AssemblyRouteContext): Promis
     const provenanceOrigin = originRaw !== null && ['run-return', 'import', 'capture', 'unknown'].includes(originRaw)
       ? originRaw as WarehouseQueryV1['provenanceOrigin']
       : undefined
+    const materialRaw = url.searchParams.get('material')
+    const sortRaw = url.searchParams.get('sort')
+    if ((materialRaw !== null && !['all', 'image', 'text', 'media', 'collection'].includes(materialRaw))
+      || (sortRaw !== null && !['updated', 'name', 'usage'].includes(sortRaw))) {
+      sendJson(response, 400, failure('INVALID_ARGUMENT', 'Unsupported material filter or sort order.'))
+      return true
+    }
+    const materialFilter = materialRaw as NonNullable<WarehouseQueryV1['materialFilter']> | null
+    const sort = sortRaw as NonNullable<WarehouseQueryV1['sort']> | null
     const searchRaw = url.searchParams.get('search') ?? undefined
     const limitRaw = url.searchParams.get('limit')
     const cursorRaw = url.searchParams.get('cursor') ?? undefined
     const value: WarehouseSnapshotV1 = warehouse.query(projectId, {
       ...(searchRaw === undefined ? {} : { search: searchRaw }),
+      ...(materialFilter === null ? {} : { materialFilter }),
+      ...(sort === null ? {} : { sort }),
       ...(kinds === undefined || kinds.length === 0 ? {} : { kinds }),
       ...(provenanceOrigin === undefined ? {} : { provenanceOrigin }),
       ...(usedHereTarget === undefined ? {} : { usedHereTarget }),

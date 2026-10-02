@@ -7,6 +7,7 @@ import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 
+import { recoverConversationOperation } from '../collaboration/conversationCommands';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { ContinuationActionV1, ContinuationRecoveryProjectionV1 } from '@local-creative-os/contracts';
@@ -14,10 +15,10 @@ import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 
 
 const ACTION_LABEL: Readonly<Record<ContinuationActionV1, string>> = {
-  recover_external: '恢复外部会话',
-  recover_bind: '恢复绑定',
-  retry_attach: '重试附加',
-  retry_projection: '重试投影',
+  recover_external: '恢复会话',
+  recover_bind: '重新连接',
+  retry_attach: '重新准备上下文',
+  retry_projection: '刷新会话画面',
   reconcile: '核对外部状态',
   cancel_request: '取消该操作',
 };
@@ -25,12 +26,17 @@ const ACTION_LABEL: Readonly<Record<ContinuationActionV1, string>> = {
 export interface RecoverySectionProps {
   readonly collaboration: CoreCollaborationClient;
   readonly projectId: string;
+  readonly conversationId?: string;
+  readonly diagnostics?: boolean;
   readonly operations: readonly ContinuationRecoveryProjectionV1[];
   readonly onRefreshed: (projection: ContinuationRecoveryProjectionV1) => void;
 }
 
-export function RecoverySection({ collaboration, projectId, operations, onRefreshed }: RecoverySectionProps): React.JSX.Element | null {
+export function RecoverySection({ collaboration, projectId, operations, onRefreshed, diagnostics = false, conversationId }: RecoverySectionProps): React.JSX.Element | null {
   const pending = useRef(false);
+  const activeRead = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; activeRead.current?.abort(); }; }, [projectId]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
   const [receipt, setReceipt] = useState<string | null>(null);
@@ -42,24 +48,21 @@ export function RecoverySection({ collaboration, projectId, operations, onRefres
       const key = `${operation.operationId}:${action}`;
       setBusyKey(key);
       setReceipt(null);
-      void collaboration
-        .recover(projectId, {
-          continuationOperationId: operation.operationId,
-          action,
-          expectedRevision: operation.revision,
-        })
-        .then((result) => {
-          if (!result.ok) throw new Error(result.error.userMessage);
-          setReceipt(`已执行 · ${operation.operationId.slice(0, 8)}`);
-          // The host owns diagnostics refresh; do not discard a duplicate read or create again.
-          onRefreshed(operation);
+      setErrorDetail(undefined);
+      const controller = new AbortController();
+      activeRead.current = controller;
+      void recoverConversationOperation(collaboration, projectId, operation, action, controller.signal, conversationId)
+        .then((fresh) => {
+          if (!mounted.current || controller.signal.aborted) return;
+          setReceipt(action === 'cancel_request' ? '取消请求已确认' : '恢复动作已确认，正在刷新状态');
+          onRefreshed(fresh);
         })
         .catch((error: unknown) => {
-          setErrorDetail(error instanceof Error ? error.message : String(error));
+          if (mounted.current && !controller.signal.aborted) setErrorDetail(error instanceof Error ? error.message : String(error));
         })
-        .finally(() => { pending.current = false; setBusyKey(null); });
+        .finally(() => { pending.current = false; if (mounted.current && !controller.signal.aborted) setBusyKey(null); });
     },
-    [collaboration, projectId, onRefreshed],
+    [collaboration, projectId, conversationId, onRefreshed],
   );
 
   useEffect(() => {
@@ -91,14 +94,14 @@ export function RecoverySection({ collaboration, projectId, operations, onRefres
           <div className="flex items-center gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" style={{ color: lcosTokens.color.pinViolet }} aria-hidden />
             <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>
-              续工 · {operation.operationId.slice(0, 8)}
+              {diagnostics ? `续工 · ${operation.operationId.slice(0, 8)}` : '会话恢复'}
             </span>
-            <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}>
+            {diagnostics && <span className="rounded-full px-2 py-0.5 text-[10px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}>
               {operation.status} · {operation.mode} · {operation.provider}
-            </span>
+            </span>}
           </div>
 
-          <div className="flex flex-wrap gap-1">
+          {diagnostics && <div className="flex flex-wrap gap-1">
             {Object.entries(operation.steps).map(([step, state]) => (
               <span
                 key={step}
@@ -112,15 +115,15 @@ export function RecoverySection({ collaboration, projectId, operations, onRefres
                 {step} · {state}
               </span>
             ))}
-          </div>
+          </div>}
 
-          {operation.errorEvidence && (
+          {diagnostics && operation.errorEvidence && (
             <span className="break-all text-[10px]" style={{ color: lcosTokens.color.danger }}>
               {operation.errorEvidence}
             </span>
           )}
 
-          {operation.promptReceipts && operation.promptReceipts.length > 0 && (
+          {diagnostics && operation.promptReceipts && operation.promptReceipts.length > 0 && (
             <div className="flex flex-col gap-1" data-lcos-prompt-receipts>
               {operation.promptReceipts.map((entry) => (
                 <span key={entry.messageId} data-lcos-prompt-receipt={entry.messageId} className="break-all text-[10px]" style={{ color: entry.receipt.outcome === 'unsupported' || entry.receipt.outcome === 'failed' ? lcosTokens.color.danger : lcosTokens.color.muted }}>
@@ -132,7 +135,7 @@ export function RecoverySection({ collaboration, projectId, operations, onRefres
 
           {operation.allowedActions.length === 0 ? (
             <span className="text-[10px]" style={{ color: lcosTokens.color.muted }}>
-              当前没有允许的恢复动作（guard 未放行）
+              当前没有可安全执行的恢复动作，请先刷新状态
             </span>
           ) : (
             <div className="flex flex-wrap gap-1.5">
@@ -150,7 +153,7 @@ export function RecoverySection({ collaboration, projectId, operations, onRefres
                     style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse, minHeight: 30 }}
                   >
                     {busyKey === key ? '执行中…' : (ACTION_LABEL[descriptor.action] ?? descriptor.action)}
-                    {descriptor.requiresFreshRead ? ' · 需新读' : ''}
+
                   </button>
                 );
               })}

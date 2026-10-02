@@ -4,6 +4,7 @@ import type { MutationSafetyService } from '../mutation-safety-service.js'
 import type { SqliteMetadataRepository } from '../metadata-repository.js'
 import { isRecord, routeRequireProject, type RouteHttpHelpers } from './route-context.js'
 import { parseProjectEventOrigin } from './project-events.js'
+import { readCollectionMemberPreviews } from '../collection-preview.js'
 
 export interface CollectionsRouteContext {
   readonly method: string
@@ -46,10 +47,20 @@ export async function handleCollectionsRoute(ctx: CollectionsRouteContext): Prom
       ctx.helpers.sendJson(ctx.response, 400, ctx.helpers.failure('INVALID_ARGUMENT', 'Collection title is required.'))
       return true
     }
+    const members: CollectionMembership['memberRef'][] = []
+    if (raw.members !== undefined) {
+      if (!Array.isArray(raw.members) || raw.members.some((ref) => !isRecord(ref)
+        || typeof ref.type !== 'string' || !MEMBER_TYPES.has(ref.type as CollectionMembership['memberRef']['type'])
+        || typeof ref.id !== 'string' || !ref.id.trim())) {
+        ctx.helpers.sendJson(ctx.response, 400, ctx.helpers.failure('INVALID_ARGUMENT', 'Initial members must be valid project entity references.'))
+        return true
+      }
+      for (const ref of raw.members) members.push({ type: ref.type, id: ref.id })
+    }
     try {
       const origin = parseProjectEventOrigin(raw.origin)
-      const result = ctx.mutationSafety.createCollection({ projectId, title: raw.title, ...(origin === undefined ? {} : { origin }) })
-      ctx.helpers.sendJson(ctx.response, 201, { ok: true, value: result.collection, meta: { changeSetId: result.changeSet.id } })
+      const result = ctx.mutationSafety.createCollection({ projectId, title: raw.title, members, ...(origin === undefined ? {} : { origin }) })
+      ctx.helpers.sendJson(ctx.response, 201, { ok: true, value: result.collection, meta: { changeSetId: result.changeSet.id, members: ctx.metadata.listCollectionMemberships(projectId).filter((item) => String(item.collectionId) === String(result.collection.id)).map((item) => item.memberRef) } })
     } catch (error) {
       ctx.helpers.sendJson(ctx.response, 400, ctx.helpers.failure('INVALID_ARGUMENT', error instanceof Error ? error.message : 'Collection could not be created.'))
     }
@@ -67,7 +78,9 @@ export async function handleCollectionsRoute(ctx: CollectionsRouteContext): Prom
     return true
   }
   if (ctx.method === 'GET' && isMembersRoute) {
-    ctx.helpers.sendJson(ctx.response, 200, { ok: true, value: { collection, members: ctx.metadata.listCollectionMemberships(projectId, collectionId) } })
+    const members = ctx.metadata.listCollectionMemberships(projectId, collectionId)
+    ctx.helpers.sendJson(ctx.response, 200, { ok: true, value: { collection, members,
+      previews: readCollectionMemberPreviews(ctx.metadata, projectId, members) } })
     return true
   }
   if (isMembersRoute && (ctx.method === 'POST' || ctx.method === 'DELETE')) {

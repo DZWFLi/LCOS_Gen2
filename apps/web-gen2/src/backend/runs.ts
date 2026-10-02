@@ -8,6 +8,8 @@ import type {
   AnswerRunInputRequestV1,
   RunInputRequestV1,
   RunReview,
+  RunRecipeV0,
+  ProjectExecutionProjection,
 } from '@local-creative-os/contracts';
 import { HttpClient } from './client.js';
 import { coreRequest } from './coreTypes.js';
@@ -31,6 +33,33 @@ export interface CreateRunInputV1 {
 
 export class CoreRunClient {
   constructor(private readonly http: HttpClient) {}
+
+  /** Complete lightweight identity/state set; detail pagination is not a canvas census. */
+  readExecutionProjection(projectId: string, signal?: AbortSignal): Promise<ProjectExecutionProjection> {
+    return coreRequest(this.http, 'GET', `/projects/${encodeURIComponent(projectId)}/execution-projection`, { signal });
+  }
+
+  readRunReview(runId: string, signal?: AbortSignal): Promise<RunReview> {
+    return coreRequest(this.http, 'GET', `/runs/${encodeURIComponent(runId)}/review`, { signal });
+  }
+
+  readRecipe(runId: string, signal?: AbortSignal): Promise<RunRecipeV0> {
+    return coreRequest(this.http, 'GET', `/runs/${encodeURIComponent(runId)}/recipe`, { signal });
+  }
+
+  materializeResultSlotProjection(projectId: string, slotId: string, canvasId: string, spatialId: string): Promise<{
+    status: 'promoted' | 'already-promoted' | 'existing-artifact';
+    binding: import('../spatial/projectionBinding.js').ProjectionBinding;
+  }> {
+    return coreRequest(this.http, 'POST', `/projects/${encodeURIComponent(projectId)}/spatial/result-slots/${encodeURIComponent(slotId)}/materialize`,
+      { body: { canvasId, spatialId } });
+  }
+
+  actOnRun(runId: string, action: 'dispatch' | 'sync' | 'recover', signal?: AbortSignal): Promise<{
+    review: RunReview; providerError?: { message: string; code?: string };
+  }> {
+    return coreRequest(this.http, 'POST', `/runs/${encodeURIComponent(runId)}/${action}`, { signal });
+  }
 
   /** POST /projects/:pid/runs → 普通提交：创建 canonical Run（普通 submit 分流）。 */
   createRun(

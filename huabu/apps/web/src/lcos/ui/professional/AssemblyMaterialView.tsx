@@ -31,11 +31,12 @@ export function AssemblyMaterialView({ title, familyLabel, previewUrl, secondary
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const hasPreview = Boolean(previewUrl) && failedUrl !== previewUrl;
-  const ratio = typeof aspectRatio === 'number' && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : undefined;
+  const ratio = typeof aspectRatio === 'number' && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : shape === 'image' ? 1.5 : undefined;
   return <div data-lcos-assembly-material data-shape={shape} aria-label={`${title} · ${familyLabel}`}
     data-preview-available={hasPreview} className="lcos-assembly-material-view">
     {shape === 'context' ? <div className="lcos-context-collection lcos-assembly-context" data-rendition="装配" data-organization={organization}>
       <ContextCollectionFace title={title} organization={organization} rendition="装配"
+        {...(organization === '未指定' ? { memberSummary: familyLabel } : {})}
         {...(previewUrl ? { previewUrl } : {})} {...(secondaryPreviewUrl ? { secondaryPreviewUrl } : {})}
         unspecifiedGlyph={fallbackGlyph} />
     </div> : shape === 'workflow' ? <div className="lcos-workflow-task-card lcos-assembly-workflow" data-state={referenced ? '草稿中' : '静息'}>
@@ -48,7 +49,7 @@ export function AssemblyMaterialView({ title, familyLabel, previewUrl, secondary
           : <div className="lcos-assembly-preview-unavailable">
             <span aria-hidden="true" className="lcos-assembly-material-glyph">{fallbackGlyph}</span>
             <span className="lcos-assembly-preview-reason"><span>{familyLabel}</span>
-              <small>{failedUrl === previewUrl && failedUrl !== null ? '预览读取失败' : '暂无真实预览'}</small></span>
+              <small>{failedUrl === previewUrl && failedUrl !== null ? '预览读取失败' : '尚无缩略预览'}</small></span>
             {failedUrl !== null && failedUrl === previewUrl ? <LcosButton appearance="oreo" variant="ghost" onClick={() => {
               setFailedUrl(null); setAttempt((current) => current + 1);
             }}>重试预览</LcosButton> : null}

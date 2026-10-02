@@ -38,7 +38,7 @@ function stubHttp(routes: Record<string, { status?: number; value?: unknown }>):
 }
 
 test('delegate 保持 canonical Run 路由，返回真实 receipt', async () => {
-  const { http, calls } = stubHttp({ 'POST http://core.test/projects/project-1/runs': { value: { id: 'run-1' } } });
+  const { http, calls } = stubHttp({ 'POST http://core.test/projects/project-1/runs': { value: { review: { run: { id: 'run-1', projectId: 'project-1' } } } } });
   const collaboration = new CoreCollaborationClient(http);
   const result = await collaboration.delegate('project-1', {
     instruction: 'Inspect the current selection.',

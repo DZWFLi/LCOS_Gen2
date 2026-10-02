@@ -38,6 +38,7 @@ import type {
 import { collaborationProductErrorV1 } from '@local-creative-os/contracts';
 import type { ArtifactRevisionId } from '@local-creative-os/domain';
 
+import { normalizeCollaborationSendReceipt } from './collaborationSendReceipt.js';
 import { CoreContinuationClient } from './continuation.js';
 import { CoreConversationClient } from './conversations.js';
 import { HttpClient, HttpError } from './client.js';
@@ -197,12 +198,6 @@ function projectEventRetryDelay(attempt: number): number {
   return base + Math.floor(Math.random() * base * 0.2);
 }
 
-function isCollaborationCommandResult(value: unknown): value is CollaborationCommandResultV1 {
-  if (!isRecord(value) || typeof value.ok !== 'boolean') return false;
-  if (value.ok) return isRecord(value.receipt) && value.receipt.command === 'send';
-  return isRecord(value.error) && typeof value.error.userMessage === 'string';
-}
-
 export interface CollaborationSubscribeOptions {
   /** 初始断线续点；只有 seq 与 runtimeId 同时提供时才可安全使用。 */
   readonly lastSeenProjectSeq?: number;
@@ -289,6 +284,7 @@ export class CoreCollaborationClient {
     // 其它读取失败必须继续向上抛，让产品层显示 honest error，不能伪装成“没有待回答”。
     const request = await this.runs.getPendingInputRequest(activeRunId, signal);
     if (request === undefined || request.status !== 'pending') return undefined;
+    if (request.requestId !== pendingInputId) throw new Error('待回答的问题已变化，请刷新后再回答');
     return {
       schemaVersion: 1,
       pendingInputId,
@@ -674,8 +670,11 @@ export class CoreCollaborationClient {
   ): Promise<CollaborationCommandResultV1> {
     try {
       const result = await this.runs.createRun(projectId, input, signal);
-      const runId = (result as { id?: string } | null)?.id;
-      return receipt('delegate', { ...(runId === undefined ? {} : { runId: String(runId) }) });
+      const run = (result as { review?: { run?: { id?: string; projectId?: string } } } | null)?.review?.run;
+      if (typeof run?.id !== 'string' || !run.id || run.projectId !== projectId) {
+        throw new Error('创建回执没有确认当前项目的任务身份，请先核对任务，勿重复创建。');
+      }
+      return receipt('delegate', { runId: run.id });
     } catch (error: unknown) {
       return toProductError(error, '任务派发失败');
     }
@@ -909,30 +908,13 @@ export class CoreCollaborationClient {
         },
       );
 
-      // The product route may already return a fully formed command result.
-      // Preserve its error/receipt semantics rather than guessing success.
-      if (isCollaborationCommandResult(value)) return value;
-
-      // Current Core send route returns a transport receipt payload. Normalize
-      // that one shape at this boundary so Huabu never knows provider details.
-      const response = isRecord(value) ? value : {};
-      const operationId = typeof response.continuationOperationId === 'string'
-        ? response.continuationOperationId
-        : typeof response.operationId === 'string'
-          ? response.operationId
-          : sendInput.continuationOperationId;
-      const returnedReceipt = isRecord(response.receipt) ? response.receipt : undefined;
-      if (returnedReceipt !== undefined && returnedReceipt.command === 'send') {
-        return {
-          ok: true,
-          receipt: returnedReceipt as unknown as CollaborationReceiptV1,
-        };
-      }
-      return receipt('send', {
-        conversationId: input.conversationId,
-        continuationOperationId: operationId,
-      });
+      return normalizeCollaborationSendReceipt(value, sendInput);
     } catch (error: unknown) {
+      // Once POST has begun, a lost response does not prove that the message was not sent.
+      if ((error instanceof HttpError || error instanceof CoreApiError) && error.status === 0) {
+        return { ok: false, error: collaborationProductErrorV1('operation_unknown',
+          '连接中断，发送结果尚未确认。请核对记录或重试同一条原消息。', { retryable: true }) };
+      }
       return toProductError(error, '续聊发送失败');
     }
   }

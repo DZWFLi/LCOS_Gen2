@@ -27,6 +27,7 @@ export interface BeginChildWorksiteNavigationInput {
   /** Exact source projection to approach when the caller can resolve it. */
   readonly sourceNodeId?: string;
   readonly navigate: (to: string) => void;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -41,7 +42,7 @@ export interface BeginChildWorksiteNavigationInput {
 export async function beginChildWorksiteNavigation(
   input: BeginChildWorksiteNavigationInput,
 ): Promise<boolean> {
-  if (input.targetWorkspace.canvasId === undefined) return false;
+  if (input.targetWorkspace.canvasId === undefined || input.signal?.aborted) return false;
   const targetCanvasId = input.targetWorkspace.canvasId;
 
   const canvas = useCanvasStore.getState();
@@ -70,6 +71,14 @@ export async function beginChildWorksiteNavigation(
       direction: 'approach',
       nodeIds: approachNodeIds,
     });
+    if (input.signal?.aborted) {
+      const current = useLcosShellStore.getState();
+      if (current.worksiteCameraTransition?.id === transitionId) {
+        current.consumeWorksiteCameraTransition(transitionId);
+        if (sourceViewport && useCanvasStore.getState().canvasId === sourceCanvasId) await canvas.rfInstance?.setViewport(sourceViewport,{duration:0});
+      }
+      return false;
+    }
     const currentShell = useLcosShellStore.getState();
     if (currentShell.worksiteCameraTransition?.id !== transitionId) return false;
 
@@ -83,6 +92,33 @@ export async function beginChildWorksiteNavigation(
         void canvas.rfInstance?.setViewport(sourceViewport, { duration: 0 });
       }
       return false;
+    }
+    if (input.signal?.aborted) {
+      // The native loader has settled. Revert only our own still-current entry,
+      // never a later navigation or another project's loaded scene.
+      if (useLcosShellStore.getState().projectId !== input.projectId
+        || useCanvasStore.getState().canvasId !== targetCanvasId) {
+        latestShell.consumeWorksiteCameraTransition(transitionId);
+        return false;
+      }
+      if (sourceCanvasId) {
+        // A failed return must not leave the source URL above the target canvas.
+        // If the native owner cannot restore, finish the already-loaded entry
+        // truthfully and retain Back rather than announcing a cancelled entry.
+        try { await useCanvasStore.getState().switchCanvas(sourceCanvasId); } catch { /* Inspect the actual canvas below. */ }
+        const afterRestore = useLcosShellStore.getState();
+        if (afterRestore.worksiteCameraTransition?.id !== transitionId
+          || afterRestore.projectId !== input.projectId) return false;
+        if (useCanvasStore.getState().canvasId === sourceCanvasId) {
+          afterRestore.consumeWorksiteCameraTransition(transitionId);
+          if (sourceViewport) await useCanvasStore.getState().rfInstance?.setViewport(sourceViewport,{duration:0});
+          return false;
+        }
+        if (useCanvasStore.getState().canvasId !== targetCanvasId) {
+          afterRestore.consumeWorksiteCameraTransition(transitionId);
+          return false;
+        }
+      }
     }
     latestShell.beginChildNavigation({
       projectId: input.projectId,

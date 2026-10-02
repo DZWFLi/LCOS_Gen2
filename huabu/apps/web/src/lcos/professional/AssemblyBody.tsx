@@ -1,3 +1,8 @@
+import type { LcosNodeEntityRef } from '../lcosReferenceState';
+import { draftReferenceUnavailableReason } from '../composer/referenceSnapshot';
+import { composerInputKey } from '../composer/composerInputJourney';
+import { sameDraftReference } from '../referenceBridge';
+import { assemblyDraftReferenceOf } from './assemblySourceRef';
 // AssemblyBody — 项目共享仓库 / Source Bay（Figma Assembly 瀑布流；四路 canonical source）。
 //
 // R4 Assembly（C1-3）：
@@ -16,12 +21,14 @@ import {
   assemblyCardViewV1,
   isCoreAbortError,
 } from '@local-creative-os/web-gen2';
-import { Archive, BookOpen, FileAudio, FileImage, FileText, FolderOpen, MessageCircle, PlusCircle, Send } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Archive, BookOpen, FileAudio, FileImage, FileText, FolderOpen, MessageCircle, PlusCircle, Send, Video } from 'lucide-react';
+import { CanonicalCollectionView } from '../nodes/CanonicalCollectionView';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSubmenu } from '@/components/Common/DropdownMenu';
 
+import { ASSEMBLY_DRAG_MIME } from '../drop/nativeAssemblyDrop';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { LcosComposerHost } from '../composer/LcosComposerHost';
 import { useLcosDropStore } from '../lcosDropState';
@@ -29,6 +36,11 @@ import { acquireDrop } from '../lcosRecognizers';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { AssemblyArtifactMedia, AssemblyCaptureMedia, AssemblyResourceMedia } from './AssemblySourceMedia';
 import { assemblySourceRefOf } from './assemblySourceRef';
+import { reviewAssemblyApply } from './assemblyApplyReview';
+import { readAssemblyArtifactMedia } from './assemblyArtifactMedia';
+import { dropSourceKey } from '../drop/dropAssemblyReceipt';
+import { ASSEMBLY_ITEM_WIDTH, clampAssemblyItemWidth, captureAssemblyBrowseAnchor, restoreAssemblyBrowseAnchor } from '../ui/professional/assemblyBrowseGeometry';
+import type { AssemblyBrowseAnchor } from '../ui/professional/assemblyBrowseGeometry';
 import { beginChildWorksiteNavigation } from '../navigation/childWorksiteNavigation';
 import { childSurfaceForItem, workspaceTargetsForItem } from '../navigation/workspaceTargets';
 import { useLcosShellStore } from '../shell/lcosShellStore';
@@ -38,7 +50,7 @@ import { AssemblyItemView } from '../ui/professional/AssemblyItemView';
 import { AssemblyMasonryView } from '../ui/professional/AssemblyMasonryView';
 import { AssemblyMaterialView } from '../ui/professional/AssemblyMaterialView';
 import { assemblyMaterialShape, captureMaterialShape, matchesAssemblyFilter, retainAssemblySelection,
-  toggleAssemblySelection, assemblyDate } from '../ui/professional/assemblyPresentation';
+  toggleAssemblySelection, assemblyDate, assemblyResourceLabel, assemblyCaptureKindLabel } from '../ui/professional/assemblyPresentation';
 import { AssemblyPreviewView } from '../ui/professional/AssemblyPreviewView';
 import { AssemblyReceiptView } from '../ui/professional/AssemblyReceiptView';
 import { AssemblySourceTabsView } from '../ui/professional/AssemblySourceTabsView';
@@ -47,7 +59,9 @@ import { AssemblyToolbarView } from '../ui/professional/AssemblyToolbarView';
 import type { LcosComposerTarget } from '../shell/lcosShellStore';
 import type { AssemblyMaterialFilter } from '../ui/professional/assemblyPresentation';
 import type {
+  AssemblyApplyRequestV1,
   AssemblyApplyItemResultV1,
+  WarehouseSortV1,
   AssemblyApplyResultV1,
   AssemblySourceRefV1,
   AssemblyTargetRefV1,
@@ -111,7 +125,7 @@ const EMPTY_TAB_TEXT: Readonly<Record<AssemblySourceTabV1, string>> = {
 const SKILL_SOURCE_LABEL: Readonly<Record<SkillCatalogEntryV1['source'], string>> = {
   system: '系统',
   user: '用户',
-  merged: '两层合并',
+  merged: '已合并',
 };
 
 function materialFamily(item: WarehouseItemV1): string {
@@ -120,7 +134,8 @@ function materialFamily(item: WarehouseItemV1): string {
 
 function MaterialGlyph({ item }: { readonly item: WarehouseItemV1 }): React.JSX.Element {
   if (item.visualFamily === 'image') { return <FileImage className="h-5 w-5" aria-hidden />; }
-  if (item.visualFamily === 'audio' || item.visualFamily === 'video') { return <FileAudio className="h-5 w-5" aria-hidden />; }
+  if (item.visualFamily === 'video') { return <Video className="h-5 w-5" aria-hidden />; }
+  if (item.visualFamily === 'audio') { return <FileAudio className="h-5 w-5" aria-hidden />; }
   if (item.kind === 'collection' || item.kind === 'scene' || item.kind === 'workflow' || item.kind === 'context') { return <FolderOpen className="h-5 w-5" aria-hidden />; }
   return <FileText className="h-5 w-5" aria-hidden />;
 }
@@ -182,7 +197,7 @@ export interface AssemblyOutcomeLineV1 {
 /**
  * 回执分层（presentation only，不建新 domain truth）：
  * - applied        ：每一项都真的落地了新 canonical mutation
- * - partial        ：有落地、也有 已存在/跳过/不支持/失败（applied-with-skip）
+ * - partial        ：有已满足项，也有 不支持/失败/未知；已加入＋已存在本身是完成
  * - already-present：全部 already-member —— 没有新增变更，**不是「全部成功」**
  * - unsupported    ：全部不支持投放（诚实 unsupported，不是成功）
  * - skipped        ：全部因其它原因跳过（没有来源落地）
@@ -205,17 +220,17 @@ export interface AssemblyApplySummaryV1 {
 
 const OUTCOME_LABEL: Readonly<Record<AssemblyOutcomeToneV1, string>> = {
   applied: '已投放',
-  'already-member': '已在目标中（跳过）',
+  'already-member': '已在目标中',
   unsupported: '不支持',
-  skipped: '跳过',
+  skipped: '未添加',
   failed: '失败',
 };
 
 export function assemblyOutcomeToneOf(result: AssemblyApplyItemResultV1): AssemblyOutcomeToneV1 {
+  if (result.channel === 'unsupported') { return 'unsupported'; }
   if (result.status === 'failed') { return 'failed'; }
   if (result.status === 'applied') { return 'applied'; }
   if (result.channel === 'already-member') { return 'already-member'; }
-  if (result.channel === 'unsupported') { return 'unsupported'; }
   return 'skipped';
 }
 
@@ -248,8 +263,8 @@ export function describeAssemblyApplyResultV1(result: AssemblyApplyResultV1): As
 
   let tone: AssemblyApplyToneV1;
   if (total === 0) { tone = 'skipped'; }
-  else if (counts.failed > 0) { tone = landed > 0 ? 'partial' : 'failed'; }
-  else if (landed === total) { tone = 'applied'; }
+  else if (counts.failed > 0) { tone = landed + counts['already-member'] > 0 ? 'partial' : 'failed'; }
+  else if (landed > 0 && landed + counts['already-member'] === total) { tone = 'applied'; }
   else if (landed > 0) { tone = 'partial'; }
   else if (counts['already-member'] === total) { tone = 'already-present'; }
   else if (counts.unsupported === total) { tone = 'unsupported'; }
@@ -258,17 +273,17 @@ export function describeAssemblyApplyResultV1(result: AssemblyApplyResultV1): As
   const headline = ((): string => {
     switch (tone) {
       case 'applied':
-        return `全部成功 · ${landed} 项落地`;
+        return `已放入 ${landed} 项材料${counts['already-member'] > 0 ? ` · ${counts['already-member']} 项已在目标中` : ''}`;
       case 'partial':
-        return `${landed} 项落地 · ${rest}`;
+        return `${landed} 项已放入 · ${rest}`;
       case 'already-present':
         return '全部已在目标中 · 没有新增变更';
       case 'unsupported':
-        return '这些来源不支持投放到当前目标 · 没有来源落地';
+        return '这些材料暂时不能用于此目标';
       case 'skipped':
-        return total === 0 ? '没有可投放的来源' : `全部跳过 · 没有来源落地${rest === '' ? '' : `（${rest}）`}`;
+        return total === 0 ? '没有可投放的来源' : `未添加材料${rest === '' ? '' : `（${rest}）`}`;
       case 'failed':
-        return `投放失败 · 没有来源落地${rest === '' ? '' : `（${rest}）`}`;
+        return `未能放入材料${rest === '' ? '' : `（${rest}）`}`;
     }
   })();
 
@@ -301,7 +316,7 @@ function captureTitle(item: CaptureStagingItemV0): string {
   if (typeof url === 'string' && url.trim() !== '') { return url; }
   const localPath = source['localPath'];
   if (typeof localPath === 'string' && localPath.trim() !== '') { return localPath; }
-  return item.kind;
+  return assemblyCaptureKindLabel(item.kind);
 }
 
 /**
@@ -310,7 +325,7 @@ function captureTitle(item: CaptureStagingItemV0): string {
  */
 const isAbortLikeV1 = isCoreAbortError;
 
-type AssemblyPreviewKindV1 = 'text' | 'image' | 'url' | 'local_path' | 'descriptor' | 'skill' | 'unknown';
+type AssemblyPreviewKindV1 = 'text' | 'image' | 'url' | 'local_path' | 'descriptor' | 'skill' | 'audio' | 'video' | 'unknown';
 
 interface AssemblyPreviewV1 {
   readonly status: 'loading' | 'ready' | 'error';
@@ -321,6 +336,8 @@ interface AssemblyPreviewV1 {
   readonly dataUrl?: string;
   readonly url?: string;
   readonly path?: string;
+  readonly mediaUrl?: string;
+  readonly artifact?: WarehouseItemV1;
   readonly error?: string;
   readonly lines?: readonly { readonly label: string; readonly value: string }[];
   readonly sourceLabel?: string;
@@ -328,9 +345,11 @@ interface AssemblyPreviewV1 {
 export function AssemblyBody({
   projectId,
   targetRef,
+  composerOriginKey,
 }: {
   readonly projectId: string;
   readonly targetRef: AssemblyTargetRefV1;
+  readonly composerOriginKey?: string;
 }): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const navigate = useNavigate();
@@ -340,6 +359,9 @@ export function AssemblyBody({
   const openWindow = useLcosShellStore((s) => s.openWindow);
   const composerOpen = useLcosShellStore((s) => s.composerOpen);
   const composerTarget = useLcosShellStore((s) => s.composerTarget);
+  const collectingReferences = composerOriginKey !== undefined;
+  const sameInput = collectingReferences && composerInputKey(composerTarget) === composerOriginKey;
+  const [referenceNotice, setReferenceNotice] = useState<string | undefined>(undefined);
   const closeComposer = useLcosShellStore((s) => s.closeComposer);
   const referencedRefs = useLcosReferenceStore((s) => s.draft.orderedEntityRefs);
 
@@ -352,10 +374,10 @@ export function AssemblyBody({
     }),
     [session],
   );
-  const bay = useSyncExternalStore(
-    (listener) => controller.subscribe(listener),
-    () => controller.read(),
-  );
+  const subscribe = useCallback((listener: () => void) => controller.subscribe(listener), [controller]);
+  const read = useCallback(() => controller.read(), [controller]);
+  const snapshot = useSyncExternalStore(subscribe, read);
+  const bay = snapshot?.projectId === projectId ? snapshot : undefined;
 
   const [workspaces, setWorkspaces] = useState<readonly Workspace[]>([]);
   const [workspaceError, setWorkspaceError] = useState(false);
@@ -364,8 +386,24 @@ export function AssemblyBody({
   const [applyingKey, setApplyingKey] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
   const [filter, setFilter] = useState<AssemblyMaterialFilter>('all');
+  const [itemWidth, setItemWidth] = useState<number>(ASSEMBLY_ITEM_WIDTH.default);
+  const browseScroll = useRef<HTMLDivElement>(null);
+  const browseAnchor = useRef<AssemblyBrowseAnchor | undefined>(undefined);
+  useLayoutEffect(() => {
+    restoreAssemblyBrowseAnchor(browseScroll.current, browseAnchor.current);
+    browseAnchor.current = undefined;
+  }, [itemWidth]);
+  const resizeItems = (width: number): void => {
+    browseAnchor.current = captureAssemblyBrowseAnchor(browseScroll.current);
+    setItemWidth(clampAssemblyItemWidth(width));
+  };
   const [localSearch, setLocalSearch] = useState('');
   const [applyUnconfirmed, setApplyUnconfirmed] = useState(false);
+  const [unknownSources, setUnknownSources] = useState<readonly string[]>([]);
+  const [retrySources, setRetrySources] = useState<readonly AssemblySourceRefV1[]>([]);
+  const [applyTarget, setApplyTarget] = useState<AssemblyTargetRefV1 | null>(null);
+  const previewAbort = useRef<AbortController | null>(null);
+  const previewObjectUrl = useRef<string | null>(null);
   const previewRetry = useRef<(() => void) | undefined>(undefined);
   const previewOrigin = useRef<HTMLElement | null>(null);
   const applyPending = useRef<number | null>(null);
@@ -380,6 +418,9 @@ export function AssemblyBody({
   const workspaceGeneration = useRef(0);
   const invalidatePreview = useCallback((): void => {
     previewGeneration.current += 1;
+    previewAbort.current?.abort(); previewAbort.current = null;
+    if (previewObjectUrl.current) URL.revokeObjectURL(previewObjectUrl.current);
+    previewObjectUrl.current = null;
   }, []);
 
   /**
@@ -405,20 +446,15 @@ export function AssemblyBody({
     setPreview(undefined);
     setSelectedIds([]); setFilter('all'); setLocalSearch('');
     applyPending.current = null;
-    setApplyUnconfirmed(false);
+    setApplyUnconfirmed(false); setUnknownSources([]); setRetrySources([]); setApplyTarget(null);
+    setItemWidth(ASSEMBLY_ITEM_WIDTH.default);
     setSearchInput('');
     setWorkspaces([]);
     setWorkspaceError(false);
   }, [invalidatePreview, projectId]);
 
-  useEffect(() => {
-    // 目标变化：旧的回执不再属于当前 context（在飞 mutation 仍已在 Core 发生，不假装没发生）。
-    applyGeneration.current += 1;
-    setApplyResult(null);
-    setApplyingKey(null);
-    applyPending.current = null;
-    setApplyUnconfirmed(false);
-  }, [targetKey]);
+  // A target switch does not cancel a submitted operation or discard its receipt.
+  // The invocation target remains visible until the user dismisses the result.
 
   const reloadWorkspaces = useCallback((): void => {
     const generation = ++workspaceGeneration.current;
@@ -440,52 +476,56 @@ export function AssemblyBody({
     // 切 source tab：旧 tab 的预览完成不再属于当前上下文。
     invalidatePreview();
     setPreview(undefined);
-    setSelectedIds([]); setFilter('all'); setLocalSearch('');
+    setSelectedIds([]); setFilter(next === 'project' ? (bay?.warehouseMaterialFilter ?? 'all') : 'all');
+    setLocalSearch(next === 'skills' ? (bay?.skillSearch ?? '') : '');
+    if (browseScroll.current) browseScroll.current.scrollTop = 0;
     previewRetry.current = undefined;
     controller.selectTab(next);
     controller.loadTab(next);
   };
 
-  const addToComposer = (item: WarehouseItemV1): void => {
-    // 加入统一 Composer 草稿（reference store draft；Selection≠Reference）
-    useLcosReferenceStore.getState().addEntityToDraft({
-      entityType: assemblyCardViewV1(item, new Set()).refEntityType,
-      entityId: item.entityRef.id,
-      ...(item.title === undefined ? {} : { displayLabel: item.title }),
-    });
-
-    // Assembly 复用唯一 Composer。只有明确的 Conversation 才能成为 receiver；
-    // 其它材料仍可进入 draft，但提交按钮必须显示真实阻断原因，不能猜一个 agent。
-    const receiverConversationId = item.kind === 'conversation' ? item.entityRef.id
-      : targetRef.kind === 'conversation' ? targetRef.id : undefined;
-    const receiverBlockedReason = receiverConversationId === undefined
-      ? '尚未选择会话接收者；请从会话窗口打开 Composer 后再提交'
-      : undefined;
-    useLcosShellStore.getState().openComposer({
-      nodeId: `assembly:${item.kind}:${item.entityRef.id}`,
-      title: item.title ?? '当前材料',
-      anchor: { x: 0, y: 0, width: 0, height: 0 },
-      ...(activeWorkspaceId === null ? {} : { workspaceId: activeWorkspaceId }),
-      ...(receiverConversationId === undefined ? {} : { receiverConversationId }),
-      ...(receiverBlockedReason === undefined ? {} : { receiverBlockedReason }),
-    });
+  const addDraftItems = (items: readonly WarehouseItemV1[]): void => {
+    const shell = useLcosShellStore.getState();
+    if (shell.projectId !== projectId || useLcosReferenceStore.getState().projectId !== projectId) return;
+    if (composerOriginKey !== undefined && composerInputKey(shell.composerTarget) !== composerOriginKey) {
+      setReferenceNotice('输入目标已改变，未加入其他任务。请从当前输入重新打开。'); return;
+    }
+    const refs = items.map(assemblyDraftReferenceOf);
+    if (!refs.length || refs.some((ref) => draftReferenceUnavailableReason(ref, shell.composerTarget?.intent) !== undefined)) {
+      setReferenceNotice('所选材料含暂不能用于本次输入的类型，请取消该项或阅读其已有材料产物后再引用。'); return;
+    }
+    const admission = useLcosReferenceStore.getState().addEntitiesToDraft(refs as LcosNodeEntityRef[], shell.composerTarget?.intent);
+    if (admission.reason) { setReferenceNotice(admission.reason); return; }
+    // Do not replace the target with the picked material: continue stays continue.
+    if (shell.composerTarget) {
+      if (collectingReferences) shell.resumeComposer(composerOriginKey!);
+      else shell.openComposer(shell.composerTarget);
+    }
+    setReferenceNotice(`已加入 ${refs.length} 项本次引用，未发送，也未持久投放。`);
+    setSelectedIds([]);
   };
+  const addToComposer = (item: WarehouseItemV1): void => addDraftItems([item]);
 
-  const applySources = useCallback((sourceRefs: readonly AssemblySourceRefV1[], refreshTab?: AssemblySourceTabV1): void => {
-    if (sourceRefs.length === 0 || applyPending.current !== null) { return; }
+  const applySources = useCallback((sourceRefs: readonly AssemblySourceRefV1[], refreshTab?: AssemblySourceTabV1, retryTarget?: AssemblyTargetRefV1): void => {
+    if (collectingReferences || sourceRefs.length === 0 || applyPending.current !== null) { return; }
     const invocationProjectId = projectId;
-    const invocationTarget = targetRef;
+    const invocationTarget = { ...(retryTarget ?? targetRef) };
+    const request: AssemblyApplyRequestV1 = { schemaVersion: 1, projectId: invocationProjectId,
+      sourceRefs: sourceRefs.map((ref) => ({ ...ref })), targetRef: invocationTarget };
+    setApplyTarget(invocationTarget); setRetrySources([]); setUnknownSources([]);
     const generation = ++applyGeneration.current;
     applyPending.current = generation;
     const isCurrentContext = (): boolean => applyGeneration.current === generation;
     const singleSource = sourceRefs.length === 1 ? sourceRefs[0] : undefined;
     setApplyingKey(singleSource === undefined ? 'selection' : `${singleSource.kind}:${singleSource.id}`);
     setApplyResult(null); setApplyUnconfirmed(false);
-    void session.assembly.apply(invocationProjectId, {
-      schemaVersion: 1, projectId: invocationProjectId, sourceRefs, targetRef: invocationTarget,
-    }).then((result) => {
+    void session.assembly.apply(invocationProjectId, request).then((receipt) => {
       if (!isCurrentContext()) { return; }
+      const reviewed = reviewAssemblyApply(request, receipt);
+      const result = reviewed.result;
       setApplyResult(result);
+      setUnknownSources(reviewed.unknownKeys); setApplyUnconfirmed(reviewed.unknownKeys.length > 0);
+      setRetrySources(reviewed.retrySourceRefs);
       // Keep incomplete sources selected. Existing Core result, not an inferred success count.
       const completed = new Set(result.results.filter((line) => line.status === 'applied' || (line.status === 'skipped' && line.channel === 'already-member'))
         .map((line) => `${line.sourceRef.kind}:${line.sourceRef.id}`));
@@ -494,7 +534,7 @@ export function AssemblyBody({
     }).catch((error: unknown) => {
       if (!isCurrentContext()) { return; }
       // The write may already have happened. Never auto-retry an unconfirmed mutation.
-      setApplyUnconfirmed(true);
+      setApplyUnconfirmed(true); setUnknownSources(sourceRefs.map(dropSourceKey)); setRetrySources([]);
       setApplyResult({ schemaVersion: 1, projectId: invocationProjectId, allApplied: false,
         results: sourceRefs.map((sourceRef) => ({ sourceRef, status: 'failed', channel: 'error',
           message: error instanceof Error ? error.message : String(error) })) });
@@ -510,23 +550,27 @@ export function AssemblyBody({
   const beginAssemblyDrag = (
     event: React.DragEvent<HTMLDivElement>,
     itemId: string,
-    sourceRef: AssemblySourceRefV1,
+    sourceRef: AssemblySourceRefV1 | undefined,
+    entityRef?: { readonly type: string; readonly id: string },
+    reference?: LcosNodeEntityRef,
   ): void => {
+    const sourceElement = event.target instanceof Element ? event.target : null;
+    const selection = window.getSelection();
+    if (!sourceRef || sourceElement?.closest('button,input,a,textarea,select,[contenteditable="true"]')
+      || (selection?.toString() && selection.anchorNode && event.currentTarget.contains(selection.anchorNode))) { event.preventDefault(); return; }
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData(
-      'application/x-lcos-assembly',
-      JSON.stringify({ itemId, sourceRef }),
+      ASSEMBLY_DRAG_MIME,
+      JSON.stringify({ itemId, sourceRef, entityRef, reference }),
     );
-    acquireDrop({ kind: 'assembly', itemId, sourceRef });
+    acquireDrop({ kind: 'assembly', itemId, sourceRef, ...(entityRef === undefined ? {} : { entityRef }),
+      ...(reference === undefined ? {} : { reference }) });
   };
 
   const finishAssemblyDrag = (): void => {
     const store = useLcosDropStore.getState();
-    if (store.state.status === 'preview' && store.resolution?.status === 'ready') {
-      const transactionId = globalThis.crypto?.randomUUID?.() ?? `drop-${Date.now()}`;
-      store.commitAt(transactionId);
-      return;
-    }
+    // dragend also fires for Escape, a cancelled drag, and drops outside the app.
+    // Only the host's native `drop` event may commit; never replay the last hover.
     if (
       store.state.status === 'tracking' ||
       store.state.status === 'dwell' ||
@@ -559,7 +603,8 @@ export function AssemblyBody({
 
   /** 预览读的共同纪律：新的 preview 使旧 completion 失效；Abort 与 stale 都不得写 UI。 */
   const beginPreview = (subjectKey: string, title: string, kind: AssemblyPreviewKindV1): number => {
-    previewGeneration.current += 1;
+    invalidatePreview();
+    previewAbort.current = new AbortController();
     const generation = previewGeneration.current;
     // A retry originates inside the preview; preserve the original material control.
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
@@ -569,12 +614,36 @@ export function AssemblyBody({
   };
   const isPreviewCurrent = (generation: number): boolean => previewGeneration.current === generation;
 
+  const previewArtifact = (item: WarehouseItemV1): void => {
+    const subjectKey = `artifact:${item.entityRef.id}:${item.presentedRevisionId ?? 'current'}`;
+    previewRetry.current = () => previewArtifact(item);
+    const generation = beginPreview(subjectKey, item.title, 'unknown');
+    const signal = previewAbort.current!.signal;
+    void readAssemblyArtifactMedia(artifacts, projectId, item.entityRef.id, item.presentedRevisionId, signal)
+      .then((media) => {
+        if (!isPreviewCurrent(generation) || signal.aborted) return;
+        const mediaUrl = media.blob ? URL.createObjectURL(media.blob) : undefined;
+        previewObjectUrl.current = mediaUrl ?? null;
+        setPreview({ status: 'ready', subjectKey, title: item.title,
+          kind: media.kind === 'unsupported' ? 'unknown' : media.kind,
+          sourceLabel: materialFamily(item), artifact: { ...item, presentedRevisionId: media.revisionId },
+          ...(media.kind === 'image' && mediaUrl ? { dataUrl: mediaUrl } : {}),
+          ...((media.kind === 'audio' || media.kind === 'video') && mediaUrl ? { mediaUrl } : {}),
+          ...(media.text === undefined ? {} : { text: media.text }),
+        });
+      }).catch((error: unknown) => {
+        if (isAbortLikeV1(error) || !isPreviewCurrent(generation)) return;
+        setPreview({ status: 'error', subjectKey, title: item.title, kind: 'unknown', artifact: item,
+          error: error instanceof Error ? error.message : '预览读取失败。' });
+      });
+  };
+
   const previewCapture = (item: CaptureStagingItemV0): void => {
     const subjectKey = `capture:${item.id}`;
     const title = captureTitle(item);
     previewRetry.current = () => previewCapture(item);
     const generation = beginPreview(subjectKey, title, 'unknown');
-    void controller.previewCapture(item.id)
+    void controller.previewCapture(item.id, previewAbort.current?.signal)
       .then((value) => {
         if (!isPreviewCurrent(generation)) { return; }
         setPreview({
@@ -600,7 +669,7 @@ export function AssemblyBody({
     const subjectKey = `resource:${resourceId}`;
     previewRetry.current = () => previewResource(resourceId, title);
     const generation = beginPreview(subjectKey, title, 'descriptor');
-    void controller.readResourceDescriptor(resourceId)
+    void controller.readResourceDescriptor(resourceId, previewAbort.current?.signal)
       .then((descriptor: ResourceDescriptorV0) => {
         if (!isPreviewCurrent(generation)) { return; }
         setPreview({
@@ -609,10 +678,10 @@ export function AssemblyBody({
           title,
           kind: 'descriptor',
           lines: [
-            { label: '来源', value: descriptor.source.kind },
-            { label: '理解状态', value: descriptor.understanding.status },
+            { label: '来源', value: assemblyResourceLabel('source', descriptor.source.kind) },
+            { label: '理解状态', value: assemblyResourceLabel('status', descriptor.understanding.status) },
             ...(descriptor.understanding.summary === undefined ? [] : [{ label: '摘要', value: descriptor.understanding.summary }]),
-            { label: '信任', value: descriptor.trust.level },
+            { label: '信任', value: assemblyResourceLabel('trust', descriptor.trust.level) },
             ...(descriptor.detectedKinds.length === 0
               ? []
               : [{ label: '识别', value: descriptor.detectedKinds.map((kind) => kind.kind).join('、') }]),
@@ -629,7 +698,7 @@ export function AssemblyBody({
     const subjectKey = `skill:${entry.id}`;
     previewRetry.current = () => previewSkill(entry);
     const generation = beginPreview(subjectKey, entry.name, 'skill');
-    void controller.readSkill(entry.id)
+    void controller.readSkill(entry.id, previewAbort.current?.signal)
       .then((value) => {
         if (!isPreviewCurrent(generation)) { return; }
         setPreview({ status: 'ready', subjectKey, title: entry.name, kind: 'skill', text: value.content });
@@ -640,29 +709,30 @@ export function AssemblyBody({
       });
   };
 
+  useEffect(() => { setReferenceNotice(undefined); setSelectedIds([]); }, [projectId, composerOriginKey]);
   const referencedKeySet = useMemo(
     () => new Set(referencedRefs.map((ref) => `assembly:${ref.entityType}:${ref.entityId}`)),
     [referencedRefs],
   );
 
   const summary = applyResult === null ? undefined : describeAssemblyApplyResultV1(applyResult);
-  const assemblyOwnsComposer = assemblyComposerOwnsTarget(composerOpen, composerTarget);
+  const assemblyOwnsComposer = composerOpen && (sameInput || (!collectingReferences && assemblyComposerOwnsTarget(composerOpen, composerTarget)));
   const warehouseItems = bay?.warehouse?.items ?? [];
   const captureItems = bay?.captureItems ?? [];
   const resources = bay?.resources ?? [];
   const skills = bay?.skills ?? [];
   const query = localSearch.trim().toLocaleLowerCase();
-  const projectVisible = warehouseItems.filter((item) => matchesAssemblyFilter(assemblyMaterialShape(item), filter));
+  const projectVisible = warehouseItems;
   const captureVisible = captureItems.filter((item) => matchesAssemblyFilter(captureMaterialShape(item.kind), filter)
     && (!query || captureTitle(item).toLocaleLowerCase().includes(query)));
   const resourcesVisible = resources.filter((item) => !query || item.title.toLocaleLowerCase().includes(query));
-  const skillsVisible = skills.filter((item) => !query || `${item.name} ${item.description}`.toLocaleLowerCase().includes(query));
-  const availableRefs = useMemo(() => tab === 'project' ? (bay?.warehouse?.items ?? []).map(assemblySourceRefOf)
+  const skillsVisible = skills;
+  const availableRefs = useMemo(() => tab === 'project' ? (bay?.warehouse?.items ?? []).map(assemblySourceRefOf).filter((ref): ref is AssemblySourceRefV1 => ref !== undefined)
     : tab === 'capture' ? (bay?.captureItems ?? []).map((item): AssemblySourceRefV1 => ({ kind: 'capture', id: item.id }))
       : tab === 'sources' ? (bay?.resources ?? []).map((item): AssemblySourceRefV1 => ({ kind: 'resource', id: item.resourceId })) : [],
     [tab, bay?.warehouse?.items, bay?.captureItems, bay?.resources]);
   useEffect(() => {
-    const ids = new Set(availableRefs.map((ref) => `${ref.kind}:${ref.id}`));
+    const ids = new Set<string>(availableRefs.map((ref) => `${ref.kind}:${ref.id}`));
     setSelectedIds((current) => retainAssemblySelection(current, ids));
   }, [availableRefs]);
   useEffect(() => () => { invalidatePreview(); applyGeneration.current += 1; }, [invalidatePreview]);
@@ -688,7 +758,7 @@ export function AssemblyBody({
       if (targets.length > 0) { return <DropdownMenu trigger={<LcosButton appearance="oreo" variant="ghost">选择现场预览</LcosButton>}>
         {targets.map((workspace) => <DropdownMenuSubmenu key={String(workspace.id)} label={`${workspace.name}${workspace.canvasId ? '' : ' · 画布尚未就绪'}`}>
           <DropdownMenuItem disabled={!workspace.canvasId} onClick={() => {
-            if (workspace.canvasId) { openWindow('portal-preview', `预览现场 · ${workspace.name}`, workspace.canvasId, 'canvas'); }
+            if (workspace.canvasId) { openWindow('portal-preview', `预览现场 · ${workspace.name}`, workspace.canvasId, 'canvas', {workspaceId:String(workspace.id)}); }
           }}>预览现场</DropdownMenuItem>
           <DropdownMenuItem disabled={!workspace.canvasId} onClick={() => enterChildWorkspace(item, workspace)}>进入现场</DropdownMenuItem>
         </DropdownMenuSubmenu>)}
@@ -697,7 +767,16 @@ export function AssemblyBody({
     if (item.kind === 'resource') { return <LcosButton appearance="oreo" variant="ghost" onClick={() => previewResource(item.entityRef.id, item.title)}>预览来源</LcosButton>; }
     const destination = assemblyOpenTargetOf(item, workspaces);
     if (destination.bodyKey === 'unavailable') { return <span data-lcos-assembly-unavailable>{workspaceError && ['scene','context','workflow','collection'].includes(item.kind) ? '现场信息读取失败，请重试' : destination.label}</span>; }
-    return <LcosButton appearance="oreo" variant="ghost" onClick={() => openWindow(destination.bodyKey, `${destination.label} · ${item.title}`, destination.target, destination.targetKind)}>
+    return <LcosButton appearance="oreo" variant="ghost" onClick={() => {
+      if (destination.bodyKey === 'reader') useLcosShellStore.getState().openReader(`${destination.label} · ${item.title}`, destination.target,
+        { ...(item.presentedRevisionId ? { revisionId: item.presentedRevisionId } : {}),
+          ...(composerOriginKey ? { composerOriginKey } : {}) });
+      else {
+        const candidates = destination.targetKind === 'canvas' ? workspaces.filter((w) => w.canvasId === destination.target) : [];
+        openWindow(destination.bodyKey, `${destination.label} · ${item.title}`, destination.target, destination.targetKind,
+          candidates.length === 1 ? {workspaceId:String(candidates[0]!.id)} : undefined);
+      }
+    }}>
       {destination.bodyKey === 'conversation' ? <MessageCircle size={16} aria-hidden /> : <BookOpen size={16} aria-hidden />}{destination.label}
     </LcosButton>;
   };
@@ -710,58 +789,92 @@ export function AssemblyBody({
     else { controller.reloadSkills(); }
   };
   return <div data-lcos-assembly data-lcos-assembly-target={targetRef.kind}
-    data-lcos-assembly-target-id={'id' in targetRef ? targetRef.id : ''} className="lcos-assembly-body">
+    data-lcos-assembly-target-id={'id' in targetRef ? targetRef.id : ''} className="lcos-assembly-body" data-reference-journey={collectingReferences || undefined}>
+    {collectingReferences ? <div className="lcos-assembly-input-header">
+      <div><strong>补充本次引用</strong><p>{sameInput ? `用于「${composerTarget?.title ?? '当前输入'}」 · 尚未发送` : '原输入已改变，未切换材料的接收目标'}</p></div>
+      <LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-resume-input disabled={!sameInput}
+        onClick={() => useLcosShellStore.getState().resumeComposer(composerOriginKey!)}>返回输入</LcosButton>
+    </div> : null}
+    <div className="lcos-assembly-journey-layout">
+    {collectingReferences && assemblyOwnsComposer && composerTarget ? <aside className="lcos-assembly-input-pane" data-lcos-assembly-composer>
+      <LcosComposerHost projectId={projectId} {...(composerTarget.workspaceId === undefined ? {} : { workspaceId: composerTarget.workspaceId })}
+        anchor={composerTarget.anchor} open inline onClose={closeComposer} />
+    </aside> : null}
+    <div className="lcos-assembly-material-bay">
     <AssemblySourceTabsView items={(['project','capture','sources','skills'] as const).map((key) => ({ key, label: TAB_LABEL[key] }))}
-      value={tab} onSelect={selectTab} context={<span>取用到 <strong>{targetLabel(targetRef)}</strong>{tab === 'capture' ? ' · 收件仍保留原始来源' : ''}</span>} />
+      value={tab} onSelect={selectTab} context={<span>{collectingReferences ? '补充给' : '取用到'} <strong>{collectingReferences ? (sameInput ? composerTarget?.title ?? '当前输入' : '原输入（已切换）') : targetLabel(targetRef)}</strong>{tab === 'capture' ? ' · 收件仍保留原始来源' : ''}</span>} />
     {/* Hidden rather than unmounted so closing preview restores exact card focus and scroll. */}
     <div className="lcos-assembly-browse" hidden={preview !== undefined}>
       <AssemblyToolbarView query={tab === 'project' ? searchInput : localSearch}
-        placeholder={tab === 'project' ? '搜索项目材料' : tab === 'capture' ? '查找当前收件' : tab === 'sources' ? '查找已载入来源' : '查找技能'}
-        localSearch={tab !== 'project'} onQueryChange={tab === 'project' ? setSearchInput : setLocalSearch}
-        onSearch={() => { if (tab === 'project') { controller.setWarehouseSearch(searchInput); } }}
-        onClear={() => { if (tab === 'project') { setSearchInput(''); controller.setWarehouseSearch(''); } else { setLocalSearch(''); } }}
-        filter={filter} onFilterChange={setFilter} showFilters={tab === 'project' || tab === 'capture'} />
+        placeholder={tab === 'project' ? '搜索项目材料' : tab === 'capture' ? '查找收件' : tab === 'sources' ? '查找来源' : '查找技能'}
+        localSearch={tab === 'capture' || tab === 'sources'} onQueryChange={(value) => {
+          if (tab === 'project') setSearchInput(value);
+          else { setLocalSearch(value); if (tab === 'capture' || tab === 'sources') setSelectedIds([]); }
+        }}
+        onSearch={() => {
+          setSelectedIds([]); if (browseScroll.current) browseScroll.current.scrollTop = 0;
+          if (tab === 'project') controller.setWarehouseSearch(searchInput);
+          else if (tab === 'skills') controller.setSkillSearch(localSearch);
+        }}
+        onClear={() => {
+          setSelectedIds([]); if (browseScroll.current) browseScroll.current.scrollTop = 0;
+          if (tab === 'project') { setSearchInput(''); controller.setWarehouseSearch(''); }
+          else { setLocalSearch(''); if (tab === 'skills') controller.setSkillSearch(''); }
+        }}
+        filter={filter} onFilterChange={(value) => {
+          setFilter(value); setSelectedIds([]); if (browseScroll.current) browseScroll.current.scrollTop = 0;
+          if (tab === 'project') controller.setWarehouseQuery({ materialFilter: value });
+        }} showFilters={tab === 'project' || tab === 'capture'} itemWidth={itemWidth} onItemWidthChange={resizeItems}
+        sort={bay?.warehouseSort ?? 'updated'} {...(tab === 'project' ? { onSortChange: (value: WarehouseSortV1) => {
+          setSelectedIds([]); if (browseScroll.current) browseScroll.current.scrollTop = 0;
+          controller.setWarehouseQuery({ sort: value });
+        } } : {})} />
       <div className="lcos-assembly-result-meta"><span role="status">{status === 'loading' ? '正在读取材料…' : `${count} 项`}
-        {tab === 'project' && bay?.warehouse?.totalApprox !== undefined ? ` · 项目约 ${bay.warehouse.totalApprox} 项` : ''}
-        {filter !== 'all' ? ' · 已载入内容筛选' : ''}</span>
+        {tab === 'project' && bay?.warehouse?.totalApprox !== undefined ? ` / 共 ${bay.warehouse.totalApprox} 项` : ''}
+        {filter !== 'all' ? ' · 已筛选' : ''}</span>
         {tab === 'project' ? <LcosButton appearance="oreo" variant="ghost" data-lcos-open-archive
           onClick={() => openWindow('archive', '归档')}><Archive size={15} aria-hidden />查看归档</LcosButton> : null}
         <LcosButton appearance="oreo" variant="ghost" onClick={reload} disabled={status === 'loading'} aria-label="刷新当前来源">刷新</LcosButton></div>
-      <div className="lcos-assembly-scroll" data-lcos-assembly-source-panel={tab}>
-        {status === 'loading' || status === 'idle' || status === undefined ? <div className="lcos-assembly-loading">
+      <div ref={browseScroll} className="lcos-assembly-scroll" data-lcos-assembly-source-panel={tab}>
+        {count === 0 && (status === 'loading' || status === 'idle' || status === undefined) ? <div className="lcos-assembly-loading">
           <LcosSurfaceFeedback presentation="loading" message="正在读取材料…" />
           <div className="lcos-assembly-skeletons" aria-hidden><i /><i /><i /><i /></div>
         </div> : null}
-        {status === 'error' ? <div className="lcos-assembly-empty" data-lcos-assembly-error={tab} title={errorCode === undefined ? undefined : `读取诊断代码：${errorCode}`}>
-          <LcosSurfaceFeedback presentation="error" message="材料读取失败，请重试。" onAction={reload} actionLabel="重新读取" /></div> : null}
+        {status === 'error' ? <div className={count === 0 ? 'lcos-assembly-empty' : 'lcos-assembly-refresh-error'} data-lcos-assembly-error={tab} title={errorCode === undefined ? undefined : `读取诊断代码：${errorCode}`}>
+          <LcosSurfaceFeedback presentation="error" message={count > 0 ? "刷新失败，已显示的材料仍可使用。" : "材料读取失败，请重试。"} onAction={reload} actionLabel="重新读取" /></div> : null}
         {workspaceError && status === 'loaded' && tab === 'project' ? <div className="lcos-assembly-inline-notice">
           <span>现场信息读取失败，材料仍可使用。</span><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-workspace-retry onClick={reloadWorkspaces}>重试读取现场</LcosButton></div> : null}
         {status === 'loaded' && count === 0 ? <div className="lcos-assembly-empty"><LcosSurfaceFeedback presentation="empty"
           message={filter !== 'all' || query || (tab === 'project' && bay?.warehouseSearch) ? '没有匹配材料，换个条件再试。' : EMPTY_TAB_TEXT[tab]} /></div> : null}
         {tab === 'skills' ? <p data-lcos-assembly-skill-admission="read-only" className="lcos-assembly-inline-notice">技能目录只读，可阅读与预览；当前不提供投放或自动执行。</p> : null}
-        {status === 'loaded' ? <AssemblyMasonryView label={`${TAB_LABEL[tab]}材料`}>
+        {count > 0 ? <AssemblyMasonryView label={`${TAB_LABEL[tab]}材料`} itemWidth={itemWidth}>
           {tab === 'project' ? projectVisible.map((item) => {
             const source = assemblySourceRefOf(item);
-            const sourceKey = `${source.kind}:${source.id}`;
+            const sourceKey = source ? `${source.kind}:${source.id}` : '';
+            const draftReference = assemblyDraftReferenceOf(item);
+            const referenced = draftReference !== undefined && referencedRefs.some((ref) => sameDraftReference(ref, draftReference));
             const card = assemblyCardViewV1(item, referencedKeySet);
             const shape = assemblyMaterialShape(item);
             const previewUrl = previewUrlOf(item);
             const mediaProps = { title: item.title ?? '未命名', familyLabel: materialFamily(item), shape,
-              fallbackGlyph: <MaterialGlyph item={item} />, referenced: card.referenced,
+              fallbackGlyph: <MaterialGlyph item={item} />, referenced,
               ...(previewUrl === undefined ? {} : { previewUrl }),
               ...(item.aspectRatio === undefined ? {} : { aspectRatio: item.aspectRatio }) };
             return <AssemblyItemView key={`${projectId}:${item.kind}:${item.entityRef.id}`} title={item.title ?? '未命名'}
               data-lcos-assembly-item={item.entityRef.id} data-lcos-assembly-item-kind={item.kind}
               data-lcos-assembly-item-species={card.species} data-lcos-assembly-visual-family={item.visualFamily ?? item.kind}
-              draggable onDragStart={(event) => beginAssemblyDrag(event, item.entityRef.id, source)} onDragEnd={finishAssemblyDrag}
-              selected={selectedIds.includes(sourceKey)} onSelect={() => toggleSelected(source)} referenced={card.referenced}
+              draggable={source !== undefined} {...(item.kind === 'artifact' ? { onPreview: () => previewArtifact(item) } : {})}
+              onDragStart={(event) => beginAssemblyDrag(event, item.entityRef.id, source, item.entityRef, draftReference)} onDragEnd={finishAssemblyDrag}
+              selected={selectedIds.includes(sourceKey)} {...(source ? { onSelect: () => toggleSelected(source) } : {})} referenced={referenced}
               hideCaption={shape === 'context' || shape === 'workflow'} identity={<span data-lcos-assembly-kind={item.kind}>{materialFamily(item)}</span>}
-              subtitle={item.usedHere ? '已在此处' : item.usageCount > 0 ? `${item.usageCount} 处使用` : (card.subtitle && Object.prototype.hasOwnProperty.call(FAMILY_LABEL, card.subtitle) ? FAMILY_LABEL[card.subtitle as keyof typeof FAMILY_LABEL] : card.subtitle)}
-              actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-add onClick={() => addToComposer(item)} title="加入当前草稿，不会自动执行"><PlusCircle size={16} aria-hidden />草稿</LcosButton>
-                {renderOpenAction(item)}<LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null}
-                  onClick={() => applySource(source)}><Send size={16} aria-hidden />放入{targetLabel(targetRef)}</LcosButton></>}>
-              {item.kind === 'artifact' && !mediaProps.previewUrl && (shape === 'image' || shape === 'text')
-                ? <AssemblyArtifactMedia key={`${projectId}:${item.entityRef.id}:${item.updatedAt ?? ''}`} client={artifacts} projectId={projectId} artifactId={item.entityRef.id} {...mediaProps} />
+              subtitle={item.usedHere ? '已在此处' : item.usageCount > 0 ? `${item.usageCount} 处使用` : item.provenance?.origin === 'run-return' ? '来自运行结果' : undefined}
+              actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-add disabled={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) !== undefined || (collectingReferences && !sameInput)} onClick={() => addToComposer(item)} title={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) ?? "加入当前草稿，不会自动执行"}><PlusCircle size={16} aria-hidden />草稿</LcosButton>
+                {renderOpenAction(item)}{!source ? <span>{item.kind === 'collection' ? '可查看成员；整体取用尚未接通' : '取用身份尚未就绪'}</span> : null}{!collectingReferences && <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={!source || applyingKey !== null}
+                  onClick={() => { if (source) applySource(source); }}><Send size={16} aria-hidden />放入{targetLabel(targetRef)}</LcosButton>}</>}>
+              {item.kind === 'collection' && item.entityRef.type === 'collection'
+                ? <CanonicalCollectionView projectId={projectId} collectionId={item.entityRef.id} title={item.title ?? '集合'} rendition="装配" />
+                : item.kind === 'artifact' && !mediaProps.previewUrl && (shape === 'image' || shape === 'text')
+                ? <AssemblyArtifactMedia key={`${projectId}:${item.entityRef.id}:${item.updatedAt ?? ''}`} client={artifacts} projectId={projectId} artifactId={item.entityRef.id} {...(item.presentedRevisionId ? { revisionId: item.presentedRevisionId } : {})} {...mediaProps} />
                 : <AssemblyMaterialView {...mediaProps} {...(shape === 'workflow' ? { onUse: () => addToComposer(item) } : {})} />}
             </AssemblyItemView>;
           }) : null}
@@ -769,28 +882,29 @@ export function AssemblyBody({
             const title = captureTitle(item); const shape = captureMaterialShape(item.kind);
             const source = { kind: 'capture' as const, id: item.id };
             const mediaProps = { title, shape, familyLabel: shape === 'image' ? '图片' : shape === 'text' ? '文字' : shape === 'link' ? '网页来源' : '收件材料', fallbackGlyph: <FileText size={24} aria-hidden /> };
-            return <AssemblyItemView key={`${projectId}:capture:${item.id}`} title={title} data-lcos-assembly-capture-item={item.id}
+            return <AssemblyItemView key={`${projectId}:capture:${item.id}`} title={title} data-lcos-assembly-capture-item={item.id} onPreview={() => previewCapture(item)}
               draggable onDragStart={(event) => beginAssemblyDrag(event, item.id, source)} onDragEnd={finishAssemblyDrag}
               selected={selectedIds.includes(`capture:${item.id}`)} onSelect={() => toggleSelected(source)}
               identity={assemblyDate(item.capturedAt)} subtitle={item.resolvedProjectId ? '已保留项目产物' : '待整理'}
               actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-preview-open={`capture:${item.id}`} onClick={() => previewCapture(item)}>预览</LcosButton>
-                {item.resolvedArtifactId && item.resolvedProjectId === projectId ? <LcosButton appearance="oreo" variant="ghost" onClick={() => openWindow('reader', title, item.resolvedArtifactId)}>阅读已有产物</LcosButton> : null}
-                <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null} onClick={() => applySource(source, 'capture')}>放入{targetLabel(targetRef)}</LcosButton></>}>
+                {item.resolvedArtifactId && item.resolvedProjectId === projectId ? <LcosButton appearance="oreo" variant="ghost" onClick={() => { if (item.resolvedArtifactId) useLcosShellStore.getState().openReader(title, item.resolvedArtifactId,
+                  composerOriginKey ? { composerOriginKey } : undefined); }}>阅读已有产物</LcosButton> : null}
+                {!collectingReferences && <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null} onClick={() => applySource(source, 'capture')}>放入{targetLabel(targetRef)}</LcosButton>}</>}>
               {shape === 'image' || shape === 'text' ? <AssemblyCaptureMedia client={session.captureSpace} captureId={item.id} {...mediaProps} /> : <AssemblyMaterialView {...mediaProps} />}
             </AssemblyItemView>;
           }) : null}
           {tab === 'sources' ? resourcesVisible.map((item) => {
             const source = { kind: 'resource' as const, id: item.resourceId };
-            return <AssemblyItemView key={item.resourceId} title={item.title} data-lcos-assembly-resource-item={item.resourceId}
+            return <AssemblyItemView key={item.resourceId} title={item.title} data-lcos-assembly-resource-item={item.resourceId} onPreview={() => previewResource(item.resourceId, item.title)}
               draggable onDragStart={(event) => beginAssemblyDrag(event, item.resourceId, source)} onDragEnd={finishAssemblyDrag}
               selected={selectedIds.includes(`resource:${item.resourceId}`)} onSelect={() => toggleSelected(source)} identity="外部来源"
               actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-preview-open={`resource:${item.resourceId}`} onClick={() => previewResource(item.resourceId, item.title)}>预览来源</LcosButton>
-                <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null} onClick={() => applySource(source)}>放入{targetLabel(targetRef)}</LcosButton></>}>
+                {!collectingReferences && <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null} onClick={() => applySource(source)}>放入{targetLabel(targetRef)}</LcosButton>}</>}>
               <AssemblyResourceMedia client={session.resources} projectId={projectId} resourceId={item.resourceId} title={item.title} shape="link" familyLabel="来源描述" fallbackGlyph={<FolderOpen size={24} aria-hidden />} />
             </AssemblyItemView>;
           }) : null}
           {tab === 'skills' ? skillsVisible.map((entry) => <AssemblyItemView key={`${entry.source}:${entry.id}`} title={entry.name}
-            data-lcos-assembly-skill-item={entry.id} identity={SKILL_SOURCE_LABEL[entry.source]}
+            data-lcos-assembly-skill-item={entry.id} onPreview={() => previewSkill(entry)} identity={SKILL_SOURCE_LABEL[entry.source]}
             actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-preview-open={`skill:${entry.id}`} onClick={() => previewSkill(entry)}>阅读</LcosButton>
               <span data-lcos-assembly-skill-apply="unavailable">不可投放</span></>}>
             <AssemblyMaterialView title={entry.name} shape="skill" familyLabel="技能" fallbackGlyph={<BookOpen size={24} aria-hidden />}
@@ -805,17 +919,28 @@ export function AssemblyBody({
       </div>
       {selectedRefs.length > 0 ? <div className="lcos-assembly-selection-bar" data-lcos-assembly-selection>
         <span>已选择 <strong>{selectedRefs.length}</strong> 项</span><LcosButton appearance="oreo" variant="ghost" onClick={() => setSelectedIds([])}>取消选择</LcosButton>
-        <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-batch-apply disabled={applyingKey !== null}
-          onClick={() => applySources(selectedRefs, tab === 'capture' ? 'capture' : undefined)}>{applyingKey === 'selection' ? '正在装配…' : `放入${targetLabel(targetRef)}`}</LcosButton>
-      </div> : <p className="lcos-assembly-browse-hint">拖到目标处使用，也可以用「取用」选择操作。</p>}
+        {collectingReferences ? <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-batch-reference disabled={!sameInput || tab !== 'project'}
+          onClick={() => addDraftItems(projectVisible.filter((item) => { const ref = assemblySourceRefOf(item); return ref && selectedIds.includes(`${ref.kind}:${ref.id}`); }))}>
+          加入本次引用（{selectedRefs.length}）</LcosButton> : <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-batch-apply disabled={applyingKey !== null}
+          onClick={() => applySources(selectedRefs, tab === 'capture' ? 'capture' : undefined)}>{applyingKey === 'selection' ? '正在装配…' : `放入${targetLabel(targetRef)}`}</LcosButton>}
+      </div> : <p className="lcos-assembly-browse-hint">{collectingReferences ? '选择已有材料补充本次输入；浏览和预览不会发送。' : '拖到目标处使用，也可以用「取用」选择操作。'}</p>}
     </div>
-    {preview ? <AssemblyPreviewView preview={preview} onClose={closePreview} onRetry={() => previewRetry.current?.()} /> : null}
-    {applyingKey !== null ? <div className="lcos-assembly-apply-feedback"><LcosSurfaceFeedback presentation="loading" message="正在提交装配，请等待真实回执…" /></div> : null}
-    {summary ? <AssemblyReceiptView summary={applyUnconfirmed ? { ...summary, tone: 'unconfirmed', headline: '未收到完整装配回执',
-      lines: summary.lines.map((line) => ({ ...line, tone: 'unconfirmed', label: '尚未确认' })) } : summary}
-      notice={applyUnconfirmed ? <p>请求可能已到达目标，请先核对原操作。不会自动重发。</p> : undefined}
-      onClose={() => { setApplyResult(null); setApplyUnconfirmed(false); }} /> : null}
-    {assemblyOwnsComposer && composerTarget !== null ? <section data-lcos-assembly-composer>
+    {preview ? <AssemblyPreviewView preview={preview} onClose={closePreview} onRetry={() => previewRetry.current?.()}
+      actions={preview.artifact ? <>{renderOpenAction(preview.artifact)}<LcosButton appearance="oreo" disabled={draftReferenceUnavailableReason(assemblyDraftReferenceOf(preview.artifact), composerTarget?.intent) !== undefined || (collectingReferences && !sameInput)} variant="secondary" onClick={() => { if (preview.artifact) addToComposer(preview.artifact); }}>加入草稿</LcosButton></> : undefined} /> : null}
+    {applyingKey !== null ? <div className="lcos-assembly-apply-feedback"><LcosSurfaceFeedback presentation="loading" message="正在放入目标…" /></div> : null}
+    {summary ? <AssemblyReceiptView summary={applyUnconfirmed ? { ...summary, tone: 'unconfirmed', headline: unknownSources.length === summary.lines.length ? '结果尚未确认' : '部分结果尚未确认',
+      lines: summary.lines.map((line, index) => unknownSources.includes(dropSourceKey(applyResult!.results[index]!.sourceRef))
+        ? { ...line, tone: 'unconfirmed', label: '尚未确认' } : line) } : summary}
+      notice={<>{applyTarget ? <p data-lcos-assembly-receipt-target={'id' in applyTarget ? `${applyTarget.kind}:${applyTarget.id}` : applyTarget.kind}>
+        投放到{targetLabel(applyTarget)}{('id' in applyTarget ? `${applyTarget.kind}:${applyTarget.id}` : applyTarget.kind) !== targetKey ? '（切换前的目标）' : ''}</p> : null}
+        {applyUnconfirmed ? <p>请求可能已到达目标，请先查看确认，不会自动重发。</p> : null}
+        {retrySources.length > 0 && applyTarget ? <div className="lcos-assembly-receipt-retry"><LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-retry-failed disabled={applyingKey !== null}
+          onClick={() => applySources(retrySources, tab === 'capture' ? 'capture' : undefined, applyTarget)}>重试 {retrySources.length} 项失败材料</LcosButton></div> : null}</>}
+      onClose={() => { setApplyResult(null); setApplyUnconfirmed(false); setRetrySources([]); setUnknownSources([]); }} /> : null}
+    {referenceNotice && <p className="lcos-assembly-reference-notice" role="status" data-lcos-assembly-reference-notice>{referenceNotice}</p>}
+    {collectingReferences && tab !== 'project' ? <p className="lcos-assembly-reference-notice">此来源可先预览；只有已保存的项目材料才能作为本次引用。浏览不会导入或执行。</p> : null}
+    </div></div>
+    {!collectingReferences && assemblyOwnsComposer && composerTarget !== null ? <section data-lcos-assembly-composer>
       <LcosComposerHost projectId={projectId} {...(composerTarget.workspaceId === undefined ? {} : { workspaceId: composerTarget.workspaceId })}
         anchor={composerTarget.anchor} open inline onClose={closeComposer} />
     </section> : null}

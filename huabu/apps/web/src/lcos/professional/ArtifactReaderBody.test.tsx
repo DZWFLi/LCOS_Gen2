@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,7 +24,8 @@ const restoreFor = vi.hoisted(() => vi.fn());
 
 // reference / shell store 用轻量替身：本用例验证的是 reader 如何**使用**既有 owner
 // （草稿引用 / Composer 草稿 / locate），而不是这些 owner 自身的实现。
-const addEntityToDraft = vi.hoisted(() => vi.fn());
+const addEntitiesToDraft = vi.hoisted(() => vi.fn(() => ({})));
+const renderer = vi.hoisted(() => ({ automatic: true, pending: [] as (() => void)[] }));
 const orderedNodeReferences = vi.hoisted(() => vi.fn(() => [] as unknown[]));
 const requestLocate = vi.hoisted(() => vi.fn());
 const setComposerPrompt = vi.hoisted(() => vi.fn());
@@ -50,7 +51,25 @@ vi.mock('@local-creative-os/web-gen2', async (importOriginal) => {
     },
   };
 });
-vi.mock('@/components/Nodes/pdf/PDFPreview', () => ({
+// Owner tests use a read-only render port; full schema/render assertions live
+// in ProfessionalViews.test.tsx. The browser replay uses actual scroll geometry.
+vi.mock('@/components/Milkdown', () => ({
+  MilkdownPreview: ({ markdown, onRendered }: { markdown: string; onRendered?: (text: string) => void }) => {
+    useEffect(() => {
+      const notify = () => onRendered?.(markdown);
+      if (renderer.automatic) notify(); else renderer.pending.push(notify);
+    }, [markdown, onRendered]);
+    return <div className="ProseMirror" data-reader-parser-port>{markdown}</div>;
+  },
+}));
+vi.mock('./readerScrollRestore', () => ({
+  attachReaderScrollRestore: (node: HTMLElement, scrollTop: number) => {
+    // Happy DOM has no layout; these tests check revision memory ownership.
+    node.scrollTop = scrollTop;
+    return { isPending: () => false, cancel: () => undefined, dispose: () => undefined };
+  },
+}));
+vi.mock('@/components/Nodes/pdf/PDFPreview' , () => ({
   PDFPreview: ({ id, data, readOnly }: { id?: string; data: Record<string, unknown>; readOnly?: boolean }) => <div data-reader-pdf-src={String(data.src)} data-reader-pdf-node-id={id} data-reader-pdf-readonly={readOnly} />,
 }));
 vi.mock('@/components/Nodes/video/VideoPreview', () => ({
@@ -58,13 +77,14 @@ vi.mock('@/components/Nodes/video/VideoPreview', () => ({
 }));
 vi.mock('../app/lcosCoreClient', () => ({ createLcosCoreSession: () => ({ http: {} }) }));
 vi.mock('../lcosReferenceState', () => {
-  const state = () => ({ nodeEntityRefs, addEntityToDraft, orderedNodeReferences, draft: {} });
+  const state = () => ({ projectId: 'project-1', nodeEntityRefs, addEntitiesToDraft, orderedNodeReferences, draft: { orderedEntityRefs: [] } });
   const useLcosReferenceStore = (selector: (s: ReturnType<typeof state>) => unknown) => selector(state());
   useLcosReferenceStore.getState = state;
   return { useLcosReferenceStore };
 });
 vi.mock('../shell/lcosShellStore', () => {
   const state = () => ({
+    projectId: 'project-1', composerTarget: null,
     activeSurface: 'main',
     composerPrompt: '',
     setComposerPrompt,
@@ -144,7 +164,8 @@ afterEach(() => {
   compareFor.mockReset();
   archiveFor.mockReset();
   restoreFor.mockReset();
-  addEntityToDraft.mockReset();
+  addEntitiesToDraft.mockReset(); addEntitiesToDraft.mockReturnValue({});
+  renderer.automatic = true; renderer.pending.length = 0;
   orderedNodeReferences.mockReset();
   orderedNodeReferences.mockReturnValue([]);
   requestLocate.mockReset();
@@ -383,7 +404,7 @@ describe('ArtifactReaderBody R4 residual', () => {
   it('加入引用与摘录为引用：写既有草稿引用，并把带 Source Trace 的引用块送进 Composer 草稿', async () => {
     const { container } = await renderMarkdown();
     click(container, '[data-lcos-reader-to-draft]');
-    expect(addEntityToDraft).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'artifact', entityId: 'artifact-1' }));
+    expect(addEntitiesToDraft).toHaveBeenCalledWith([expect.objectContaining({ entityType: 'artifact', entityId: 'artifact-1', revisionId: 'revision-current' })], undefined);
 
     const range = document.createRange();
     const selectedBody = container.querySelector('[data-lcos-reader-content="text"]');
@@ -408,7 +429,7 @@ describe('ArtifactReaderBody R4 residual', () => {
     vi.spyOn(window, 'getSelection').mockReturnValue({ rangeCount: 1, getRangeAt: () => range, toString: () => external.textContent } as unknown as Selection);
     click(container, '[data-lcos-reader-cite]');
     expect(setComposerPrompt).not.toHaveBeenCalled();
-    expect(addEntityToDraft).not.toHaveBeenCalled();
+    expect(addEntitiesToDraft).not.toHaveBeenCalled();
     external.remove();
   });
 
@@ -417,7 +438,7 @@ describe('ArtifactReaderBody R4 residual', () => {
     vi.spyOn(window, 'getSelection').mockReturnValue({ toString: () => '   ' } as unknown as Selection);
     click(container, '[data-lcos-reader-cite]');
     expect(setComposerPrompt).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-lcos-reader-note]')?.textContent).toContain('未选中');
+    expect(container.querySelector('[data-lcos-reader-note]')?.textContent).toContain('先选中正文');
   });
 
   it('回到来源：按 Core identity 命中投影节点则 locate(projected)，未投影则如实上报不假定位', async () => {
@@ -556,4 +577,22 @@ it('reads a plain-text artifact from the actual revision MIME instead of declari
   const { container } = await render('artifact-text');
   expect(container.querySelector('[data-lcos-reader-content="text"]')?.textContent).toContain('真实纯文本');
   expect(blobFor).toHaveBeenCalledWith('project-1', 'file-text', expect.any(AbortSignal));
+});
+
+
+it('does not overwrite saved revision position before the actual renderer is ready', async () => {
+  renderer.automatic = false;
+  const key = JSON.stringify(['project-1', 'artifact-readiness', 'revision-current']);
+  readerPositions[key] = { scrollTop: 840, zoom: 125 };
+  detailFor.mockResolvedValue(detail('artifact-readiness', 'revision-current'));
+  revisionsFor.mockResolvedValue([revision('artifact-readiness', 'revision-current', 'file-current')]);
+  textFor.mockResolvedValue('等待异步排版的正文');
+  const { container } = await render('artifact-readiness');
+  const viewport = container.querySelector<HTMLElement>('[data-lcos-reader-content="text"]')!;
+  expect(viewport).not.toBeNull();
+  viewport.scrollTop = 0;
+  await act(async () => viewport.dispatchEvent(new Event('scroll', { bubbles: true })));
+  expect(readerPositions[key]?.scrollTop).toBe(840);
+  await act(async () => { for (const notify of renderer.pending.splice(0)) notify(); });
+  expect(viewport.scrollTop).toBe(840);
 });

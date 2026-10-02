@@ -17,6 +17,8 @@ export function warehouseQueryStringV1(query: WarehouseQueryV1): string {
   const params = new URLSearchParams();
   if (query.search !== undefined && query.search.trim() !== '') params.set('search', query.search);
   if (query.kinds !== undefined && query.kinds.length > 0) params.set('kinds', query.kinds.join(','));
+  if (query.materialFilter !== undefined && query.materialFilter !== 'all') params.set('material', query.materialFilter);
+  if (query.sort !== undefined && query.sort !== 'updated') params.set('sort', query.sort);
   if (query.provenanceOrigin !== undefined) params.set('provenance', query.provenanceOrigin);
   if (query.usedHereTarget !== undefined && query.usedHereTarget.kind === 'workspace') {
     params.set('usedHereTarget', `workspace:${query.usedHereTarget.id}`);
@@ -47,6 +49,7 @@ export class CoreAssemblyClient {
 
   /** POST /projects/:pid/assembly/apply → 统一 Semantic Drop apply（逐项回执，partial 如实展示）。 */
   apply(projectId: string, request: AssemblyApplyRequestV1, signal?: AbortSignal): Promise<AssemblyApplyResultV1> {
+    if (request.projectId !== projectId) return Promise.reject(new Error('投放项目与请求地址不一致。'));
     return coreRequest<AssemblyApplyResultV1>(
       this.http,
       'POST',

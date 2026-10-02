@@ -11,6 +11,7 @@
 
 import {
   CoreAssemblyClient,
+  CoreRailwayClient,
   visibleOverlays,
 } from '@local-creative-os/web-gen2';
 import React from 'react';
@@ -22,9 +23,13 @@ import useCanvasStore from '@/store/canvasStore';
 import { createLcosCoreSession } from './app/lcosCoreClient';
 import { useCollaborationSessionStore } from './collaboration/collaborationSessionStore';
 import { composerHasVisibleWindowOwner } from './composer/composerPresentationOwner';
+import { composerInputKey } from './composer/composerInputJourney';
 import { LcosComposerHost } from './composer/LcosComposerHost';
 import { DropCommitRouter } from './drop/dropCommitRouter';
-import { collectionExpansionGeometry } from './nodes/collectionExpandLayout';
+import { planNativeCanvasLanding } from './drop/nativeCanvasDropGeometry';
+import { captureCollectionDropPlacement, planCollectionDropPlacement } from './drop/collectionDropPlacement';
+import { bindNativeAssemblyDropEvents } from './drop/nativeAssemblyDrop';
+import { isDropPointExposed } from './drop/dropOcclusion';
 import { rectFromDomRect } from './drop/dropTargetRegistry';
 import { LcosDropReceipt } from './drop/LcosDropReceipt';
 import { useLcosHostStore } from './host/lcosHostState';
@@ -41,6 +46,7 @@ import {
 } from './surfaces/workflow/workflowArchiveDrop';
 
 import type {
+  DropCommitReceipt,
   DropAssemblyApplyIntent,
   DropComposerReferenceIntent,
   DropCollectionMembershipIntent,
@@ -94,24 +100,18 @@ export const LcosHostOverlay: React.FC = () => {
     commitRouterRef.current?.clear();
   }, [projectId]);
 
-  // Native HTML5 drag sources emit dragover rather than pointermove while the
-  // payload is held. Feed that event into the same resolver path as the
-  // pointer-router observer and prevent the browser's default file-drop page
-  // navigation only while an LCOS payload is active.
-  useEffect(() => {
-    const onDragOver = (event: DragEvent): void => {
-      const status = useLcosDropStore.getState().state.status;
-      if (
-        (status !== 'tracking' && status !== 'dwell' && status !== 'preview') ||
-        canvasWrapper === null ||
-        rfInstance === null
-      ) return;
-      event.preventDefault();
+  // HTML5 transport uses the same resolver as pointer gestures. Only `drop`
+  // commits; dragend/Escape/blur cancel. Capture before the native Canvas importer.
+  useEffect(() => bindNativeAssemblyDropEvents(window, {
+    read: () => useLcosDropStore.getState(),
+    advance: (event) => {
+      if (canvasWrapper === null || rfInstance === null) return false;
       advanceDropAtScreenPoint(event, { wrapper: canvasWrapper, instance: rfInstance });
-    };
-    window.addEventListener('dragover', onDragOver);
-    return () => window.removeEventListener('dragover', onDragOver);
-  }, [canvasWrapper, rfInstance]);
+      return true;
+    },
+    commit: () => useLcosDropStore.getState().commitAt(crypto.randomUUID()),
+    cancel: () => useLcosDropStore.getState().cancel(),
+  }), [canvasWrapper, rfInstance]);
 
   // Portable Workflow archives need their Blob bytes, while the spatial-drop
   // payload intentionally carries only file metadata. Capture this one native
@@ -187,6 +187,7 @@ export const LcosHostOverlay: React.FC = () => {
       kind: 'canvas',
       label: activeSurface === 'main' ? 'Main' : `${activeSurface} 现场`,
       priority: 10,
+      acceptsPoint: (point) => isDropPointExposed(canvasWrapper, point),
       enabled: targetRef !== undefined,
       ...(targetRef === undefined ? { ineligibleReason: '当前现场尚未解析到 workspace' } : {}),
       semantic: {
@@ -239,9 +240,33 @@ export const LcosHostOverlay: React.FC = () => {
     const store = useLcosDropStore.getState();
     if (store.state.status !== 'committing' || store.state.transactionId !== dropState.transactionId) return;
     const intent = dropResolution.intent;
+    const nativeSource = store.nativeSource ?? null;
+    const memberNodeId = intent.kind === 'collection-membership'
+      ? [...useLcosReferenceStore.getState().nodeEntityRefs].find(([, ref]) =>
+          ref.entityType === intent.memberRef.type && ref.entityId === intent.memberRef.id)?.[0]
+      : undefined;
+    const spatialSource = nativeSource === null && intent.kind === 'collection-membership'
+      ? captureCollectionDropPlacement(useCanvasStore.getState().nodes, useCanvasStore.getState().collapsedFrameIds,
+          intent.collectionId, memberNodeId, store.carrySourceNodeId !== null)
+      : undefined;
     const router = commitRouterRef.current;
     if (router === null) return;
     const owners = {
+      projectId,
+      receivePortal: async (intent: DropAssemblyApplyIntent, operationId: string, signal?: AbortSignal) => {
+        if (intent.railwayDestinationRef?.kind !== 'worksite' || !intent.railwayCanvasId || !dropCanvasId)
+          throw new Error('入口目标或来源尚未确认，请重新打开入口');
+        return new CoreRailwayClient(session.http).receivePortal({schemaVersion:1,projectId,operationId,viaPortal:true,
+          destination:intent.railwayDestinationRef,expectedCanvasId:intent.railwayCanvasId,
+          sourceCanvasId:dropCanvasId,sourceRefs:intent.sourceRefs},signal);
+      },
+      receiveRailway: async (intent: DropAssemblyApplyIntent, operationId: string, signal?: AbortSignal) => {
+        if (intent.railwayDestinationRef?.kind !== 'worksite' || intent.railwayOrderVersion === undefined || !intent.railwayCanvasId)
+          throw new Error('旧目的地引用不可直接投递，请重新读取导航');
+        return new CoreRailwayClient(session.http).receive({schemaVersion:1,projectId,operationId,
+          destination:intent.railwayDestinationRef,expectedOrderVersion:intent.railwayOrderVersion,
+          expectedCanvasId:intent.railwayCanvasId,...(dropCanvasId ? {sourceCanvasId:dropCanvasId} : {}),sourceRefs:intent.sourceRefs},signal);
+      },
       applyAssembly: async (assemblyIntent: DropAssemblyApplyIntent, signal?: AbortSignal): Promise<AssemblyApplyResultV1> => {
         const point = assemblyIntent.targetRef.kind === 'conversation' ? undefined : assemblyIntent.placementPoint;
         const placementBySource = point === undefined
@@ -273,39 +298,67 @@ export const LcosHostOverlay: React.FC = () => {
         return result;
       },
       addComposerReference: (referenceIntent: DropComposerReferenceIntent): void => {
-        useLcosReferenceStore.getState().addEntityToDraft(referenceIntent.reference);
-      },
-      addCollectionMember: async (membershipIntent: DropCollectionMembershipIntent) => {
-        const receipt = await session.collections.addMember(projectId, membershipIntent.collectionId, membershipIntent.memberRef);
-        const canvasState = useCanvasStore.getState();
-        const shellState = useLcosShellStore.getState();
-        if ((receipt.status === 'applied' || receipt.status === 'already-member')
-          && shellState.projectId === projectId && active
-          && canvasState.canvasId === dropCanvasId) {
-          const frame = canvasState.nodes.find((node) => node.type === 'frame'
-            && (node.data as Record<string, unknown> | undefined)?.lcosCollectionId === membershipIntent.collectionId);
-          const collectionNodeId = typeof (frame?.data as Record<string, unknown> | undefined)?.lcosCollectionNodeId === 'string'
-            ? String((frame?.data as Record<string, unknown>).lcosCollectionNodeId) : undefined;
-          const memberNode = [...useLcosReferenceStore.getState().nodeEntityRefs].find(([, ref]) =>
-            ref.entityType === membershipIntent.memberRef.type && ref.entityId === membershipIntent.memberRef.id);
-          const projectedNode = memberNode ? canvasState.nodes.find((node) => node.id === memberNode[0]) : undefined;
-          const isCollapsed = frame ? useCanvasStore.getState().collapsedFrameIds.has(frame.id) : false;
-          if (frame && collectionNodeId && !isCollapsed && projectedNode && !projectedNode.parentId) {
-            const frameChildIds = canvasState.nodes.filter((node) => node.parentId === frame.id).map((node) => node.id);
-            const geometry = collectionExpansionGeometry(canvasState.nodes, collectionNodeId, [projectedNode.id], frameChildIds);
-            if (geometry.length > 0) useCanvasStore.getState().setNodeGeometry(geometry);
-            useCanvasStore.getState().moveNodeIntoFrame(projectedNode.id, frame.id);
-          }
+        const shell = useLcosShellStore.getState();
+        const references = useLcosReferenceStore.getState();
+        if (shell.projectId !== projectId || references.projectId !== projectId
+          || (referenceIntent.inputKey !== undefined && referenceIntent.inputKey !== composerInputKey(shell.composerTarget))) {
+          throw new Error('当前输入目标已改变，未把引用加入其他任务。');
         }
+        const result = references.addEntitiesToDraft(referenceIntent.references ?? [referenceIntent.reference], shell.composerTarget?.intent);
+        if (result.reason) throw new Error(result.reason);
+      },
+      // Canonical owner first. The router validates identity and positive status
+      // BEFORE calling any spatial manifestation or refresh callback.
+      addCollectionMember: (membershipIntent: DropCollectionMembershipIntent) =>
+        session.collections.addMember(projectId, membershipIntent.collectionId, membershipIntent.memberRef),
+      onCollectionApplied: (membershipIntent: DropCollectionMembershipIntent): void => {
+        // A native selection lands as ONE native geometry/parent batch after all receipts.
+        if (nativeSource !== null) return;
+        const currentDrop = useLcosDropStore.getState().state;
+        const currentCanvas = useCanvasStore.getState();
+        if (useLcosShellStore.getState().projectId !== projectId || currentCanvas.canvasId !== dropCanvasId
+          || currentDrop.status !== 'committing' || currentDrop.transactionId !== dropState.transactionId) return;
         useLcosReferenceStore.getState().requestNodeBindingRefresh();
-        return receipt;
+        const placement = planCollectionDropPlacement(spatialSource, currentCanvas.nodes,
+          currentCanvas.collapsedFrameIds, membershipIntent.collectionId);
+        if (placement === undefined) return;
+        const memberRef = useLcosReferenceStore.getState().nodeEntityRefs.get(placement.memberNodeId);
+        if (memberRef?.entityType !== membershipIntent.memberRef.type || memberRef.entityId !== membershipIntent.memberRef.id) return;
+        if (placement.geometry.length > 0) currentCanvas.setNodeGeometry(placement.geometry);
+        currentCanvas.moveNodeIntoFrame(placement.memberNodeId, placement.frameId);
+        if (useCanvasStore.getState().nodes.find((node) => node.id === placement.memberNodeId)?.parentId !== placement.frameId) {
+          throw new Error('Collection spatial host did not confirm parentage.');
+        }
       },
 
     };
     void router.commit(intent, dropState.transactionId, owners)
       .then((receipt) => {
         if (!active || useLcosShellStore.getState().projectId !== projectId) return;
-        store.settle(receipt);
+        const current = useLcosDropStore.getState();
+        if (current.state.status !== 'committing' || current.state.transactionId !== dropState.transactionId) return;
+        let finalReceipt: DropCommitReceipt = receipt;
+        if (nativeSource !== null && intent.kind === 'collection-membership') {
+          if ((nativeSource.landing || nativeSource.landingRevoked) && receipt.status !== 'failed') {
+            const canvas = useCanvasStore.getState();
+            const plan = current.nativeSource === nativeSource && canvas.canvasId
+              ? planNativeCanvasLanding(nativeSource, intent, receipt, { projectId, canvasId: canvas.canvasId },
+                  canvas.nodes, useLcosReferenceStore.getState().nodeEntityRefs, canvas.collapsedFrameIds)
+              : { items: [], skipped: true };
+            let placed = plan.items.length === 0;
+            try {
+              if (plan.items.length > 0 && nativeSource.landing) placed = canvas.placeNodesInFrame(plan.items, nativeSource.landing.frameId);
+            } catch { placed = false; }
+            if (plan.skipped || !placed) {
+              finalReceipt = { ...receipt, status: 'partial',
+                message: '已确认的集合关系已保存；部分空间位置未应用，保留当前编辑，可重新展开集合' };
+            }
+          }
+          if (useCanvasStore.getState().canvasId === nativeSource.scope.canvasId) {
+            useLcosReferenceStore.getState().requestNodeBindingRefresh();
+          }
+        }
+        store.settle(finalReceipt);
       });
     return () => { active = false; };
   }, [assembly, canvasId, dropResolution, dropState, projectId]);

@@ -1,163 +1,48 @@
-// GEN1 artifactViewerRegistry.tsx ImageZoomStage. Read-only local media view, NOT Canvas camera.
-// Original wheel/pointer/zoom/centering logic retained; adaptation details in donor adoption ledger.
-/* eslint-disable jsx-a11y/no-static-element-interactions -- composite image stage owns pointer and keyboard gestures. */
-/* eslint-disable jsx-a11y/no-noninteractive-tabindex -- the composite image stage exposes keyboard zoom/reset focus. */
-import { useCallback, useEffect, useRef, useState } from 'react';
-
-import { fitImageInStage, zoomImageAtPoint } from './imageZoomMath';
+// G1 artifactViewerRegistry.tsx ImageZoomStage, adapted to the existing Reader.
+// Media-local zoom/pan, never Canvas camera. The mounted controller is also
+// exercised by the pointer/resize/visibility browser regression fixture.
+import { useContext, useLayoutEffect, useRef, useState } from 'react';
+import { Maximize, Minus, Plus } from 'lucide-react';
+import { ReaderVisibilityContext } from '../../../professional/ReaderVisibilityContext';
+import { mountReaderImageInteraction, type ReaderImageSnapshot } from './readerImageInteraction';
 import { LcosButton } from '../../primitives/LcosButton';
 import './gen1-reader.css';
 
-const ZOOM_MIN = 0.2
-const ZOOM_MAX = 8
-
-/** 图片预览自由缩放：滚轮以鼠标位置为锚点缩放，拖拽平移，双击/按钮复位。 */
-export function Gen1ImageZoomStage({ src, alt }: { src: string; alt: string }) {
-  const stageRef = useRef<HTMLDivElement | null>(null)
-  const imgRef = useRef<HTMLImageElement | null>(null)
-  const scaleRef = useRef(1)
-  const panRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
-  const interactedRef = useRef(false)
-  const fitAttemptRef = useRef(0)
-  const fitTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const fitMinimumRef = useRef(ZOOM_MIN)
-  const [imageError, setImageError] = useState(false)
-  const [scale, setScale] = useState(1)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [dragging, setDragging] = useState(false)
-
-  const commit = useCallback((nextScale: number, nextPan: { x: number; y: number }) => {
-    scaleRef.current = nextScale
-    panRef.current = nextPan
-    setScale(nextScale)
-    setPan(nextPan)
-  }, [])
-
-  useEffect(() => {
-    const stage = stageRef.current
-    if (!stage) return
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (imageError) return
-      interactedRef.current = true
-      const rect = stage.getBoundingClientRect()
-      const px = event.clientX - rect.left
-      const py = event.clientY - rect.top
-      const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15
-      const next = zoomImageAtPoint(scaleRef.current, panRef.current, { x: px, y: py }, factor, fitMinimumRef.current, ZOOM_MAX)
-      commit(next.scale, next.pan)
-    }
-    stage.addEventListener('wheel', onWheel, { passive: false })
-    return () => stage.removeEventListener('wheel', onWheel)
-  }, [commit, imageError])
-
-  const scheduleFit = useCallback(() => {
-    const stage = stageRef.current
-    const img = imgRef.current
-    if (!stage || !img || interactedRef.current) return
-    // 布局未就绪（clientWidth=0）时若直接 fit 会算出 scale(0)，图片不可见；
-    // 延迟到尺寸可用再适配，最多重试 5 次。
-    if (stage.clientWidth <= 0 || stage.clientHeight <= 0 || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
-      if (fitAttemptRef.current >= 5) return
-      fitAttemptRef.current += 1
-      fitTimerRef.current = setTimeout(scheduleFit, 80)
-      return
-    }
-    fitAttemptRef.current = 0
-    const cw = stage.clientWidth
-    const ch = stage.clientHeight
-    const nw = img.naturalWidth || 1
-    const nh = img.naturalHeight || 1
-    const fitted = fitImageInStage(cw, ch, nw, nh)
-    if (fitted === undefined) return
-    fitMinimumRef.current = Math.min(ZOOM_MIN, fitted.scale)
-    commit(fitted.scale, fitted.pan)
-  }, [commit])
-
-  useEffect(() => {
-    setImageError(false)
-    interactedRef.current = false
-    fitAttemptRef.current = 0
-    scheduleFit()
-    return () => { if (fitTimerRef.current !== undefined) clearTimeout(fitTimerRef.current) }
-  }, [src, scheduleFit])
-  useEffect(() => {
-    if (stageRef.current === null || typeof ResizeObserver !== 'function') return
-    const observer = new ResizeObserver(scheduleFit)
-    observer.observe(stageRef.current)
-    return () => observer.disconnect()
-  }, [scheduleFit])
-  const handleImgLoad = useCallback(() => scheduleFit(), [scheduleFit])
-
-  const zoomBy = useCallback((factor: number) => {
-    interactedRef.current = true
-    const stage = stageRef.current
-    if (!stage) return
-    const rect = stage.getBoundingClientRect()
-    const px = rect.width / 2
-    const py = rect.height / 2
-    const next = zoomImageAtPoint(scaleRef.current, panRef.current, { x: px, y: py }, factor, fitMinimumRef.current, ZOOM_MAX)
-    commit(next.scale, next.pan)
-  }, [commit])
-
-  const reset = useCallback(() => {
-    interactedRef.current = true
-    const stage = stageRef.current
-    const img = imgRef.current
-    if (!stage || !img) { commit(1, { x: 0, y: 0 }); return }
-    const nw = img.naturalWidth || 1
-    const nh = img.naturalHeight || 1
-    commit(1, { x: (stage.clientWidth - nw) / 2, y: (stage.clientHeight - nh) / 2 })
-  }, [commit])
-
-  return (
-    <div
-      ref={stageRef}
-      className={`lcos-image-zoom-stage ${dragging ? 'is-dragging' : ''}`}
-      data-donor-image-zoom
-      tabIndex={0}
-      aria-label={`${alt}，图片预览；加减键缩放，0 复位`}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget || imageError) return
-        if (event.key === '+' || event.key === '=') { event.preventDefault(); event.stopPropagation(); zoomBy(1.25) }
-        else if (event.key === '-') { event.preventDefault(); event.stopPropagation(); zoomBy(1 / 1.25) }
-        else if (event.key === '0') { event.preventDefault(); event.stopPropagation(); reset() }
-      }}
-      onPointerDown={(event) => {
-        if (event.button !== 0 || imageError) return
-        event.stopPropagation()
-        interactedRef.current = true
-        dragRef.current = { startX: event.clientX, startY: event.clientY, baseX: panRef.current.x, baseY: panRef.current.y }
-        setDragging(true)
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }}
-      onPointerMove={(event) => {
-        const drag = dragRef.current
-        if (!drag) return
-        commit(scaleRef.current, { x: drag.baseX + event.clientX - drag.startX, y: drag.baseY + event.clientY - drag.startY })
-      }}
-      onPointerUp={(event) => {
-        dragRef.current = null
-        setDragging(false)
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-      }}
-      onPointerCancel={() => { dragRef.current = null; setDragging(false) }}
-      onLostPointerCapture={() => { dragRef.current = null; setDragging(false) }}
-      onDoubleClick={(event) => { event.stopPropagation(); reset() }}
-      title="滚轮缩放 · 拖拽平移 · 双击复位"
-    >
-      <div className="lcos-image-zoom-pan" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }}>
-        <img ref={imgRef} src={src} alt={alt} draggable={false} onLoad={handleImgLoad} onError={() => setImageError(true)} onDragStart={(event) => event.preventDefault()} />
-      </div>
-      {imageError && <span role="status" className="lcos-image-zoom-error">图像无法显示；材料身份仍保留。</span>}
-      <div className="lcos-image-zoom-toolbar" onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
-        <LcosButton disabled={imageError} type="button" aria-label="缩小" onClick={() => zoomBy(1 / 1.25)}>−</LcosButton>
-        <span>{Math.round(scale * 100)}%</span>
-        <LcosButton disabled={imageError} type="button" aria-label="放大" onClick={() => zoomBy(1.25)}>＋</LcosButton>
-        <LcosButton disabled={imageError} type="button" className="reset" onClick={reset}>复位</LcosButton>
-      </div>
+export function Gen1ImageZoomStage({ src, alt, onRetry }: { src: string; alt: string; onRetry?: () => void }) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const transformRef = useRef<HTMLDivElement>(null);
+  const controllerRef = useRef<ReturnType<typeof mountReaderImageInteraction> | undefined>(undefined);
+  const lastView = useRef<ReaderImageSnapshot | undefined>(undefined);
+  const visible = useContext(ReaderVisibilityContext);
+  const [snapshot, setSnapshot] = useState<ReaderImageSnapshot>({ scale: 1, pan: { x: 0, y: 0 }, size: { x: 0, y: 0 }, mode: 'fit' });
+  const [imageError, setImageError] = useState(false);
+  useLayoutEffect(() => {
+    const stage = stageRef.current, image = imageRef.current, transform = transformRef.current;
+    if (!stage || !image || !transform) return;
+    setImageError(false);
+    const controller = mountReaderImageInteraction({ stage, image, transform,
+      ...(lastView.current === undefined ? {} : { initial: lastView.current }),
+      onChange: (view) => { lastView.current = view; setSnapshot(view); }, onError: setImageError,
+    });
+    controllerRef.current = controller;
+    return () => { controller.dispose(); controllerRef.current = undefined; };
+  }, [src]);
+  useLayoutEffect(() => { controllerRef.current?.setVisible(visible); }, [visible, src]);
+  return <div ref={stageRef} className="lcos-image-zoom-stage" data-donor-image-zoom tabIndex={0}
+    role="group" aria-label={`${alt}，图片预览；加减键缩放，0 原始大小`}
+    title="滚轮缩放 · 拖拽平移 · 双击原始大小">
+    <div ref={transformRef} className="lcos-image-zoom-pan">
+      <img ref={imageRef} src={src} alt={alt} draggable={false} onDragStart={(event) => event.preventDefault()} />
     </div>
-  )
+    {imageError && <div role="status" className="lcos-image-zoom-error"><span>图像无法显示；材料身份仍保留。</span>
+      {onRetry && <LcosButton type="button" onClick={onRetry}>重读同一版本</LcosButton>}</div>}
+    <div className="lcos-image-zoom-toolbar">
+      <LcosButton disabled={imageError} type="button" aria-label="缩小图片" onClick={() => controllerRef.current?.zoomBy(1 / 1.25)}><Minus size={16} /></LcosButton>
+      <span data-reader-image-zoom-value>{Math.round(snapshot.scale * 100)}%</span>
+      <LcosButton disabled={imageError} type="button" aria-label="放大图片" onClick={() => controllerRef.current?.zoomBy(1.25)}><Plus size={16} /></LcosButton>
+      <LcosButton disabled={imageError} type="button" aria-label="图片原始大小" onClick={() => controllerRef.current?.reset()}>100%</LcosButton>
+      <LcosButton disabled={imageError} type="button" aria-label="图片适应窗口" aria-pressed={snapshot.mode === 'fit'} onClick={() => controllerRef.current?.fit()}><Maximize size={16} /></LcosButton>
+    </div>
+  </div>;
 }

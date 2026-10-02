@@ -6,6 +6,7 @@ import { CircleHelp } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
+import { isComposerSendShortcut } from '../composer/conversationSendAttempt';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { CoreCollaborationClient } from '@local-creative-os/web-gen2';
@@ -14,9 +15,11 @@ export interface WaitingInputSectionProps {
   readonly collaboration: CoreCollaborationClient;
   readonly projectId: string;
   readonly conversationId: string;
+  readonly enabled?: boolean;
+  readonly disabledReason?: string;
 }
 
-export function WaitingInputSection({ collaboration, projectId, conversationId }: WaitingInputSectionProps): React.JSX.Element | null {
+export function WaitingInputSection({ collaboration, projectId, conversationId, enabled = true, disabledReason }: WaitingInputSectionProps): React.JSX.Element | null {
   const [request, setRequest] = useState<{ readonly pendingInputId: string; readonly runId: string; readonly question: string; readonly options: readonly string[]; readonly allowFreeText: boolean } | undefined>(undefined);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [answerText, setAnswerText] = useState('');
@@ -24,6 +27,8 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | undefined>(undefined);
+  const pendingWrite = useRef(false);
+  const currentRequestId = useRef<string | undefined>(undefined);
   const pendingRead = useRef<AbortController | null>(null);
   const scope = useRef(`${projectId}:${conversationId}`);
   scope.current = `${projectId}:${conversationId}`;
@@ -39,6 +44,8 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
       .readPendingInput(projectId, conversationId, controller.signal)
       .then((value) => {
         if (controller.signal.aborted) return;
+        if (value?.pendingInputId !== currentRequestId.current) { setAnswerText(''); setSelected([]); }
+        currentRequestId.current = value?.pendingInputId;
         setRequest(value);
         setState('ready');
       })
@@ -80,10 +87,11 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
   }
 
   const submit = (): void => {
-    if (submitting) return;
+    if (!enabled || submitting || pendingWrite.current || request.pendingInputId !== currentRequestId.current) return;
     const submittedScope = scope.current;
-    const text = answerText.trim();
+    const text = request.allowFreeText ? answerText.trim() : '';
     if (text === '' && selected.length === 0) return;
+    pendingWrite.current = true;
     setSubmitting(true);
     setErrorDetail(undefined);
     setReceipt(null);
@@ -95,8 +103,8 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
       })
       .then((result) => {
         if (scope.current !== submittedScope) return;
-        if (result.ok) {
-          setReceipt('回答已提交（同一 Run，不新建）');
+        if (result.ok && result.receipt.command === 'answerInput' && result.receipt.runId === request.runId) {
+          setReceipt('回答已提交');
           setAnswerText('');
           setSelected([]);
           load();
@@ -105,14 +113,14 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
           // （表现为「已回答却一直显示等你回应」）。
           void useCollaborationSessionStore.getState().refresh(projectId, conversationId);
         } else {
-          setErrorDetail(result.error.userMessage);
+          setErrorDetail(result.ok ? '回答回执未确认，请重新读取问题' : result.error.userMessage);
         }
       })
       .catch((error: unknown) => {
         if (scope.current !== submittedScope) return;
         setErrorDetail(error instanceof Error ? error.message : String(error));
       })
-      .finally(() => { if (scope.current === submittedScope) setSubmitting(false); });
+      .finally(() => { pendingWrite.current = false; if (scope.current === submittedScope) setSubmitting(false); });
   };
 
   return (
@@ -120,7 +128,7 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
       <div className="flex items-center gap-1.5">
         <CircleHelp className="h-3.5 w-3.5" style={{ color: lcosTokens.color.pinAmber }} aria-hidden />
         <span className="text-xs font-semibold" style={{ color: lcosTokens.color.text }}>
-          等待输入 · Run {request.runId.slice(0, 8)}
+          等你回答
         </span>
       </div>
 
@@ -136,6 +144,7 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
               <button
                 key={option}
                 type="button"
+                disabled={submitting || !enabled}
                 data-lcos-waiting-option
                 aria-pressed={on}
                 onClick={() =>
@@ -158,6 +167,8 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
       {request.allowFreeText && (
         <textarea
           value={answerText}
+          disabled={submitting || !enabled}
+          onKeyDown={(event) => { if (isComposerSendShortcut({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, repeat: event.repeat, isComposing: event.nativeEvent.isComposing, keyCode: event.nativeEvent.keyCode })) { event.preventDefault(); submit(); } }}
           onChange={(e) => setAnswerText(e.target.value)}
           rows={2}
           aria-label="回答待输入问题"
@@ -170,7 +181,7 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
       <div className="flex items-center gap-2">
         <button
           type="button"
-          disabled={submitting || (answerText.trim() === '' && selected.length === 0)}
+          disabled={submitting || !enabled || ((!request.allowFreeText || answerText.trim() === '') && selected.length === 0)}
           onClick={submit}
           className="rounded-full px-3 py-1.5 text-xs font-medium disabled:opacity-40"
           style={{ background: lcosTokens.color.inverse, color: lcosTokens.color.textOnInverse, minHeight: 32 }}
@@ -179,6 +190,7 @@ export function WaitingInputSection({ collaboration, projectId, conversationId }
         </button>
         {receipt && <span className="text-xs" style={{ color: lcosTokens.color.accent }}>{receipt}</span>}
       </div>
+      {!enabled && <span role="status" className="text-xs">{disabledReason ?? '当前暂不能回答，请先核对会话状态'}</span>}
       {errorDetail && submitting === false && receipt === null && (
         <span className="text-xs" style={{ color: lcosTokens.color.danger }}>回答失败 · {errorDetail}（输入已保留）</span>
       )}

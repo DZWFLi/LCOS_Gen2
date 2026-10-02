@@ -6,7 +6,8 @@ import {
   flip,
   offset as offsetMiddleware,
   shift,
-  useFloating,
+  useFloating, useDismiss, useInteractions, useFloatingNodeId, useFloatingParentNodeId,
+  FloatingTree, FloatingNode, FloatingPortal, FloatingFocusManager,
 } from '@floating-ui/react';
 import { useStore, useViewport } from '@xyflow/react';
 import {
@@ -15,7 +16,6 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import { createPortal } from 'react-dom';
 
 import { useCanvasAttentionStore } from '@/store/canvasAttentionStore';
 import { useAnyGlobalModalOpen } from '@/store/globalModalUi';
@@ -56,6 +56,10 @@ export interface CanvasFloatingPopoverProps {
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
+  /** Optional managed dismissal; nested portals share FloatingTree. */
+  onDismiss?: () => void;
+  referenceElement?: { readonly current: HTMLElement | null };
+  ariaLabel?: string;
 }
 
 /**
@@ -81,7 +85,7 @@ export interface CanvasFloatingPopoverProps {
  * `EdgeStyleToolbar`. Every floating canvas surface should funnel
  * through this component to inherit the same clipping-free behaviour.
  */
-export function CanvasFloatingPopover({
+function CanvasFloatingPopoverInner({
   anchor,
   open,
   offset = 12,
@@ -91,8 +95,9 @@ export function CanvasFloatingPopover({
   nearbyControls,
   className,
   style,
-  children,
+  children, onDismiss, referenceElement, ariaLabel,
 }: CanvasFloatingPopoverProps) {
+  const nodeId = useFloatingNodeId();
   const { zoom, x: vpX, y: vpY } = useViewport();
   const domNode = useStore((s) => s.domNode);
 
@@ -151,7 +156,8 @@ export function CanvasFloatingPopover({
   // opposite side when there isn't room — so the popover never crosses
   // into neighbouring panels. Falls back to the viewport when `domNode`
   // isn't ready yet (first frame after mount).
-  const { refs, floatingStyles, isPositioned, update } = useFloating({
+  const { refs, context, floatingStyles, isPositioned, update } = useFloating({
+    nodeId, onOpenChange: (next) => { if (!next) onDismiss?.(); },
     open: open && !!virtualReference,
     placement: side,
     middleware: [
@@ -177,6 +183,11 @@ export function CanvasFloatingPopover({
     ],
     whileElementsMounted: autoUpdate,
   });
+
+  const dismiss = useDismiss(context, { enabled: onDismiss !== undefined,
+    bubbles: { escapeKey: false, outsidePress: true }, outsidePress: (event) => event.button !== 2 });
+  const { getFloatingProps } = useInteractions([dismiss]);
+  useLayoutEffect(() => { if (referenceElement?.current) refs.setReference(referenceElement.current); }, [referenceElement, refs, open]);
 
   // Attach the virtual reference imperatively. `elements.reference` in
   // `@floating-ui/react` is typed as `Element | null`, but virtual
@@ -207,10 +218,10 @@ export function CanvasFloatingPopover({
   if (!open || !virtualReference || hiddenByGlobalModal || hiddenByOtherSurface)
     return null;
 
-  return createPortal(
-    <div
+  const content = <div
       ref={refs.setFloating}
       {...FLOATING_CHROME_PROPS}
+      {...getFloatingProps(onDismiss ? { role: 'dialog', 'aria-label': ariaLabel } : {})}
       className={className}
       style={{
         ...floatingStyles,
@@ -223,7 +234,16 @@ export function CanvasFloatingPopover({
       }}
     >
       {children}
-    </div>,
-    document.body,
-  );
+    </div>;
+  return <FloatingNode id={nodeId}><FloatingPortal>
+    {onDismiss ? <FloatingFocusManager context={context} modal={false} restoreFocus returnFocus closeOnFocusOut={false}>
+      {content}
+    </FloatingFocusManager> : content}
+  </FloatingPortal></FloatingNode>;
+}
+
+export function CanvasFloatingPopover(props: CanvasFloatingPopoverProps) {
+  const parentId = useFloatingParentNodeId();
+  return parentId === null ? <FloatingTree><CanvasFloatingPopoverInner {...props} /></FloatingTree>
+    : <CanvasFloatingPopoverInner {...props} />;
 }

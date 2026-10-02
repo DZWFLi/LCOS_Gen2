@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (s: string) => s }
 vi.mock('@/hooks/useInputMode', () => ({ useIsNotMouse: () => true }));
 vi.mock('@/i18n/colors', () => ({ translateColorOptions: () => [] }));
 vi.mock('@/components/Common/CanvasFloatingPopover', () => ({ CanvasFloatingPopover: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
-vi.mock('@/components/Common/FloatingToolbar', () => ({ FLOATING_TOOLBAR_CLASS: '', FloatingToolbar: { AlignPicker: () => null, SizePicker: () => null, NumberInput: () => null, ColorPicker: () => null, Divider: () => null, ActionButton: ({ title, disabled, onClick }: { title: string; disabled?: boolean; onClick: () => void }) => <button title={title} disabled={disabled} onClick={onClick}>{title}</button> } }));
+vi.mock('@/components/Common/FloatingToolbar', () => ({ FLOATING_TOOLBAR_CLASS: '', FloatingToolbar: { Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>, AlignPicker: () => null, SizePicker: () => null, NumberInput: () => null, ColorPicker: () => null, Divider: () => null, ActionButton: ({ title, disabled, onClick }: { title: string; disabled?: boolean; onClick: () => void }) => <button title={title} disabled={disabled} onClick={onClick}>{title}</button> } }));
 import { LcosMultiSelectToolbar } from './LcosMultiSelectToolbar';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useLcosShellStore } from '../shell/lcosShellStore';
@@ -29,7 +29,7 @@ it('keeps native selection move and touch delete operational', () => {
 it('prevents mixed selection from moving or partially deleting bound objects', () => {
   useLcosReferenceStore.setState({ nodeEntityRefs: new Map([['a', { entityType: 'artifact', entityId: 'artifact-a' }]]) });
   render(); clickAll(); expect(mocks.move).not.toHaveBeenCalled(); expect(mocks.deleteNodes).not.toHaveBeenCalled();
-  expect([...host.querySelectorAll('button')].every((b) => b.disabled)).toBe(true);
+  expect([...host.querySelectorAll('button')].filter((b) => ['common.moveToCanvas', 'common.delete'].includes(b.title)).every((b) => b.disabled)).toBe(true);
 });
 it('protects a selected parent with an unselected bound descendant', () => {
   mocks.nodes.push(node('child', false, 'a'));
@@ -48,7 +48,7 @@ it('exposes create-Collection action through the production host toolbar for ful
     ['b', { entityType: 'note', entityId: 'note-b' }],
   ]) });
   render();
-  const action = host.querySelector<HTMLButtonElement>('button[aria-label="将所选对象创建为集合"]');
+  const action = host.querySelector<HTMLButtonElement>('button[aria-label="收成集合"]');
   expect(action).not.toBeNull();
   expect(action?.disabled).toBe(false);
 });

@@ -67,5 +67,5 @@ export function useComposerContinuation(projectId: string, target: LcosComposerT
             : !operation ? '当前会话需要先连接或恢复'
               : target?.continuationOperationId === undefined || target.messageId === undefined ? '正在准备输入…'
                 : undefined;
-  return { blockedReason, retry, error };
+  return { blockedReason, retry, error, diagnostics: currentRead?.status === 'ready' ? currentRead.value : undefined };
 }

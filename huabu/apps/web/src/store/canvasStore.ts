@@ -1,3 +1,4 @@
+import { readCollapsedFrames, writeCollapsedFrames } from './canvasCollapsedFrames';
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
@@ -26,6 +27,8 @@ import {
 } from '@huabu/shared';
 import {
   COMMAND_META,
+  planNodeFramePlacement,
+  type NodeFramePlacement,
   applyDeltas,
   applySharedPostEffectsFromWriteResult,
   executeCanvasCommands,
@@ -63,6 +66,7 @@ import {
   compensateDetachedDragPosition,
   mergeLiveDragGeometry,
 } from '@/handler/liveDragGeometry';
+import { restoreNodeDragPositions, type NodeDragOrigin } from '@/handler/nodeDragRecovery';
 import { projectStructuredTargetGeometry } from '@/handler/projectStructuredTargetGeometry';
 import {
   applySnap,
@@ -568,7 +572,9 @@ type RFState = {
    * Cancel the active node drag without running drop/reparent resolution.
    * Restores the pre-drag positions and discards the gesture snapshot.
    */
-  cancelActiveNodeDrag: () => void;
+  cancelActiveNodeDrag: (preserveNodeIds?: readonly string[]) => void;
+  /** Withdraw native Frame previews without changing live movement or the undo snapshot. */
+  clearNodeDragPreview: () => void;
   /**
    * Tear down any drag-time snap state and detach the window-level
    * Alt listeners attached during `onNodeDragStart`. Idempotent.
@@ -804,7 +810,7 @@ type RFState = {
   ) => void;
   sendSelectedToOrder: (direction: 'top' | 'bottom') => void;
 
-  frameSelectedNodes: (options?: { readonly label?: string; readonly collectionId?: string; readonly collectionNodeId?: string; readonly geometryUpdates?: Extract<CanvasUiIntent, { type: 'GROUP_SELECTION_INTO_FRAME' }>['geometryUpdates'] }) => void;
+  frameSelectedNodes: (options?: { readonly nodeIds?: readonly string[]; readonly emptyBounds?: { x: number; y: number; width: number; height: number }; readonly label?: string; readonly collectionId?: string; readonly collectionNodeId?: string; readonly geometryUpdates?: Extract<CanvasUiIntent, { type: 'GROUP_SELECTION_INTO_FRAME' }>['geometryUpdates'] }) => void;
   frameNodesInRect: (flowRect: {
     x: number;
     y: number;
@@ -853,6 +859,9 @@ type RFState = {
   /** Canonical Huabu edges remain in store/Core; this only controls their canvas projection. */
   edgesVisible: boolean;
   toggleEdges: () => void;
+
+  /** One native undo/save batch for an explicitly admitted group landing. */
+  placeNodesInFrame: (items: readonly NodeFramePlacement[], frameId: string) => boolean;
 
   moveNodeIntoFrame: (
     nodeId: string,
@@ -1076,6 +1085,9 @@ const nodeContentQueue = createNodeContentQueue({
  * canvas-switch path.
  */
 export async function drainPendingSaves(): Promise<void> {
+  // Explicit navigation must not flush an unfinished trial drag as an edit.
+  // Use the native rollback before the existing structure/content drain.
+  if (_dragStartPositions !== null) useCanvasStore.getState().cancelActiveNodeDrag();
   await structureScheduler.flushAsync();
   while (
     useCanvasStore.getState().isSaving ||
@@ -1263,7 +1275,7 @@ let _dragPreviewRafId: number | null = null;
 // resolver only emits a `SET_NODE_GEOMETRY` command when a frame /
 // parent change is involved — so a plain free-node move produces no
 // command and would otherwise never schedule the autosave PUT.
-let _dragStartPositions: Map<string, { x: number; y: number }> | null = null;
+let _dragStartPositions: Map<string, NodeDragOrigin> | null = null;
 
 // Resize-preview state (per-paint rAF coalescing + free-frame child
 // baseline snapshot) lives in `./canvasStore/slices/resizePreview.ts`.
@@ -1462,6 +1474,7 @@ const useCanvasStore = create<RFState>()(
     collapsedFrameIds: new Set<string>(),
     toggleFrameCollapse: (frameId) => {
       const { collapsedFrameIds } = get();
+      if (!get().nodes.some((node) => node.id === frameId && (node.type === 'frame' || node.type === 'group'))) return;
       const next = new Set(collapsedFrameIds);
       if (next.has(frameId)) {
         next.delete(frameId);
@@ -1469,6 +1482,7 @@ const useCanvasStore = create<RFState>()(
         next.add(frameId);
       }
       set({ collapsedFrameIds: next });
+      writeCollapsedFrames(get().canvasId, next);
     },
     isFrameCollapsed: (frameId) => {
       return get().collapsedFrameIds.has(frameId);
@@ -1478,6 +1492,7 @@ const useCanvasStore = create<RFState>()(
         // Expand-all: drop every entry in a single write.
         if (get().collapsedFrameIds.size === 0) return;
         set({ collapsedFrameIds: new Set<string>() });
+        writeCollapsedFrames(get().canvasId, new Set());
         return;
       }
       // Collapse-all: gather every frame/group id from the live nodes.
@@ -1498,6 +1513,7 @@ const useCanvasStore = create<RFState>()(
         if (identical) return;
       }
       set({ collapsedFrameIds: next });
+      writeCollapsedFrames(get().canvasId, next);
     },
 
     // -----------------------------------------------------------------------
@@ -2055,7 +2071,7 @@ const useCanvasStore = create<RFState>()(
         if (isDifferentCanvas) {
           set({
             pendingInlineEditNodeId: null,
-            collapsedFrameIds: new Set(),
+            collapsedFrameIds: readCollapsedFrames(targetId, warmedNodes),
             viewport: null,
           });
           useToolStore.getState().resetForCanvasSwitch();
@@ -2228,7 +2244,12 @@ const useCanvasStore = create<RFState>()(
         // body shrinks to pure geometry + parenthood.
         // Viewport is intentionally omitted: it's local UI state mirrored
         // into `localStorage`, not canvas data.
-        const slimNodes = stripNodeContentForStructurePut(nodes);
+        // A save already queued before mouse-down may run during live movement.
+        // Serialize the last committed geometry, not the RF trial coordinates;
+        // normal drag-stop will schedule the final move when it is accepted.
+        const slimNodes = stripNodeContentForStructurePut(
+          _dragStartPositions === null ? nodes : restoreNodeDragPositions(nodes, _dragStartPositions),
+        );
         const response = await putCanvas(
           canvasId,
           {
@@ -2482,7 +2503,7 @@ const useCanvasStore = create<RFState>()(
         draggedNodes.map((d) => {
           const live = liveNodes.find((n) => n.id === d.id);
           const pos = live?.position ?? d.position;
-          return [d.id, { x: pos.x, y: pos.y }];
+          return [d.id, { x: pos.x, y: pos.y, ...((live ?? d).parentId === undefined ? {} : { parentId: (live ?? d).parentId }) }];
         }),
       );
 
@@ -3098,7 +3119,21 @@ const useCanvasStore = create<RFState>()(
       }
     },
 
-    cancelActiveNodeDrag: () => {
+    clearNodeDragPreview: () => {
+      if (_dragPreviewRafId !== null) {
+        cancelAnimationFrame(_dragPreviewRafId);
+        _dragPreviewRafId = null;
+      }
+      const preview = useGesturePreviewStore.getState();
+      preview.clearFrameFitPreview();
+      preview.clearStructuredDropPreview();
+      preview.clearNodeGeometryPreviews();
+      clearDragDecisions();
+      setSnapStructuredSuppressed(false);
+    },
+
+    cancelActiveNodeDrag: (preserveNodeIds = []) => {
+      resumeHeightCommits('node-drag');
       if (_dragPreviewRafId !== null) {
         cancelAnimationFrame(_dragPreviewRafId);
         _dragPreviewRafId = null;
@@ -3112,21 +3147,14 @@ const useCanvasStore = create<RFState>()(
       _dragStartPositions = null;
       if (startPositions) {
         get()._setStateNoAutosave({
-          nodes: get().nodes.map((node) => {
-            const start = startPositions.get(node.id);
-            return start
-              ? {
-                  ...node,
-                  position: { x: start.x, y: start.y },
-                  dragging: false,
-                }
-              : node;
-          }),
+          nodes: restoreNodeDragPositions(get().nodes, startPositions, preserveNodeIds),
         });
       }
 
       endSnapSession();
-      canvasHistoryManager.rollbackGestureSnapshot();
+      // Native teardown and the host's teardown can both request cancellation.
+      // Only the first call owns this gesture's provisional history entry.
+      if (startPositions !== null) canvasHistoryManager.rollbackGestureSnapshot();
       set({
         canUndo: canvasHistoryManager.canUndo,
         canRedo: canvasHistoryManager.canRedo,
@@ -3134,6 +3162,7 @@ const useCanvasStore = create<RFState>()(
     },
 
     endActiveDragSession: () => {
+      if (_dragStartPositions !== null) get().cancelActiveNodeDrag();
       // Bridges the Canvas component's unmount cleanup into the snap
       // session's lifecycle. Without this, a component teardown
       // mid-drag (route change, canvas swap) would never trigger
@@ -3657,7 +3686,7 @@ const useCanvasStore = create<RFState>()(
     },
 
     frameSelectedNodes: (options) => {
-      get().dispatchUiIntent({ type: 'GROUP_SELECTION_INTO_FRAME', ...(options?.label ? { frameLabel: options.label } : {}), ...(options?.collectionId ? { collectionId: options.collectionId } : {}), ...(options?.collectionNodeId ? { collectionNodeId: options.collectionNodeId } : {}), ...(options?.geometryUpdates ? { geometryUpdates: options.geometryUpdates } : {}) });
+      get().dispatchUiIntent({ type: 'GROUP_SELECTION_INTO_FRAME', ...(options?.nodeIds === undefined ? {} : { nodeIds: options.nodeIds }), ...(options?.emptyBounds ? { emptyBounds: options.emptyBounds } : {}), ...(options?.label ? { frameLabel: options.label } : {}), ...(options?.collectionId ? { collectionId: options.collectionId } : {}), ...(options?.collectionNodeId ? { collectionNodeId: options.collectionNodeId } : {}), ...(options?.geometryUpdates ? { geometryUpdates: options.geometryUpdates } : {}) });
     },
 
     frameNodesInRect: (flowRect) => {
@@ -3738,6 +3767,16 @@ const useCanvasStore = create<RFState>()(
       const next = !get().edgesVisible;
       writeEdgesVisibleToStorage(next);
       set({ edgesVisible: next });
+    },
+
+    placeNodesInFrame: (items, frameId) => {
+      const state = get();
+      if (!state.canvasId) return false;
+      const commands = planNodeFramePlacement({ nodes: state.nodes, edges: state.edges, canvasId: state.canvasId, source: 'ui' }, items, frameId);
+      if (!commands) return false;
+      state.beginGesture('SET_NODE_GEOMETRY');
+      state.executeCommands(commands);
+      return items.every((item) => get().nodes.find((node) => node.id === item.nodeId)?.parentId === frameId);
     },
 
     moveNodeIntoFrame: (nodeId, frameId, reorderTarget) => {

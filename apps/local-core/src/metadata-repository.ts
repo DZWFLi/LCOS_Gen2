@@ -238,6 +238,48 @@ export interface ConfirmContinuationCoreBindResult {
   readonly connectedConversation: ConnectedConversationV1
 }
 
+export type CurationMutationPlan = {
+    readonly projectId: string
+    readonly textCreates?: readonly {
+      readonly fileRecord: FileRecord
+      readonly artifact: Artifact
+      readonly revision: ArtifactRevision
+      readonly view: ArtifactView
+      readonly workspaceId?: WorkspaceId
+    }[]
+    readonly relationUpserts?: readonly Relation[]
+    readonly relationDeletes?: readonly string[]
+    readonly presentation?: {
+      readonly value: PresentationViewV0
+      readonly expectedVersion: number
+    }
+    readonly workspaceMembershipAdds?: readonly { readonly workspaceId: WorkspaceId; readonly viewId: ArtifactViewId; readonly addedBy: 'user' | 'agent' | 'run' | 'import'; readonly addedAt: string }[]
+    readonly workspaceMembershipRemoves?: readonly { readonly workspaceId: WorkspaceId; readonly viewId: ArtifactViewId }[]
+    readonly workspaceEntityMembershipAdds?: readonly { readonly workspaceId: WorkspaceId; readonly entityType: WorkspaceEntityMembership['entityType']; readonly entityId: string; readonly addedBy: WorkspaceMembershipSource; readonly addedAt: string }[]
+    readonly workspaceEntityMembershipRemoves?: readonly { readonly workspaceId: WorkspaceId; readonly entityType: WorkspaceEntityMembership['entityType']; readonly entityId: string }[]
+    /** F6A2：Spatial Marker 意图增删（与 changeSet 同事务）。 */
+    readonly spatialMarkerAdds?: readonly SpatialMarkerIntentV0[]
+    readonly spatialMarkerDeletes?: readonly string[]
+    /** A25-6: Color Pin identity + membership changes share the same semantic ChangeSet transaction. */
+    readonly colorPinDefinitionAdds?: readonly ColorPinDefinitionV0[]
+    readonly colorPinDefinitionDeletes?: readonly string[]
+    readonly colorPinMembershipAdds?: readonly ColorPinMembershipV0[]
+    readonly colorPinMembershipDeletes?: readonly string[]
+    readonly collectionMembershipAdds?: readonly CollectionMembership[]
+    readonly collectionMembershipDeletes?: readonly CollectionMembership[]
+    readonly collectionAdds?: readonly Collection[]
+    readonly collectionDeletes?: readonly string[]
+    readonly artifactViewDeletes?: readonly ArtifactViewId[]
+    readonly noteDeletes?: readonly NoteId[]
+    readonly artifactArchiveStates?: readonly {
+      readonly artifactId: string
+      readonly archivedAt?: string
+      readonly updatedAt: string
+    }[]
+    readonly changeSet?: MutationChangeSetV1
+    readonly receipt?: CurationPatchReceiptV0
+  }
+
 export class SqliteMetadataRepository {
   readonly databasePath: string
   readonly #database: DatabaseSync
@@ -2027,6 +2069,8 @@ export class SqliteMetadataRepository {
       scopes,
       collections: this.listCollections(String(project.id)),
       collectionMemberships: this.listCollectionMemberships(String(project.id)),
+      workspaceMemberships: this.listProjectWorkspaceMemberships(project.id),
+      workspaceEntityMemberships: this.listProjectWorkspaceEntityMemberships(project.id),
       workspaces,
       artifacts,
       fileRecords,
@@ -2492,6 +2536,33 @@ export class SqliteMetadataRepository {
     return rows.length ? this.#workspace(rows[0] as Row) : undefined
   }
 
+  /** Raw Railway row used for lossless V0 preview and explicit V1 migration. */
+  getRailwayOrderRecord(projectId: string): { orderedRefs: unknown; version: number; updatedAt: string } | undefined {
+    const row = this.#database.prepare('SELECT * FROM project_view_rail_order WHERE project_id = ?').get(projectId as SQLInputValue) as Row | undefined
+    if (!row) return undefined
+    let orderedRefs: unknown
+    try { orderedRefs = JSON.parse(String(row.ordered_refs)) } catch { orderedRefs = String(row.ordered_refs) }
+    return { orderedRefs, version: Number(row.version), updatedAt: String(row.updated_at) }
+  }
+
+  /** One row, one CAS. Validation runs after acquiring the SQLite write lock. */
+  saveRailwayOrderRecord(projectId: string, orderedRefs: unknown, expectedVersion: number, validate?: () => void): { version: number; updatedAt: string } {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new Error('Invalid Railway order version.')
+    this.#database.exec('BEGIN IMMEDIATE;')
+    try {
+      const current = this.getRailwayOrderRecord(projectId)
+      if ((current?.version ?? 0) !== expectedVersion) throw new Error('目的地顺序已被修改，请重新读取。')
+      validate?.()
+      const version = expectedVersion + 1
+      const updatedAt = new Date().toISOString()
+      this.#database.prepare(`INSERT INTO project_view_rail_order (project_id, ordered_refs, version, updated_at)
+        VALUES (?, ?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET ordered_refs=excluded.ordered_refs, version=excluded.version, updated_at=excluded.updated_at`)
+        .run(projectId as SQLInputValue, JSON.stringify(orderedRefs), version, updatedAt)
+      this.#database.exec('COMMIT;')
+      return { version, updatedAt }
+    } catch (error) { this.#database.exec('ROLLBACK;'); throw error }
+  }
+
   getProjectViewRailOrder(projectId: string): ProjectViewRailOrderV0 | undefined {
     const row = this.#database.prepare('SELECT * FROM project_view_rail_order WHERE project_id = ?').get(projectId as SQLInputValue) as Row | undefined
     if (row === undefined) return undefined
@@ -2522,6 +2593,8 @@ export class SqliteMetadataRepository {
     const now = new Date().toISOString()
     this.#database.exec('BEGIN')
     try {
+      const rawOrder = this.getRailwayOrderRecord(projectId)?.orderedRefs
+      if (rawOrder && !Array.isArray(rawOrder)) throw new Error('Railway uses canonical references; update this client before changing its order.')
       const current = this.#database.prepare('SELECT version FROM project_view_rail_order WHERE project_id = ?').get(projectId as SQLInputValue) as Row | undefined
       const currentVersion = current === undefined ? 0 : Number(current.version ?? 0)
       if (currentVersion !== expectedVersion) {
@@ -2614,16 +2687,28 @@ export class SqliteMetadataRepository {
     readonly previousRevision: ArtifactRevision
     readonly newFileRecord: FileRecord
     readonly newRevision: ArtifactRevision
+    readonly binding?: ProjectionBindingRecord
   }): ArtifactRevision {
-    const current = this.getArtifact(String(input.artifact.id))?.currentRevisionId
-    if (current === undefined || String(current) !== String(input.previousRevision.id)) {
-      throw new Error('Managed text commit requires the current revision as base.')
-    }
     if (input.newRevision.status !== 'current' || input.newRevision.source !== 'external') {
       throw new Error('Managed text revision must be external source with current status.')
     }
     this.#database.exec('BEGIN IMMEDIATE;')
     try {
+      const current = this.getArtifact(String(input.artifact.id))
+      if (!current || current.archivedAt !== undefined || String(current.projectId) !== String(input.artifact.projectId)
+        || String(current.currentRevisionId) !== String(input.previousRevision.id)) {
+        throw new Error('Managed text commit requires the current revision as base.')
+      }
+      if (input.binding !== undefined) {
+        const expected = input.binding
+        const matches = this.getProjectionBindings(expected.projectId).filter((item) => item.canvasId === expected.canvasId
+          && item.spatialKind === 'node' && item.spatialId === expected.spatialId)
+        if (matches.length !== 1 || matches[0]!.entityType !== 'artifact' || matches[0]!.entityId !== String(current.id)
+          || expected.entityId !== String(current.id) || expected.projectId !== String(current.projectId)
+          || this.getWorkspaces(expected.projectId).filter((site) => site.canvasId === expected.canvasId).length !== 1) {
+          throw new Error('Canvas text binding changed before commit.')
+        }
+      }
       this.#upsertFileRecord(input.newFileRecord)
       this.#database.prepare('UPDATE artifact_revisions SET status = ? WHERE id = ?').run('superseded', input.previousRevision.id as SQLInputValue)
       this.#upsertArtifactRevision(input.newRevision)
@@ -2743,6 +2828,87 @@ export class SqliteMetadataRepository {
     `).run(value.projectId, value.canvasId, value.spatialKind, value.spatialId, value.entityType, value.entityId, new Date().toISOString())
   }
 
+  /** Bind a saved native Portal carrier without overwriting another tab's binding.
+   * The node itself and its geometry remain native; failure leaves it recoverable. */
+  claimWorkspacePortalBinding(projectId: string, workspaceId: string, canvasId: string, spatialId: string, expectedCanvasId: string): ProjectionBindingRecord {
+    this.#database.exec('BEGIN IMMEDIATE;')
+    try {
+      const workspaces = this.getWorkspaces(projectId)
+      const source = workspaces.filter((w) => w.canvasId === canvasId)
+      const target = workspaces.filter((w) => String(w.id) === workspaceId)
+      if (source.length !== 1 || target.length !== 1 || !expectedCanvasId || target[0]!.canvasId !== expectedCanvasId
+        || canvasId === expectedCanvasId || workspaces.filter((w) => w.canvasId === expectedCanvasId).length !== 1
+        || !['main','context','workflow'].includes(String(target[0]!.preferredSurface))) {
+        throw new Error('入口的来源或目标已变化，未确认绑定。')
+      }
+      const existing = this.findProjectionBinding(projectId,canvasId,'node','workspace',workspaceId)
+      if (existing && existing.spatialId !== spatialId) throw new Error('这个现场已有入口，请定位已有入口；不会覆盖它。')
+      const collision = this.getProjectionBindings(projectId).some((b) => b.canvasId === canvasId && b.spatialKind === 'node'
+        && b.spatialId === spatialId && (b.entityType !== 'workspace' || b.entityId !== workspaceId))
+      if (collision) throw new Error('该节点已绑定另一个对象，不能改作入口。')
+      const binding: ProjectionBindingRecord = {projectId,canvasId,spatialKind:'node',spatialId,entityType:'workspace',entityId:workspaceId}
+      if (!existing) this.upsertProjectionBinding(binding)
+      this.#database.exec('COMMIT;')
+      return existing ?? binding
+    } catch (error) { this.#database.exec('ROLLBACK;'); throw error }
+  }
+
+  /** Accept has already committed the slot's canonical materialization. Atomically
+   * change only the identity of its existing spatial carrier. Never clone a node
+   * or overwrite a pre-existing Artifact placement. A retry after a lost HTTP
+   * reply reads the same mapping. Geometry stays in Huabu. */
+  materializeResultSlotBinding(projectId: string, slotId: string, canvasId: string, spatialId: string): {
+    readonly status: 'promoted' | 'already-promoted' | 'existing-artifact'
+    readonly binding: ProjectionBindingRecord
+  } {
+    this.#database.exec('BEGIN IMMEDIATE;')
+    try {
+      const slot = this.getResultSlot(slotId)
+      if (slot?.projectId !== projectId || slot.status !== 'materialized' || !slot.artifactId || !slot.artifactViewId) {
+        throw new Error('Result slot is not materialized in this project.')
+      }
+      const artifact = this.getArtifact(slot.artifactId)
+      const view = this.getArtifactView(slot.artifactViewId)
+      if (!artifact || String(artifact.projectId) !== projectId || artifact.archivedAt !== undefined
+        || !view || String(view.artifactId) !== slot.artifactId
+        || !this.getScopes(projectId).some((scope) => String(scope.id) === String(view.scopeId))) {
+        throw new Error('Materialized Artifact/View is missing, archived, or belongs to another project.')
+      }
+      const workspace = this.getWorkspaces(projectId).find((candidate) => candidate.canvasId === canvasId)
+      if (workspace === undefined || (slot.workspaceId !== undefined ? slot.workspaceId !== String(workspace.id)
+        : workspace.preferredSurface !== 'main' || String(workspace.scopeId) !== slot.scopeId)) {
+        throw new Error('Result slot is not assigned to this worksite.')
+      }
+      const collision = this.getProjectionBindings(projectId).some((binding) => binding.canvasId === canvasId
+        && binding.spatialKind === 'node' && binding.spatialId === spatialId
+        && !(binding.entityType === 'result-slot' && binding.entityId === slotId)
+        && !(binding.entityType === 'artifact' && binding.entityId === slot.artifactId))
+      if (collision) throw new Error('The spatial carrier is already bound to another object.')
+      const source = this.findProjectionBinding(projectId, canvasId, 'node', 'result-slot', slotId)
+      const target = this.findProjectionBinding(projectId, canvasId, 'node', 'artifact', slot.artifactId)
+      if (!source && target?.spatialId === spatialId) {
+        this.#database.exec('COMMIT;')
+        return { status: 'already-promoted', binding: target }
+      }
+      if (source?.spatialId !== spatialId) throw new Error('Result slot projection changed; reread its current binding.')
+      if (target && target.spatialId !== spatialId) {
+        // Revising an Artifact already on this canvas keeps its authoritative node.
+        // The slot stays a read-only receipt/reference cue, not a second Artifact.
+        this.#database.exec('COMMIT;')
+        return { status: 'existing-artifact', binding: target }
+      }
+      const binding: ProjectionBindingRecord = { projectId, canvasId, spatialKind: 'node', spatialId,
+        entityType: 'artifact', entityId: slot.artifactId }
+      this.deleteProjectionBinding(projectId, canvasId, 'node', 'result-slot', slotId)
+      this.upsertProjectionBinding(binding)
+      this.#database.exec('COMMIT;')
+      return { status: 'promoted', binding }
+    } catch (error) {
+      this.#database.exec('ROLLBACK;')
+      throw error
+    }
+  }
+
   deleteProjectionBinding(projectId: string, canvasId: string, spatialKind: string, entityType: string, entityId: string): void {
     this.#database.prepare(
       'DELETE FROM projection_bindings WHERE project_id = ? AND canvas_id = ? AND spatial_kind = ? AND entity_type = ? AND entity_id = ?',
@@ -2803,49 +2969,10 @@ export class SqliteMetadataRepository {
    * HU-1: Curation composite mutation —— text(DB 部分) + relations + presentation CAS + change set + receipt 一个事务。
    * 调用方负责：事务前写 staged 文件，事务成功后 rename；事务失败清理 staged。
    */
-  runCurationMutation(plan: {
-    readonly projectId: string
-    readonly textCreates?: readonly {
-      readonly fileRecord: FileRecord
-      readonly artifact: Artifact
-      readonly revision: ArtifactRevision
-      readonly view: ArtifactView
-      readonly workspaceId?: WorkspaceId
-    }[]
-    readonly relationUpserts?: readonly Relation[]
-    readonly relationDeletes?: readonly string[]
-    readonly presentation?: {
-      readonly value: PresentationViewV0
-      readonly expectedVersion: number
-    }
-    readonly workspaceMembershipAdds?: readonly { readonly workspaceId: WorkspaceId; readonly viewId: ArtifactViewId; readonly addedBy: 'user' | 'agent' | 'run' | 'import'; readonly addedAt: string }[]
-    readonly workspaceMembershipRemoves?: readonly { readonly workspaceId: WorkspaceId; readonly viewId: ArtifactViewId }[]
-    readonly workspaceEntityMembershipAdds?: readonly { readonly workspaceId: WorkspaceId; readonly entityType: WorkspaceEntityMembership['entityType']; readonly entityId: string; readonly addedBy: WorkspaceMembershipSource; readonly addedAt: string }[]
-    readonly workspaceEntityMembershipRemoves?: readonly { readonly workspaceId: WorkspaceId; readonly entityType: WorkspaceEntityMembership['entityType']; readonly entityId: string }[]
-    /** F6A2：Spatial Marker 意图增删（与 changeSet 同事务）。 */
-    readonly spatialMarkerAdds?: readonly SpatialMarkerIntentV0[]
-    readonly spatialMarkerDeletes?: readonly string[]
-    /** A25-6: Color Pin identity + membership changes share the same semantic ChangeSet transaction. */
-    readonly colorPinDefinitionAdds?: readonly ColorPinDefinitionV0[]
-    readonly colorPinDefinitionDeletes?: readonly string[]
-    readonly colorPinMembershipAdds?: readonly ColorPinMembershipV0[]
-    readonly colorPinMembershipDeletes?: readonly string[]
-    readonly collectionMembershipAdds?: readonly CollectionMembership[]
-    readonly collectionMembershipDeletes?: readonly CollectionMembership[]
-    readonly collectionAdds?: readonly Collection[]
-    readonly collectionDeletes?: readonly string[]
-    readonly artifactViewDeletes?: readonly ArtifactViewId[]
-    readonly noteDeletes?: readonly NoteId[]
-    readonly artifactArchiveStates?: readonly {
-      readonly artifactId: string
-      readonly archivedAt?: string
-      readonly updatedAt: string
-    }[]
-    readonly changeSet?: MutationChangeSetV1
-    readonly receipt?: CurationPatchReceiptV0
-  }): { readonly presentationUpdated: boolean } {
+  runCurationMutation(input: CurationMutationPlan | (() => CurationMutationPlan)): { readonly presentationUpdated: boolean } {
     this.#database.exec('BEGIN IMMEDIATE;')
     try {
+      const plan = typeof input === 'function' ? input() : input
       for (const text of plan.textCreates ?? []) {
         if (String(text.fileRecord.projectId) !== String(text.artifact.projectId)
           || String(text.revision.artifactId) !== String(text.artifact.id)
@@ -3805,6 +3932,53 @@ export class SqliteMetadataRepository {
     }
   }
 
+  /** One-click collect has identity + initial membership in one ChangeSet.
+   * Undo/redo validates and writes that same unit under one SQLite transaction;
+   * later rename, membership changes or another collection's use are preserved. */
+  transitionCollectionCreation(id: string, direction: 'undo' | 'redo'): boolean {
+    this.#database.exec('BEGIN IMMEDIATE')
+    try {
+      const changeSet = this.getMutationChangeSet(id)
+      const creation = changeSet?.changes.find((change) => change.type === 'collection_identity_add')
+      if (!changeSet || !creation || creation.type !== 'collection_identity_add'
+        || changeSet.status !== (direction === 'undo' ? 'applied' : 'reverted')
+        || changeSet.changes.some((change) => change !== creation && change.type !== 'collection_membership_add')) {
+        this.#database.exec('ROLLBACK'); return false
+      }
+      const collection = creation.collection
+      const memberships = changeSet.changes.flatMap((change) => change.type === 'collection_membership_add' ? [change.membership] : [])
+      if (memberships.some((member) => String(member.collectionId) !== String(collection.id))) {
+        this.#database.exec('ROLLBACK'); return false
+      }
+      const current = this.getCollection(String(collection.id))
+      const incoming = this.listCollectionMemberships(changeSet.projectId).some((member) => member.memberRef.type === 'collection' && member.memberRef.id === String(collection.id))
+      const existing = this.listCollectionMemberships(changeSet.projectId, String(collection.id))
+      if (direction === 'undo') {
+        if (!current || String(current.projectId) !== changeSet.projectId || current.title !== collection.title || current.updatedAt !== collection.updatedAt || incoming
+          || existing.length !== memberships.length || memberships.some((expected) => !existing.some((member) =>
+            member.relationId === expected.relationId && member.memberRef.type === expected.memberRef.type && member.memberRef.id === expected.memberRef.id))) {
+          this.#database.exec('ROLLBACK'); return false
+        }
+        this.#database.prepare('DELETE FROM collection_memberships WHERE collection_id = ? AND project_id = ?').run(collection.id, changeSet.projectId)
+        this.#database.prepare('DELETE FROM collections WHERE id = ? AND project_id = ?').run(collection.id, changeSet.projectId)
+        if (!this.markChangeSetReverted(id, new Date().toISOString())) throw new Error('Collection undo changed concurrently.')
+      } else {
+        if (current || incoming || existing.length) { this.#database.exec('ROLLBACK'); return false }
+        for (const member of memberships) {
+          const compatible = member.memberRef.type === 'scope' ? " AND kind NOT IN ('collection','workflow')" : ''
+          const found = this.#database.prepare(`SELECT id FROM ${this.#collectionMemberTable(member.memberRef.type)} WHERE id = ? AND project_id = ?${compatible}`).get(member.memberRef.id, changeSet.projectId)
+          if (!found) { this.#database.exec('ROLLBACK'); return false }
+        }
+        this.#insertCollection(collection)
+        for (const member of memberships) this.#database.prepare('INSERT INTO collection_memberships (id, project_id, collection_id, member_type, member_id, added_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(member.relationId, changeSet.projectId, collection.id, member.memberRef.type, member.memberRef.id, member.addedAt)
+        if (!this.markChangeSetApplied(id)) throw new Error('Collection redo changed concurrently.')
+      }
+      this.#database.exec('COMMIT')
+      return true
+    } catch (error) { this.#database.exec('ROLLBACK'); throw error }
+  }
+
   markChangeSetReverted(id: string, revertedAt: string): boolean {
     const result = this.#database.prepare(
       'UPDATE mutation_change_sets SET status = ?, reverted_at = ? WHERE id = ? AND status = ?',
@@ -4409,6 +4583,7 @@ export class SqliteMetadataRepository {
     revision: ArtifactRevision,
     view: ArtifactView,
     workspaceId?: WorkspaceId,
+    binding?: ProjectionBindingRecord,
   ): void {
     if (String(fileRecord.projectId) !== String(artifact.projectId)
       || String(revision.artifactId) !== String(artifact.id)
@@ -4424,6 +4599,15 @@ export class SqliteMetadataRepository {
     }
     this.#database.exec('BEGIN IMMEDIATE;')
     try {
+      if (binding !== undefined) {
+        const sites = this.getWorkspaces(String(artifact.projectId)).filter((site) => site.canvasId === binding.canvasId)
+        if (binding.projectId !== String(artifact.projectId) || binding.entityType !== 'artifact'
+          || binding.entityId !== String(artifact.id) || binding.spatialKind !== 'node' || !binding.spatialId.trim()
+          || sites.length !== 1 || String(sites[0]!.id) !== String(workspaceId)
+          || String(sites[0]!.scopeId) !== String(view.scopeId)) throw new Error('Canvas text destination changed.')
+        if (this.getProjectionBindings(binding.projectId).some((item) => item.canvasId === binding.canvasId
+          && item.spatialKind === 'node' && item.spatialId === binding.spatialId)) throw new Error('Canvas text node is already bound.')
+      }
       this.#upsertFileRecord(fileRecord)
       this.#upsertArtifact(artifact)
       this.#upsertArtifactRevision(revision)
@@ -4437,6 +4621,7 @@ export class SqliteMetadataRepository {
           VALUES (?, ?, ?, ?, ?)
         `).run(workspaceId as SQLInputValue, view.id as SQLInputValue, new Date().toISOString(), 'user', Number(row.next_order))
       }
+      if (binding !== undefined) this.upsertProjectionBinding(binding)
       this.#database.exec('COMMIT;')
     } catch (error: unknown) {
       this.#database.exec('ROLLBACK;')
@@ -4669,11 +4854,27 @@ export class SqliteMetadataRepository {
     }
   }
 
-  createRunWithDispatch(run: Run, dispatch: RuntimeDispatch): void {
+  createRunWithDispatch(run: Run, dispatch: RuntimeDispatch, resultSlotId?: string): void {
     if (String(dispatch.runId) !== String(run.id)) throw new Error('RuntimeDispatch must belong to the Run.')
     if (dispatch.idempotencyKey !== String(run.id)) throw new Error('RuntimeDispatch idempotencyKey must equal runId.')
     this.#database.exec('BEGIN IMMEDIATE;')
     try {
+      // The reservation and Run are one transaction. Reject stale/foreign slots
+      // before creating a Run; two concurrent submissions cannot claim one slot.
+      if (resultSlotId !== undefined) {
+        const slot = this.getResultSlot(resultSlotId)
+        if (slot === undefined || slot.projectId !== String(run.projectId)) throw new Error('Result slot does not belong to this project.')
+        if (slot.status !== 'empty' || slot.runId !== undefined) throw new RuntimeLifecycleConflictError('Result slot is already claimed.')
+        if (slot.workspaceId !== undefined) {
+          const workspace = this.getWorkspace(slot.workspaceId)
+          if (slot.workspaceId !== String(run.workspaceId ?? '') || String(workspace?.projectId ?? '') !== slot.projectId
+            || String(workspace?.scopeId ?? '') !== slot.scopeId) throw new Error('Result slot belongs to another worksite or scope.')
+        }
+        if (slot.workspaceId === undefined && run.workspaceId !== undefined) {
+          const workspace = this.getWorkspace(String(run.workspaceId))
+          if (workspace?.preferredSurface !== 'main' || String(workspace.scopeId) !== slot.scopeId) throw new Error('Unscoped result slot belongs to the Main worksite.')
+        }
+      }
       this.#database.prepare(`
         INSERT INTO runs (
           id, project_id, workspace_id, target_artifact_id, target_revision_id,
@@ -4721,6 +4922,10 @@ export class SqliteMetadataRepository {
         dispatch.createdAt,
         dispatch.updatedAt,
       )
+      if (resultSlotId !== undefined) {
+        this.#database.prepare('UPDATE runs SET result_slot_id = ? WHERE id = ?').run(resultSlotId, String(run.id))
+        this.#database.prepare("UPDATE result_slots SET status = 'running', run_id = ?, updated_at = ? WHERE id = ?").run(String(run.id), run.createdAt, resultSlotId)
+      }
       this.#database.exec('COMMIT;')
     } catch (error: unknown) {
       this.#database.exec('ROLLBACK;')
@@ -4731,6 +4936,32 @@ export class SqliteMetadataRepository {
   getRun(runId: RunId): Run | undefined {
     const row = this.#database.prepare('SELECT * FROM runs WHERE id = ?').get(runId as SQLInputValue) as Row | undefined
     return row === undefined ? undefined : this.#runFromRow(row)
+  }
+
+  /** Canvas reconciliation needs the entire identity set, not the latest 20/100
+   * detail rows. Keep this projection small and read review/recipe on demand. */
+  getProjectExecutionProjection(projectId: string): import('@local-creative-os/contracts').ProjectExecutionProjection {
+    if (this.getProject(projectId) === undefined) throw new Error('Project not found.')
+    const rows = this.#database.prepare(`
+      SELECT r.id, r.project_id, r.workspace_id, substr(r.instruction, 1, 120) AS title,
+             r.status, r.result_slot_id, r.created_at, r.updated_at,
+             (SELECT count(*) FROM artifact_returns a WHERE a.run_id = r.id AND a.status = 'pending_review') AS pending_count,
+             (SELECT json_group_array(a.target_artifact_id) FROM artifact_returns a WHERE a.run_id = r.id AND a.status = 'pending_review') AS pending_artifacts
+      FROM runs r WHERE r.project_id = ? ORDER BY r.created_at, r.id
+    `).all(projectId) as Row[]
+    return {
+      projectId,
+      runs: rows.map((row) => ({
+        id: String(row.id), projectId: String(row.project_id),
+        ...(row.workspace_id ? { workspaceId: String(row.workspace_id) } : {}),
+        title: String(row.title ?? '').split(/\r?\n/, 1)[0]?.trim() || '未命名任务',
+        status: String(row.status) as Run['status'], pendingReturnCount: Number(row.pending_count),
+        pendingArtifactIds: JSON.parse(String(row.pending_artifacts ?? '[]')) as string[],
+        ...(row.result_slot_id ? { resultSlotId: String(row.result_slot_id) } : {}),
+        createdAt: String(row.created_at), updatedAt: String(row.updated_at),
+      })),
+      resultSlots: this.listResultSlots(projectId),
+    }
   }
 
   getProjectRuns(projectId: ProjectId, limit = 20): readonly Run[] {
@@ -5507,6 +5738,7 @@ export class SqliteMetadataRepository {
           currentRevision: this.getArtifactRevision(String(draftRevision.id))!,
           run: this.getRun(run.id)!,
         }
+        this.#materializeAcceptedSlot(result.run, result.artifactReturn, result.currentRevision, updatedAt)
         this.#database.exec('COMMIT;')
         return result
       }
@@ -5551,12 +5783,58 @@ export class SqliteMetadataRepository {
         previousRevision: this.getArtifactRevision(String(previousRevision.id))!,
         run: this.getRun(run.id)!,
       }
+      this.#materializeAcceptedSlot(result.run, result.artifactReturn, result.currentRevision, updatedAt)
       this.#database.exec('COMMIT;')
       return result
     } catch (error: unknown) {
       this.#database.exec('ROLLBACK;')
       throw error
     }
+  }
+
+  /** Runs inside the existing accept transaction. The accepted revision and its
+   * reserved result must survive a crash together. Existing historical views
+   * are never repointed; a missing accepted view uses the slot's stable id. */
+  #materializeAcceptedSlot(run: Run, artifactReturn: ArtifactReturn, revision: ArtifactRevision, updatedAt: string): void {
+    const slotId = this.getRunResultSlotId(String(run.id))
+    if (slotId === undefined) return
+    const slot = this.getResultSlot(slotId)
+    if (slot === undefined || slot.projectId !== String(run.projectId) || slot.runId !== String(run.id)) {
+      throw new RuntimeLifecycleConflictError('Run result-slot identity has changed.')
+    }
+    // One slot is one accepted output. Further results keep their own identities.
+    if (slot.status === 'materialized') return
+    const views = this.getArtifactViews(String(artifactReturn.targetArtifactId))
+    const exact = views.filter((view) => String(view.revisionId) === String(revision.id) && String(view.scopeId) === slot.scopeId)
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)))[0]
+    const viewId = exact?.id ?? `view-result-slot:${slotId}` as ArtifactViewId
+    if (exact === undefined) {
+      const existing = this.getArtifactView(String(viewId))
+      if (existing !== undefined) throw new RuntimeLifecycleConflictError('Accepted result view identity is already in use.')
+      this.#upsertArtifactView({ id: viewId, artifactId: artifactReturn.targetArtifactId, scopeId: slot.scopeId as ScopeId,
+        revisionId: revision.id, referenceKind: 'explicit_additional', position: slot.position,
+        size: slot.size ?? { width: 248, height: 180 }, displayMode: 'card', collapsed: false })
+    }
+    const candidates = this.getWorkspaces(slot.projectId).filter((workspace) => String(workspace.scopeId) === slot.scopeId
+      && (slot.workspaceId !== undefined ? String(workspace.id) === slot.workspaceId : workspace.preferredSurface === 'main'))
+    // A missing canvas is not a missing worksite. Preserve the selected result
+    // revision for the first opening as well as for an already visible slot.
+    const workspace = candidates.length === 1 ? candidates[0] : undefined
+    if (workspace !== undefined) {
+      const artifactBinding = workspace.canvasId === undefined ? undefined
+        : this.findProjectionBinding(slot.projectId, workspace.canvasId, 'node', 'artifact', String(artifactReturn.targetArtifactId))
+      const slotBinding = workspace.canvasId === undefined ? undefined
+        : this.findProjectionBinding(slot.projectId, workspace.canvasId, 'node', 'result-slot', slotId)
+      if (artifactBinding === undefined || artifactBinding.spatialId === slotBinding?.spatialId) {
+        // Existing material elsewhere keeps its own presentation. Only a new
+        // materialized carrier adopts the exact accepted revision.
+        const oldViewIds = new Set(views.map((view) => String(view.id)))
+        const focused = [...workspace.focusedViewIds.filter((id) => !oldViewIds.has(String(id))), viewId]
+        this.#database.prepare('UPDATE workspaces SET focused_node_ids = ? WHERE id = ?').run(JSON.stringify(focused), String(workspace.id))
+      }
+    }
+    this.#database.prepare("UPDATE result_slots SET status = 'materialized', artifact_id = ?, artifact_view_id = ?, updated_at = ? WHERE id = ?")
+      .run(String(artifactReturn.targetArtifactId), String(viewId), updatedAt, slotId)
   }
 
   rejectArtifactReturn(returnId: ArtifactReturnId, updatedAt: string): RejectArtifactReturnResult {

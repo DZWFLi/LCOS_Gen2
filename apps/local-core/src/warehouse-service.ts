@@ -17,6 +17,7 @@ import type {
   WarehouseQueryV1,
   WarehouseSnapshotV1,
 } from '@local-creative-os/contracts'
+import { warehouseMatchesMaterialV1 } from '@local-creative-os/contracts'
 import type { Artifact } from '@local-creative-os/domain'
 import type { SqliteMetadataRepository } from './metadata-repository.js'
 
@@ -97,13 +98,20 @@ export class WarehouseService {
         const updatedAt = (artifact as { readonly updatedAt?: string }).updatedAt
         if (needle !== '' && !title.toLocaleLowerCase('en-US').includes(needle)) continue
         const views = this.repository.getArtifactViews(String(artifact.id))
-        const viewId = views[0]?.id
+        // Prefer a current view, then primary, then stable ID. The rendered
+        // bytes and reference must describe the same view, even if all are historical.
+        const view = [...views].sort((left, right) =>
+          Number(right.revisionId === artifact.currentRevisionId) - Number(left.revisionId === artifact.currentRevisionId)
+          || Number(right.referenceKind === 'primary') - Number(left.referenceKind === 'primary')
+          || String(left.id).localeCompare(String(right.id)))[0]
+        const viewId = view?.id
         const usageCount = views.reduce((sum, view) => sum + (usageByView.get(String(view.id)) ?? 0), 0)
         const neighbor = neighborsByEntity.get(String(artifact.id))
         const birthRunId = this.repository.getArtifactBirthRunId(String(artifact.id))
         // P0-C：canonical mimeType（current revision 的 FileRecord）+ descriptor（resource 源信息）。
         let mimeType: string | undefined
-        const currentRevision = artifact.currentRevisionId === undefined ? undefined : this.repository.getArtifactRevision(String(artifact.currentRevisionId))
+        const selectedRevisionId = view?.revisionId ?? artifact.currentRevisionId
+        const currentRevision = selectedRevisionId === undefined ? undefined : this.repository.getArtifactRevision(String(selectedRevisionId))
         if (currentRevision !== undefined) {
           const fileRecord = this.repository.getFileRecord(String(currentRevision.fileRecordId))
           mimeType = fileRecord?.mimeType
@@ -122,6 +130,7 @@ export class WarehouseService {
           entityRef: { type: 'artifact', id: String(artifact.id), ...(viewId === undefined ? {} : { viewId: String(viewId) }) },
           kind: 'artifact',
           title,
+          ...(currentRevision === undefined ? {} : { presentedRevisionId: String(currentRevision.id) }),
           ...(updatedAt === undefined ? {} : { updatedAt }),
           usageCount,
           visualFamily: visual.family,
@@ -181,10 +190,30 @@ export class WarehouseService {
       }
     }
 
-    // ---- B6 P0-B：聚合物种（context/workflow/collection ← scopes；scene ← workspaces）。----
-    if (kinds.has('context') || kinds.has('workflow') || kinds.has('collection')) {
+    // Canonical Collections are not legacy collection-Scopes. List the same
+    // identities that creation/membership commands own, before query pagination.
+    if (kinds.has('collection')) {
+      for (const collection of this.repository.listCollections(projectId)) {
+        if (needle !== '' && !collection.title.toLocaleLowerCase('en-US').includes(needle)) continue
+        const neighbor = neighborsByEntity.get(String(collection.id))
+        items.push({
+          schemaVersion: 1,
+          entityRef: { type: 'collection', id: String(collection.id) },
+          kind: 'collection', title: collection.title, updatedAt: collection.updatedAt,
+          usageCount: 0,
+          ...(neighbor === undefined ? {} : { relationHint: {
+            neighborCount: neighbor.count,
+            topKinds: [...neighbor.kinds.entries()].sort((a,b) => b[1]-a[1]).slice(0,3).map(([kind]) => kind),
+          } }),
+        })
+      }
+    }
+
+    // Context/Workflow still use their existing scope read models. Legacy
+    // collection-Scopes remain stored but must not impersonate canonical Collections.
+    if (kinds.has('context') || kinds.has('workflow')) {
       for (const scope of this.repository.getScopes(projectId)) {
-        if (scope.kind !== 'context' && scope.kind !== 'workflow' && scope.kind !== 'collection') continue
+        if (scope.kind !== 'context' && scope.kind !== 'workflow') continue
         if (!kinds.has(scope.kind)) continue
         if (needle !== '' && !scope.name.toLocaleLowerCase('en-US').includes(needle)) continue
         const neighbor = neighborsByEntity.get(String(scope.id))
@@ -228,10 +257,15 @@ export class WarehouseService {
 
     // 排序：updatedAt 降序（缺省排最后）+ id 稳定序。
     items.sort((left, right) => {
+      if (query.sort === 'name') {
+        const titleOrder = left.title.localeCompare(right.title, 'zh-CN', { numeric: true })
+        if (titleOrder !== 0) return titleOrder
+      }
+      if (query.sort === 'usage' && left.usageCount !== right.usageCount) return right.usageCount - left.usageCount
       const leftTime = left.updatedAt ?? ''
       const rightTime = right.updatedAt ?? ''
       if (leftTime !== rightTime) return leftTime < rightTime ? 1 : -1
-      return left.entityRef.id < right.entityRef.id ? -1 : 1
+      return `${left.kind}:${left.entityRef.id}`.localeCompare(`${right.kind}:${right.entityRef.id}`)
     })
 
     // provenance 过滤（排序后过滤不影响稳定性）。
@@ -253,6 +287,7 @@ export class WarehouseService {
       resultItems = resultItems.filter((item) => item.kind !== 'artifact' || item.usedHere === true)
     }
 
+    resultItems = resultItems.filter((item) => warehouseMatchesMaterialV1(item, query.materialFilter))
     const totalApprox = resultItems.length
     const page = resultItems.slice(offset, offset + limit)
     return {

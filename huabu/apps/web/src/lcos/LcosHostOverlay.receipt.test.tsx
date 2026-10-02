@@ -41,24 +41,24 @@ describe('production Host → real CoreAssemblyClient HTTP contract → Drop fee
       [item(0, 'applied', 'presentation-membership'), item(1, 'failed', 'error'), item(2, 'skipped', 'unsupported')],
       [item(1, 'applied', 'workspace-membership')],
     ]);
-    expect(container!.querySelector('[data-lcos-drop-receipt]')?.getAttribute('data-status')).toBe('partial');
-    expect(container!.textContent).toContain('部分完成'); expect(container!.textContent).toContain('源暂不可用');
-    expect(container!.querySelectorAll('li')).toHaveLength(3);
-    const retry = [...container!.querySelectorAll('button')].find((button) => button.textContent?.includes('只重试失败项'))!;
+    expect(document.body.querySelector('[data-lcos-drop-receipt]')?.getAttribute('data-status')).toBe('partial');
+    expect(document.body.textContent).toContain('部分完成'); expect(document.body.textContent).toContain('源暂不可用');
+    expect(document.body.querySelectorAll('li')).toHaveLength(3);
+    const retry = [...document.body.querySelectorAll('button')].find((button) => button.textContent?.includes('只重试失败项'))!;
     expect(retry).toBeTruthy();
     await act(async () => { retry.click(); retry.click(); });
     expect(requests).toHaveLength(2);
     expect(requests[1]).toMatchObject({ sourceRefs: [refs[1]], targetRef: intent.targetRef, placementBySource: { b: { x: 17, y: 41 } } });
     expect(requests[1]!.placementBySource).not.toHaveProperty('view-a');
-    expect(container!.querySelectorAll('li')).toHaveLength(3);
-    expect(container!.textContent).toContain('2 项已加入'); expect(container!.textContent).toContain('不支持');
-    expect(container!.textContent).not.toContain('只重试失败项');
+    expect(document.body.querySelectorAll('li')).toHaveLength(3);
+    expect(document.body.textContent).toContain('2 项已加入'); expect(document.body.textContent).toContain('不支持');
+    expect(document.body.textContent).not.toContain('只重试失败项');
   });
   it('all failed never closes as success and repeated transaction callbacks do not overwrite new gestures', async () => {
     const requests = await mountWith([refs.map((_, index) => item(index, 'failed', 'error'))]);
     expect(requests).toHaveLength(1);
-    expect(container!.querySelector('[data-lcos-drop-receipt]')?.getAttribute('data-status')).toBe('failed');
-    expect(container!.textContent).not.toContain('投放完成');
+    expect(document.body.querySelector('[data-lcos-drop-receipt]')?.getAttribute('data-status')).toBe('failed');
+    expect(document.body.textContent).not.toContain('投放完成');
     const oldReceipt = useLcosDropStore.getState().feedback!.receipt;
     act(() => { useLcosDropStore.getState().begin({ kind: 'object', entityType: 'note', entityId: 'new' }); useLcosDropStore.getState().settle(oldReceipt); });
     expect(useLcosDropStore.getState().state.status).toBe('tracking'); expect(useLcosDropStore.getState().feedback).toBeNull();
@@ -68,11 +68,11 @@ describe('production Host → real CoreAssemblyClient HTTP contract → Drop fee
     await act(async () => { useLcosShellStore.getState().setProject('project-two'); });
     expect(requests).toHaveLength(1);
     expect(useLcosDropStore.getState().state.status).toBe('idle');
-    expect(container!.querySelector('[data-lcos-drop-receipt]')).toBeNull();
+    expect(document.body.querySelector('[data-lcos-drop-receipt]')).toBeNull();
   });
   it('all already-member offers no replay and says there was no new apply', async () => {
     await mountWith([refs.map((_, index) => item(index, 'skipped', 'already-member'))]);
-    expect(container!.textContent).toContain('已在目标中'); expect(container!.textContent).not.toContain('只重试失败项');
+    expect(document.body.textContent).toContain('已在目标中'); expect(document.body.textContent).not.toContain('只重试失败项');
     expect(useLcosDropStore.getState().state.status).toBe('idle');
   });
 });
@@ -100,7 +100,7 @@ describe('T3 durable Glyth body vs temporary Composer references', () => {
     expect(useLcosShellStore.getState().composerPrompt).toBe('另一处尚未发送的草稿');
     expect(useLcosShellStore.getState().composerOpen).toBe(false);
     expect(useLcosDropStore.getState().feedback?.receipt.status).toBe(expected);
-    expect(container?.textContent).toContain(message);
+    expect(document.body.textContent).toContain(message);
   });
 
   it('routes a resolved Portal destination through Assembly workspace membership and names the Portal receipt', async () => {
@@ -115,7 +115,7 @@ describe('T3 durable Glyth body vs temporary Composer references', () => {
       useLcosDropStore.getState().registerTarget(portalTarget);
     });
     expect(requests).toEqual([{ schemaVersion: 1, projectId: 'project-one', sourceRefs: [refs[0]], targetRef: { kind: 'workspace', id: 'workspace-a' } }]);
-    expect(container?.textContent).toContain('入口 · 资料现场');
-    expect(container?.textContent).toContain('投放完成');
+    expect(document.body.textContent).toContain('入口 · 资料现场');
+    expect(document.body.textContent).toContain('投放完成');
   });
 });

@@ -36,6 +36,8 @@ export interface LcosGeometryPresentationSource extends VisualFamilySource {
 const HOST_BY_FAMILY: Readonly<
   Partial<Record<LcosVisualFamily, LcosNodeHostPresentation>>
 > = {
+  run: { surface: 'transparent', showAiBadge: false, allowOverflow: true },
+  output: { surface: 'transparent', showAiBadge: false, allowOverflow: true },
   text: { surface: 'transparent', showAiBadge: false, allowOverflow: true },
   document: { surface: 'paper', showAiBadge: false, allowOverflow: true },
   image: { surface: 'media', showAiBadge: false, allowOverflow: true },
@@ -46,6 +48,7 @@ const HOST_BY_FAMILY: Readonly<
 const GEOMETRY_BY_FAMILY: Readonly<
   Partial<Record<LcosVisualFamily, LcosInitialGeometryPreset>>
 > = {
+  run: { width: 156, height: 112, figmaNodeId: '5388:24131' },
   text: { width: 385, height: 142, figmaNodeId: '5388:102' },
   document: { width: 206, height: 154, figmaNodeId: '5388:106' },
   image: { width: 410, height: 273, figmaNodeId: '5388:98' },
@@ -64,7 +67,7 @@ export function resolveLcosInitialGeometryPreset(
   source: LcosGeometryPresentationSource,
 ): LcosInitialGeometryPreset | undefined {
   if (source.entityType === 'collection') {
-    return { width: 248, height: 244, figmaNodeId: '5333:96' };
+    return { width: 250, height: 146, figmaNodeId: 'GEN1-collection' };
   }
   const family = resolveVisualFamily(source);
   if (family === 'image' && source.displayMode === 'thumbnail') {

@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-import { MoveRight, Trash2 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { MoreHorizontal, MoveRight, Trash2 } from 'lucide-react';
+import { useCallback, useMemo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -10,6 +10,7 @@ import {
   ACCENT_PICKER_OPTIONS_WITH_TRANSPARENT,
 } from '@huabu/shared';
 import {
+  type AlignDirection,
   DEFAULT_EDGE_STROKE_TOKEN,
   getSelectionBounds,
   getNodeSize,
@@ -46,6 +47,12 @@ interface GeometryToolbarItem {
  * multi-selection bounding box when two or more nodes are selected.
  */
 export interface MultiSelectToolbarProps {
+  readonly suppressed?: boolean;
+  readonly contextMenuRequest?: number;
+  readonly onAlign?: ((direction: AlignDirection) => void) | undefined;
+  readonly onSpread?: (() => void) | undefined;
+  readonly onTidy?: () => void;
+  readonly onDistribute?: ((axis: 'x'|'y') => void) | undefined;
   readonly deleteDisabledReason?: string;
   readonly moveDisabledReason?: string;
   readonly selectionAction?: ReactNode;
@@ -53,8 +60,11 @@ export interface MultiSelectToolbarProps {
   readonly presentation?: 'huabu' | 'lcos';
 }
 
-export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, selectionAction, presentation = 'huabu' }: MultiSelectToolbarProps = {}) => {
+export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, selectionAction, presentation = 'huabu', suppressed = false, contextMenuRequest = 0, onAlign, onSpread, onTidy, onDistribute }: MultiSelectToolbarProps = {}) => {
   const { t } = useTranslation();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => { if (contextMenuRequest) setDetailsOpen(true); }, [contextMenuRequest]);
+  useEffect(() => { if (suppressed) setDetailsOpen(false); }, [suppressed]);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
   const alignSelectedNodes = useCanvasStore((s) => s.alignSelectedNodes);
@@ -208,24 +218,7 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
     };
   }, [selectedNodes, nodes]);
 
-  return (
-    <CanvasFloatingPopover
-      anchor={anchor}
-      open={selectedNodes.length >= 2}
-      offset={12}
-      side="top"
-      className={presentation === 'lcos' ? `${FLOATING_TOOLBAR_CLASS} lcos-fallback-command-surface` : FLOATING_TOOLBAR_CLASS}
-    >
-      {/* Align & distribute — collapsed into a single popover trigger
-          to keep the multi-select toolbar compact. Houses the 6 align
-          actions in a 3×2 grid plus the Spread Apart action. */}
-      <FloatingToolbar.AlignPicker
-        onAlign={(direction) => alignSelectedNodes(direction)}
-        onSpread={() => spreadSelectedNodes()}
-      />
-
-      {selectionAction}
-
+  const detailControls = <>
       <FloatingToolbar.Divider />
 
       {/* Size editor: set width / height of every selected node. */}
@@ -359,7 +352,7 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
       )}
 
       {/* Non-mouse only: mouse users have keyboard Delete / Backspace. */}
-      {isNotMouse && (
+      {(isNotMouse || presentation==='lcos') && (
         <>
           <FloatingToolbar.Divider />
           <FloatingToolbar.ActionButton
@@ -375,6 +368,34 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
           </FloatingToolbar.ActionButton>
         </>
       )}
+  </>;
+
+  return (
+    <CanvasFloatingPopover
+      anchor={anchor}
+      open={selectedNodes.length >= 2 && !suppressed}
+      offset={12}
+      side="top"
+      className={presentation === 'lcos' ? `${FLOATING_TOOLBAR_CLASS} lcos-fallback-command-surface` : FLOATING_TOOLBAR_CLASS}
+    >
+      {/* Align & distribute — collapsed into a single popover trigger
+          to keep the multi-select toolbar compact. Houses the 6 align
+          actions in a 3×2 grid plus the Spread Apart action. */}
+      <FloatingToolbar.AlignPicker
+        onAlign={onAlign ?? ((direction) => alignSelectedNodes(direction))}
+        onSpread={onSpread ?? (() => spreadSelectedNodes())}
+        onTidy={onTidy} onDistribute={onDistribute}
+      />
+
+      {selectionAction}
+      {presentation === 'lcos' ? (
+        <FloatingToolbar.Popover label="所选对象的更多操作" trigger={<MoreHorizontal size={17} />}
+          triggerData={{ 'data-lcos-selection-more': true }}
+          open={detailsOpen} onOpenChange={setDetailsOpen} placement="bottom-end"
+          triggerClassName="lcos-selection-more" className="lcos-selection-details">
+          {detailControls}
+        </FloatingToolbar.Popover>
+      ) : detailControls}
     </CanvasFloatingPopover>
   );
 };

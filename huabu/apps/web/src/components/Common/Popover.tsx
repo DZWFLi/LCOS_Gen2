@@ -203,10 +203,11 @@ export const Popover: FC<PopoverProps> = ({
     const maxX = bounds.right - panelRect.width - viewportMargin;
     const maxY = bounds.bottom - panelRect.height - viewportMargin;
 
-    setClamped({
+    const next = {
       x: Math.max(minX, Math.min(rawX, maxX)),
       y: Math.max(minY, Math.min(rawY, maxY)),
-    });
+    };
+    setClamped((current) => current?.x === next.x && current.y === next.y ? current : next);
   }, [position.x, position.y, ox, oy, viewportMargin, boundary, anchor]);
 
   useLayoutEffect(() => {
@@ -295,14 +296,18 @@ export const Popover: FC<PopoverProps> = ({
 
   const contextValue = useMemo(() => contentElement, [contentElement]);
 
+  // Keep this callback stable: an inline ref detaches/reattaches on each render,
+  // and its setState can recursively remount a nested or resized popover.
+  const captureContent = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    setContentElement(node);
+    assignRef(contentRef, node);
+  }, [contentRef]);
+
   const panel = (
     <PopoverContainerContext.Provider value={contextValue}>
       <div
-        ref={(node) => {
-          containerRef.current = node;
-          setContentElement(node);
-          assignRef(contentRef, node);
-        }}
+        ref={captureContent}
         {...FLOATING_CHROME_PROPS}
         className={cn(
           'border-edge-default bg-surface fixed rounded-md border shadow-lg',

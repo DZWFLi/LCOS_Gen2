@@ -51,6 +51,8 @@ export interface WarehouseItemV1 {
   readonly kind: WarehouseEntityKindV1
   readonly title: string
   readonly updatedAt?: string
+  /** Revision of entityRef.viewId, used by on-demand preview and Reader. */
+  readonly presentedRevisionId?: string
   /** 预览引用（走既有 preview 通道；无则省略）。 */
   readonly previewRef?: string
   /** provenance 摘要（出生来源一行话；GUI 直建 = 省略）。 */
@@ -68,9 +70,29 @@ export interface WarehouseItemV1 {
   readonly aspectRatio?: number
 }
 
-/** Warehouse 查询参数（P0-B2）：recent/type/source/search/usedHere 四轴 + 分页。 */
+/** Existing Source Bay material controls; read filters, not new entity identities. */
+export type WarehouseMaterialFilterV1 = 'all' | 'image' | 'text' | 'media' | 'collection'
+export type WarehouseSortV1 = 'updated' | 'name' | 'usage'
+
+/** Filter the whole read model before slicing a page. Never infer type from a title. */
+export function warehouseMatchesMaterialV1(
+  item: Pick<WarehouseItemV1, 'kind' | 'visualFamily'>,
+  filter: WarehouseMaterialFilterV1 = 'all',
+): boolean {
+  if (filter === 'all') return true
+  if (filter === 'collection') return ['collection', 'context', 'workflow', 'scene'].includes(item.kind)
+  if (['collection', 'context', 'workflow', 'scene', 'conversation'].includes(item.kind)) return false
+  if (filter === 'text' && item.kind === 'note') return true
+  if (filter === 'image') return item.visualFamily === 'image'
+  if (filter === 'media') return item.visualFamily === 'audio' || item.visualFamily === 'video'
+  return filter === 'text' && ['markdown', 'pdf', 'ppt'].includes(item.visualFamily ?? '')
+}
+
+/** Warehouse 查询参数（P0-B2）：来源 / 材料类型 / 排序 / 搜索 + 分页。 */
 export interface WarehouseQueryV1 {
   readonly search?: string
+  readonly materialFilter?: WarehouseMaterialFilterV1
+  readonly sort?: WarehouseSortV1
   readonly kinds?: readonly WarehouseEntityKindV1[]
   readonly provenanceOrigin?: 'run-return' | 'import' | 'capture' | 'unknown'
   readonly usedHereTarget?: { readonly kind: 'workspace' | 'scope' | 'conversation'; readonly id: string }

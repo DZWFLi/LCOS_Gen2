@@ -9,6 +9,9 @@ import { useNavigate } from 'react-router-dom';
 
 import useCanvasStore from '@/store/canvasStore';
 
+import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
+import { resolvePortalAddress } from '../navigation/portalIdentity';
 import { LcosGlobalHud } from './LcosGlobalHud';
 import { LcosProjectSystemMenu } from './LcosProjectSystemMenu';
 import { useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
@@ -21,7 +24,6 @@ import { beginChildWorksiteNavigation } from '../navigation/childWorksiteNavigat
 import { returnToSourceWorksite } from '../navigation/returnToSourceWorksite';
 import { useAvoidingHudPosition } from '../navigation/useAvoidingHudPosition';
 import { useHudViewport } from '../navigation/useHudViewport';
-import { childSurfaceForItem } from '../navigation/workspaceTargets';
 import { LcosColorPinProvider } from '../pin/LcosColorPinProvider';
 import { ProfessionalWindowStage } from '../professional/ProfessionalWindowStage';
 import { ContextWorksite } from '../surfaces/context/ContextWorksite';
@@ -82,7 +84,6 @@ export function LcosProjectShell({
   const setActiveWorkspaceId = useLcosShellStore(
     (s) => s.setActiveWorkspaceId,
   );
-  const activeWorkspaceId = useLcosShellStore((s) => s.activeWorkspaceId);
   const childReturn = useLcosShellStore((s) => s.childReturn);
   const setProject = useLcosShellStore((s) => s.setProject);
   const openAssembly = useLcosShellStore((s) => s.openAssembly);
@@ -92,36 +93,38 @@ export function LcosProjectShell({
   const retargetWorksiteAssembly = useLcosShellStore((s) => s.retargetWorksiteAssembly);
   const [returning, setReturning] = useState(false);
   const [returnError, setReturnError] = useState<string | undefined>(undefined);
-  const watchArtifactChanges = useCollaborationSessionStore((s) => s.watchArtifactChanges);
+  const watchArtifactChanges = useCollaborationSessionStore((s) => s.watchProjectChanges);
 
   useEffect(() => watchArtifactChanges(projectId, () => {
     useLcosHostStore.getState().host?.notifyMutationSuccess();
   }), [projectId, watchArtifactChanges]);
 
-  const resolvePortalTarget = (canvasId: string): PortalTargetResolution | undefined => {
-    const workspace = workspaces.find((candidate) => candidate.canvasId === canvasId);
-    if (workspace === undefined) return undefined;
-    const targetSurface = childSurfaceForItem({ kind: 'scene' }, workspace);
-    return targetSurface === undefined
-      ? undefined
-      : { canvasId, workspaceId: String(workspace.id), targetSurface };
+  const coreSession = useMemo(() => createLcosCoreSession(), []);
+  const portalRootNavigation = useLcosWorksiteNav({projectId,canvasBySurface,ensureCanvas});
+  const resolvePortalTarget = (canvasId: string, workspaceId?: string, sourceNodeId?: string): PortalTargetResolution | undefined => {
+    const resolved = resolvePortalAddress(projectId,toPortalDropWorkspaces(workspaces),canvasId,workspaceId);
+    return resolved ? {...resolved,...(sourceNodeId ? {sourceNodeId} : {})} : undefined;
   };
 
-  const openPortalTarget = (target: PortalTargetResolution): void => {
-    const workspace = workspaces.find(
-      (candidate) => String(candidate.id) === target.workspaceId && candidate.canvasId === target.canvasId,
-    );
-    if (workspace === undefined) return;
-    const resolvedSurface = childSurfaceForItem({ kind: 'scene' }, workspace);
-    if (resolvedSurface !== target.targetSurface) return;
-    beginChildWorksiteNavigation({
-      projectId,
-      sourceSurface: surface,
-      ...(activeWorkspaceId === null ? {} : { sourceWorkspaceId: activeWorkspaceId }),
-      sourceWasChild: childWorkspaceId !== undefined,
-      targetSurface: target.targetSurface,
-      targetWorkspace: workspace,
-      navigate,
+  const openPortalTarget = async (target: PortalTargetResolution, signal?: AbortSignal): Promise<boolean> => {
+    const source = useCanvasStore.getState().canvasId;
+    const shell = useLcosShellStore.getState();
+    if (shell.projectId !== projectId || signal?.aborted) return false;
+    const current = await coreSession.railway.portalTarget(projectId,target.workspaceId,signal);
+    if (signal?.aborted || useLcosShellStore.getState().projectId !== projectId || useCanvasStore.getState().canvasId !== source) return false;
+    if (!current.available || current.ref.kind !== 'worksite' || current.ref.worksiteId !== target.workspaceId
+      || current.ref.projectId !== projectId || current.canvasId !== target.canvasId || current.surface !== target.targetSurface)
+      throw new Error(current.reason ?? '原入口的目标已变化，请重新读取；不会跳转到别的现场。');
+    if (current.canvasId === source) return true;
+    if (canvasBySurface[target.targetSurface] === target.canvasId)
+      return portalRootNavigation.switchWorksite(target.targetSurface);
+    return beginChildWorksiteNavigation({
+      projectId,sourceSurface:shell.activeSurface,
+      ...(shell.activeWorkspaceId === null ? {} : {sourceWorkspaceId:shell.activeWorkspaceId}),
+      sourceWasChild:childWorkspaceId !== undefined,targetSurface:target.targetSurface,
+      targetWorkspace:{id:target.workspaceId as import('@local-creative-os/domain').Workspace['id'],canvasId:target.canvasId},
+      ...(target.sourceNodeId && useCanvasStore.getState().nodes.some((n) => n.id === target.sourceNodeId) ? {sourceNodeId:target.sourceNodeId} : {}),
+      navigate,signal,
     });
   };
 
@@ -143,7 +146,8 @@ export function LcosProjectShell({
   useEffect(() => {
     document.title = (projectName ?? '创意工作台') + ' · LCOS';
   }, [projectName]);
-  const assemblyWorkspaceId = childWorkspaceId ?? [...surfaceByWorkspace.entries()].find(([, mapped]) => mapped === surface)?.[0];
+  const rootWorkspaces = workspaces.filter((workspace) => workspace.canvasId === canvasBySurface[surface]);
+  const assemblyWorkspaceId = childWorkspaceId ?? (rootWorkspaces.length === 1 ? String(rootWorkspaces[0]!.id) : undefined);
   const worksiteTarget = useMemo<AssemblyTargetRefV1 | undefined>(() => surface === 'main' && childWorkspaceId === undefined
     ? { kind: 'main' } : assemblyWorkspaceId ? { kind: 'workspace', id: assemblyWorkspaceId } : undefined, [surface, childWorkspaceId, assemblyWorkspaceId]);
   const assemblyTitle = '装配 · ' + ({ main: '主画布', context: '上下文', workflow: '工作流' }[surface]);
@@ -158,11 +162,10 @@ export function LcosProjectShell({
   }, [projectId, surface, setProject, setActiveSurface]);
 
   useEffect(() => {
-    const workspaceId = childWorkspaceId ?? [...surfaceByWorkspace.entries()].find(
-      ([, mappedSurface]) => mappedSurface === activeSurface,
-    )?.[0];
+    const candidates = workspaces.filter((workspace) => workspace.canvasId === canvasBySurface[activeSurface]);
+    const workspaceId = childWorkspaceId ?? (candidates.length === 1 ? String(candidates[0]!.id) : undefined);
     setActiveWorkspaceId(workspaceId ?? null);
-  }, [activeSurface, childWorkspaceId, setActiveWorkspaceId, surfaceByWorkspace]);
+  }, [activeSurface, childWorkspaceId, setActiveWorkspaceId, workspaces, canvasBySurface]);
 
   const returnToSource = (): void => {
     if (returning) return;
@@ -191,7 +194,7 @@ export function LcosProjectShell({
       ) : (
         <LcosColorPinProvider projectId={projectId}>
           {/* 工作现场舞台（唯一 Canvas）；Main/Context/Workflow 各自壳（空态/仪器差异） */}
-          <PortalDropWorkspaceProvider workspaces={toPortalDropWorkspaces(workspaces)} mainCanvasId={effectiveCanvasBySurface.main}>
+          <PortalDropWorkspaceProvider projectId={projectId} workspaces={toPortalDropWorkspaces(workspaces)} mainCanvasId={effectiveCanvasBySurface.main}>
           <div className="absolute inset-0">
             {childUnavailable ? (
               <ChildWorkspaceUnavailable

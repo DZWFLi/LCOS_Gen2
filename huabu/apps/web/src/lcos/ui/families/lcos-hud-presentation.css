@@ -156,6 +156,7 @@
   background: transparent;
 }
 [data-lcos-railway-item] {
+  position: relative;
   appearance: none;
   display: grid;
   place-items: center;
@@ -202,6 +203,23 @@
   height: 36px;
   flex: none;
 }
+[data-lcos-railway-entry][data-lcos-receive-state] { transition: transform 180ms cubic-bezier(.22,1,.36,1), opacity 140ms ease; }
+[data-lcos-railway-entry][data-lcos-railway-reorder-position='before']::before,
+[data-lcos-railway-entry][data-lcos-railway-reorder-position='after']::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--lcos-pin-violet,#7165dc);
+  box-shadow: 0 0 8px color-mix(in srgb,var(--lcos-pin-violet,#7165dc) 28%,transparent);
+  pointer-events: none;
+}
+[data-lcos-railway-entry][data-lcos-railway-reorder-position='before']::before { top: -4px; }
+[data-lcos-railway-entry][data-lcos-railway-reorder-position='after']::after { bottom: -4px; }
+[data-lcos-family='railway'] { transition: height 180ms cubic-bezier(.22,1,.36,1); }
+[data-lcos-railway-receive-map] { width: min(300px,72vw); }
 [data-lcos-railway-peek],
 [data-lcos-railway-more] {
   position: absolute;

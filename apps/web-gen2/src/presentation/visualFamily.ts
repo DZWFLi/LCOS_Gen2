@@ -36,6 +36,7 @@ export interface VisualFamilySource {
   readonly sourceKind?: string;
   readonly sourceRunId?: string;
   readonly managed?: boolean;
+  readonly revisionStatus?: 'draft' | 'current' | 'superseded';
 }
 
 function normMime(mime?: string): string {
@@ -50,7 +51,8 @@ export function resolveVisualFamily(source: VisualFamilySource): LcosVisualFamil
   if (source.entityType === 'conversation') return 'conversation';
   if (source.entityType === 'skill') return 'skill';
   if (source.entityType === 'run') return 'run';
-  if (source.sourceRunId && source.managed) return 'output';
+  if (source.entityType === 'result-slot') return 'output';
+  if (source.sourceRunId && source.managed && source.revisionStatus !== 'current' && source.revisionStatus !== 'superseded') return 'output';
 
   const mime = normMime(source.mimeType);
   const kind = source.artifactKind;

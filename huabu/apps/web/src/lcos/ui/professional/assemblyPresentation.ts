@@ -57,3 +57,21 @@ export function assemblyDate(value?: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? '' : date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 }
+
+/** Translate only known read-model enums; never infer approval or source from a filename. */
+export function assemblyResourceLabel(group: 'source' | 'status' | 'trust', value: string): string {
+  const labels: Readonly<Record<typeof group, Readonly<Record<string, string>>>> = {
+    source: { file: '文件', directory: '文件夹', archive: '压缩包', external: '外部文件', url: '网页链接' },
+    status: { pending: '待解析', ready: '已解析', partial: '部分解析', failed: '解析失败' },
+    trust: { untrusted: '未经审核', reviewed: '已审核', trusted: '已信任' },
+  };
+  return labels[group][value] ?? '未注明';
+}
+export function assemblyCaptureKindLabel(kind: string): string {
+  const labels: Readonly<Record<string, string>> = {
+    web_page: '网页', web_image: '网页图片', web_selection: '网页摘录', web_link: '网页链接',
+    local_file: '本地文件', screenshot: '截图', clipboard_image: '剪贴板图片', clipboard_text: '剪贴板文字',
+    conversation_snapshot: '会话记录', image: '图片', text: '文字', url: '链接', local_path: '本地文件',
+  };
+  return labels[kind] ?? '未命名收件';
+}

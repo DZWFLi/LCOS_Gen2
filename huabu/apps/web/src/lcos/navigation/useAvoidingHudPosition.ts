@@ -9,6 +9,7 @@ import { useLcosShellStore } from '../shell/lcosShellStore';
 export function useAvoidingHudPosition(preferred: { x: number; y: number; width: number; height: number }, align: { x?: 'start' | 'center'; y?: 'start' | 'center' | 'end' } = {}, avoidSelector?: string) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ width: number; height: number }>();
+  const measuredSize = useRef<{ width: number; height: number } | undefined>(undefined);
   const peerRects = useHudObstacleRects(avoidSelector, ref);
   const environment = useLcosShellStore((state) => state.windowEnvironment);
   const viewport = useHudViewport();
@@ -17,7 +18,13 @@ export function useAvoidingHudPosition(preferred: { x: number; y: number; width:
     if (!element) return;
     const measure = (): void => { const rect = element.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
-      setSize((current) => current?.width === rect.width && current.height === rect.height ? current : { width: rect.width, height: rect.height });
+      // A centered fixed HUD can report sub-pixel rounding noise after each
+      // placement. Ignore that noise rather than feeding it back into layout.
+      const width = Math.round(rect.width * 64) / 64;
+      const height = Math.round(rect.height * 64) / 64;
+      if (measuredSize.current?.width === width && measuredSize.current.height === height) return;
+      measuredSize.current = { width, height };
+      setSize(measuredSize.current);
     };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);

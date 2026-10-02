@@ -112,6 +112,18 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+        '@huabu/shared/canvas-engine': fileURLToPath(
+          new URL('../../packages/shared/src/canvas-engine/index.ts', import.meta.url),
+        ),
+        '@huabu/shared': fileURLToPath(
+          new URL('../../packages/shared/src/index.ts', import.meta.url),
+        ),
+        '@local-creative-os/domain': fileURLToPath(
+          new URL('../../../packages/domain/src/index.ts', import.meta.url),
+        ),
+        '@local-creative-os/contracts': fileURLToPath(
+          new URL('../../../packages/contracts/src/index.ts', import.meta.url),
+        ),
         // LCOS boundary — resolved to its TS source so Vite transpiles it.
         '@local-creative-os/web-gen2': fileURLToPath(
           new URL('../../../apps/web-gen2/src/index.ts', import.meta.url),

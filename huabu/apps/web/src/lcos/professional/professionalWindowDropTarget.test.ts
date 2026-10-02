@@ -10,15 +10,15 @@ const target = {
     { groupId: 'right-pane', rect: { x: 702.5, y: 100, width: 297.5, height: 500 } },
   ],
 };
-const onePane = { regionId: 'target', rect: { x: 400, y: 100, width: 600, height: 500 }, canSplit: true, groups: [{ groupId: 'only-pane', rect: { x: 400, y: 100, width: 600, height: 500 } }] };
+const onePane = { regionId: 'target', rect: { x: 400, y: 100, width: 900, height: 700 }, canSplit: true, groups: [{ groupId: 'only-pane', rect: { x: 400, y: 100, width: 900, height: 700 } }] };
 
 describe('professional window drop target', () => {
   it('uses the actual pointer pane and side to preview a split', () => {
     expect(resolveProfessionalWindowDropTarget({
       x: 415, y: 350, sourceRegionId: 'source', viewport, preferredDockWidth: 520, regions: [onePane],
-    })).toMatchObject({ kind: 'split', regionId: 'target', groupId: 'only-pane', direction: 'vertical', sourceFirst: true, rect: { x: 400, width: 300 } });
+    })).toMatchObject({ kind: 'split', regionId: 'target', groupId: 'only-pane', direction: 'vertical', sourceFirst: true, rect: { x: 400, width: 447.5 } });
     expect(resolveProfessionalWindowDropTarget({
-      x: 980, y: 350, sourceRegionId: 'source', viewport, preferredDockWidth: 520, regions: [onePane],
+      x: 1280, y: 350, sourceRegionId: 'source', viewport, preferredDockWidth: 520, regions: [onePane],
     })).toMatchObject({ kind: 'split', regionId: 'target', groupId: 'only-pane', direction: 'vertical', sourceFirst: false });
   });
 

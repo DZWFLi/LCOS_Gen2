@@ -10,6 +10,8 @@
 import { CoreCollaborationClient } from '@local-creative-os/web-gen2';
 import { create } from 'zustand';
 
+import { SessionRefreshQueue } from './sessionRefreshQueue';
+
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 
 import type {
@@ -21,6 +23,7 @@ export interface CollaborationSessionEntry {
   readonly status: 'loading' | 'ready' | 'error';
   readonly projection?: CollaborationSessionProjectionV1;
   readonly timeline?: readonly CollaborationTimelineItemV1[];
+  readonly timelineStatus?: 'ready' | 'error';
 }
 
 const keyOf = (projectId: string, conversationId: string): string =>
@@ -65,22 +68,30 @@ export const useCollaborationSessionStore = create<CollaborationSessionState>((s
     });
   };
 
+  const queue = new SessionRefreshQueue();
+
   const refresh = async (projectId: string, conversationId: string): Promise<void> => {
+    if (!watchersByProject.get(projectId)?.has(conversationId)) return;
     const key = keyOf(projectId, conversationId);
     const collaboration = collaborationFor(projectId);
-    try {
-      const [projection, timeline] = await Promise.all([
-        collaboration.readSession(projectId, conversationId),
-        collaboration.readTimeline(projectId, conversationId, { limit: 50 }),
+    await queue.refresh(key, async (signal) => {
+      // A timeline failure must not erase otherwise valid identity/capabilities.
+      const [projection, timelineResult] = await Promise.all([
+        collaboration.readSession(projectId, conversationId, signal),
+        collaboration.readTimeline(projectId, conversationId, { limit: 50, signal })
+          .then((timeline) => ({ ok: true as const, timeline }), () => ({ ok: false as const })),
       ]);
-      if (projection === undefined) {
-        setEntry(key, { status: 'error' });
-        return;
+      if (projection?.projectId !== projectId || projection.conversationId !== conversationId) {
+        throw new Error('Conversation projection identity mismatch or missing.');
       }
-      setEntry(key, { status: 'ready', projection, timeline });
-    } catch {
-      setEntry(key, { status: 'error' });
-    }
+      return { projection, timelineResult };
+    }, ({ projection, timelineResult }) => {
+      const old = get().entries.get(key);
+      setEntry(key, { status: 'ready', projection,
+        timeline: timelineResult.ok ? timelineResult.timeline : old?.timeline,
+        timelineStatus: timelineResult.ok ? 'ready' : 'error',
+      });
+    }, () => setEntry(key, { status: 'error', timeline: get().entries.get(key)?.timeline, timelineStatus: 'error' }));
   };
 
   const ensureProjectSubscription = (projectId: string): void => {
@@ -129,7 +140,7 @@ export const useCollaborationSessionStore = create<CollaborationSessionState>((s
       const consumers = watchers.get(conversationId) ?? 0;
       watchers.set(conversationId, consumers + 1);
       if (consumers > 0) return;
-      if (!get().entries.has(key)) setEntry(key, { status: 'loading' });
+      setEntry(key, { status: 'loading' });
       ensureProjectSubscription(projectId);
       void get().refresh(projectId, conversationId);
     },
@@ -144,6 +155,9 @@ export const useCollaborationSessionStore = create<CollaborationSessionState>((s
         return;
       }
       watchers.delete(conversationId);
+      const key = keyOf(projectId, conversationId);
+      queue.release(key);
+      set((state) => { const entries = new Map(state.entries); entries.delete(key); return { entries }; });
       if (watchers.size === 0) {
         watchersByProject.delete(projectId);
         releaseProjectSubscriptionIfUnused(projectId);

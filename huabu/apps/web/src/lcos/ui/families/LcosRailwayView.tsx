@@ -27,11 +27,13 @@ export interface LcosRailwayViewItem {
   readonly onDrop?: (event: DragEvent<HTMLButtonElement>) => void;
   readonly onDragEnd?: (event: DragEvent<HTMLButtonElement>) => void;
   readonly reorderDropTarget?: boolean;
+  readonly reorderDropPosition?: 'before' | 'after';
   /** Shared Semantic Drop projection for this exact live target. */
   readonly receivePresentation?: RailwayReceivePresentation;
   /** Opens the canonical destination peek while the pointer/focus is on this item. */
   readonly onPeekEnter?: () => void;
   readonly onPeekLeave?: () => void;
+  readonly onManage?: () => void;
   readonly peekOpen?: boolean;
   /** Peek content is supplied by the Railway container from its Core projection. */
   readonly peek?: ReactNode;
@@ -49,6 +51,8 @@ export interface LcosRailwayViewProps {
   readonly overflowCount?: number;
   readonly overflowOpen?: boolean;
   readonly onOverflowToggle?: () => void;
+  readonly onOverflowEnter?: () => void;
+  readonly onOverflowLeave?: () => void;
   readonly overflow?: ReactNode;
   /** Canonical active Receiver identity, kept outside the ordered destination island. */
   readonly receiver?: ReactNode;
@@ -63,6 +67,8 @@ export function LcosRailwayView({
   overflowCount = 0,
   overflowOpen = false,
   onOverflowToggle,
+  onOverflowEnter,
+  onOverflowLeave,
   overflow,
   receiver,
   footer,
@@ -93,6 +99,7 @@ export function LcosRailwayView({
               key={item.key}
               data-lcos-railway-entry={item.key}
               data-lcos-receive-state={item.receivePresentation}
+              data-lcos-railway-reorder-position={item.reorderDropTarget ? item.reorderDropPosition : undefined}
               onMouseEnter={item.onPeekEnter}
               onMouseLeave={item.onPeekLeave}
               onBlur={(event) => {
@@ -111,11 +118,12 @@ export function LcosRailwayView({
                 data-lcos-receive-state={item.receivePresentation}
                 data-lcos-variant={variant}
                 aria-current={item.selected ? 'page' : undefined}
-                disabled={item.disabled}
+                aria-disabled={item.disabled || undefined}
                 title={item.label}
                 aria-label={item.label}
                 onFocus={item.onPeekEnter}
-                onClick={() => onSelect?.(item.key)}
+                onContextMenu={(event) => { if (item.onManage) { event.preventDefault(); event.stopPropagation(); item.onManage(); } }}
+                onClick={() => { if (!item.disabled) onSelect?.(item.key); }}
                 onDragStart={item.onDragStart}
                 onDragOver={item.onDragOver}
                 onDrop={item.onDrop}
@@ -131,12 +139,14 @@ export function LcosRailwayView({
         })}
       </div>
       {overflowCount > 0 && (
-        <div data-lcos-railway-overflow-shell>
+        <div data-lcos-railway-overflow-shell onMouseEnter={onOverflowEnter} onMouseLeave={onOverflowLeave}>
           <button
             type="button"
             data-lcos-railway-overflow-trigger
-            aria-label={`显示其余 ${overflowCount} 个 Railway 目的地`}
+            aria-label={`显示其余 ${overflowCount} 个目的地`}
             aria-expanded={overflowOpen}
+            onFocus={onOverflowEnter}
+            onBlur={(event) => { const next=event.relatedTarget; if (!(next instanceof Node) || !event.currentTarget.parentElement?.contains(next)) onOverflowLeave?.(); }}
             onClick={onOverflowToggle}
           >
             +{overflowCount}

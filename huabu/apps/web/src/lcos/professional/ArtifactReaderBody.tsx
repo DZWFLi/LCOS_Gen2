@@ -1,3 +1,4 @@
+import { composerInputKey, restoredComposerCaret } from '../composer/composerInputJourney';
 // ArtifactReaderBody — 阅读器（R4 Reader direct manipulation residual）。
 //
 // 真实 Artifact read：getArtifactDetail + revisions；正文按 kind 诚实降级
@@ -15,7 +16,7 @@
 
 import { CoreArtifactClient, HttpError } from '@local-creative-os/web-gen2';
 import { Archive, ArchiveRestore, FileImage, FileText } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useLcosHostStore } from '../host/lcosHostState';
@@ -23,6 +24,7 @@ import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
+import { attachReaderScrollRestore } from './readerScrollRestore';
 import { ReaderContentView, readerArtifactKindLabel } from '../ui/professional/ReaderContentView';
 
 import type { LcosReaderPositionV1 } from '../shell/lcosShellStore';
@@ -36,6 +38,8 @@ export interface ArtifactReaderBodyProps {
   readonly revisionId?: string;
   /** Professional Stage 统一执行关闭 + 返回来源；body 不拥有窗口拓扑。 */
   readonly onReturnToSource?: () => void;
+  readonly composerOriginKey?: string;
+  readonly onReturnToComposer?: () => void;
 }
 
 /** Source Trace：citation 的身份锚（永远不是「无来源」文本）。 */
@@ -51,7 +55,7 @@ export function readerSourceTraceLabelV1(trace: ReaderSourceTraceV1): string {
 
 /** 引用块：身份 + 摘录同时存在；调用方把身份写进草稿引用，文本只是呈现。 */
 export function readerCitationBlockV1(trace: ReaderSourceTraceV1, excerpt: string): string {
-  return `〔来源 ${readerSourceTraceLabelV1(trace)} · ${trace.title}〕\n> ${excerpt.trim()}`;
+  return `〔来源 ${readerSourceTraceLabelV1(trace)} · ${trace.title}〕\n> ${excerpt.trim().replace(/\n/g, '\n> ')}`;
 }
 
 function revisionStatusLabel(status: string): string {
@@ -103,7 +107,7 @@ function nextLocateReqId(): string {
   return typeof uuid === 'function' ? uuid.call(globalThis.crypto) : `reader-locate-${Date.now()}`;
 }
 
-export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturnToSource }: ArtifactReaderBodyProps): React.JSX.Element {
+export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturnToSource, composerOriginKey, onReturnToComposer }: ArtifactReaderBodyProps): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const artifacts = useMemo(() => new CoreArtifactClient(session.http), [session]);
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'empty'>('loading');
@@ -123,11 +127,18 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const [readerZoom, setReaderZoom] = useState(100);
+  const [renderedContent, setRenderedContent] = useState<ReaderVisibleContent>(null);
+  const currentContent = useRef(content);
+  currentContent.current = content;
+  const scrollRestore = useRef<ReturnType<typeof attachReaderScrollRestore> | null>(null);
+  const contentReady = useCallback((value: NonNullable<ReaderVisibleContent>) => {
+    if (currentContent.current === value) setRenderedContent(value);
+  }, []);
 
   // 草稿引用镜像（只读）：draft 变化即重算数量。真值仍在 reference store。
   const draft = useLcosReferenceStore((s) => s.draft);
   void draft;
-  const draftCount = useLcosReferenceStore.getState().orderedNodeReferences().length;
+  const draftCount = useLcosReferenceStore((state) => state.draft.orderedEntityRefs.length);
 
   useEffect(() => {
     if (!artifactId) {
@@ -150,7 +161,7 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
       try {
         const value = await artifacts.getArtifactDetail(artifactId);
         if (cancelled || controller.signal.aborted) return;
-        if (String(value.artifact.projectId) !== String(projectId)) {
+        if (String(value.artifact.projectId) !== String(projectId) || String(value.artifact.id) !== artifactId) {
           throw new Error('材料不属于当前项目。');
         }
         setDetail(value);
@@ -199,13 +210,13 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
         if (detail.artifact.kind === 'markdown') {
           const text = await artifacts.getFileRecordText(projectRef, String(revision.fileRecordId), controller.signal);
           if (cancelled || controller.signal.aborted) return;
-          setContent({ kind: 'text', value: text });
+          setContent({ kind: 'text', value: text, viewKey: revisionPositionKey(projectId, artifactId, String(revision.id)) });
         } else if (detail.artifact.kind === 'image' || detail.artifact.kind === 'pdf' || detail.artifact.kind === 'other') {
           const blob = await artifacts.getFileRecordContent(projectRef, String(revision.fileRecordId), controller.signal);
           if (cancelled || controller.signal.aborted) return;
           if (blob.type.startsWith('text/')) {
             const text = await blob.text();
-            if (!cancelled && !controller.signal.aborted) setContent({ kind: 'text', value: text });
+            if (!cancelled && !controller.signal.aborted) setContent({ kind: 'text', value: text, mimeType: blob.type, viewKey: revisionPositionKey(projectId, artifactId, String(revision.id)) });
             return;
           }
           const mediaKind = blob.type.startsWith('audio/') ? 'audio'
@@ -237,22 +248,31 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
     if (content !== null && 'url' in content) URL.revokeObjectURL(content.url);
   }, [content]);
 
-  // 阅读位恢复：每个 artifact+revision 各记一份，不让版本切换互相覆盖位置/缩放。
+  // Version bytes and parsed DOM arrive at different times. Keep the existing
+  // position memory intact until the exact current body is ready and measurable.
   useEffect(() => {
     if (artifactId === undefined || loadedRevisionId === undefined) return;
-    const node = contentRef.current;
     const saved = readerPositionFor(revisionPositionKey(projectId, artifactId, loadedRevisionId));
     setReaderZoom(saved?.zoom ?? 100);
-    if (node !== null) node.scrollTop = saved?.scrollTop ?? 0;
-  }, [artifactId, loadedRevisionId, projectId, content]);
+  }, [artifactId, loadedRevisionId, projectId]);
+
+  useLayoutEffect(() => {
+    if (content?.kind !== 'text' || renderedContent !== content || !contentRef.current
+      || artifactId === undefined || loadedRevisionId === undefined) return;
+    const saved = readerPositionFor(revisionPositionKey(projectId, artifactId, loadedRevisionId));
+    const restore = attachReaderScrollRestore(contentRef.current, saved?.scrollTop ?? 0);
+    scrollRestore.current = restore;
+    return () => { restore.dispose(); if (scrollRestore.current === restore) scrollRestore.current = null; };
+  }, [artifactId, loadedRevisionId, projectId, content, renderedContent]);
 
   const rememberScroll = useCallback((event: React.UIEvent<HTMLDivElement>): void => {
-    if (artifactId === undefined || loadedRevisionId === undefined) return;
+    if (artifactId === undefined || loadedRevisionId === undefined || content === null
+      || content.kind === 'text' && renderedContent !== content || scrollRestore.current?.isPending()) return;
     writeReaderPosition(revisionPositionKey(projectId, artifactId, loadedRevisionId), {
       scrollTop: event.currentTarget.scrollTop,
       zoom: readerZoom,
     });
-  }, [artifactId, loadedRevisionId, projectId, readerZoom]);
+  }, [artifactId, loadedRevisionId, projectId, readerZoom, content, renderedContent]);
 
   // 重开续读的另一半：载入某一版只更新“最后阅读版本”，不覆盖该版已有位置。
   useEffect(() => {
@@ -261,6 +281,7 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
   }, [artifactId, loadedRevisionId, projectId]);
 
   const updateReaderZoom = useCallback((next: number): void => {
+    scrollRestore.current?.cancel();
     const normalized = Math.min(175, Math.max(75, Math.round(next / 5) * 5));
     setReaderZoom(normalized);
     if (artifactId === undefined || loadedRevisionId === undefined) return;
@@ -298,46 +319,61 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
       .finally(() => setCompareBusy(false));
   }, [artifacts, detail, loadedRevisionId, projectId]);
 
-  /** 加入 Composer / Assembly 引用：走既有草稿 owner（同一草稿引用即 Run 的 orderedReferences 来源）。 */
-  const addToDraft = useCallback((): void => {
-    if (detail === null) return;
-    useLcosReferenceStore.getState().addEntityToDraft({
-      entityType: 'artifact',
-      entityId: String(detail.artifact.id),
-      displayLabel: detail.artifact.title,
-    });
-    setNote('已加入草稿引用（Composer / Assembly 共用同一引用）');
-  }, [detail]);
+  const referenceReady = state === 'ready' && detail !== null
+    && String(detail.artifact.id) === artifactId && String(detail.artifact.projectId) === projectId
+    && !contentLoading && !contentError && loadedRevisionId !== undefined
+    && loadedRevisionId === String(revisionIdToLoad)
+    && detail.revisions.some((item) => String(item.id) === loadedRevisionId);
 
-  /** 摘录为引用：身份 + 摘录一起进草稿；绝不产生无来源引用。 */
+  const canUseCurrentDraft = useCallback((): boolean => {
+    const shell = useLcosShellStore.getState();
+    if (!referenceReady || shell.projectId !== projectId || useLcosReferenceStore.getState().projectId !== projectId) {
+      setNote('原版本尚未读取，未加入引用。'); return false;
+    }
+    if (composerOriginKey !== undefined && composerInputKey(shell.composerTarget) !== composerOriginKey) {
+      setNote('当前输入目标已改变，未把材料加入其他任务。请从当前输入重新打开。'); return false;
+    }
+    return true;
+  }, [referenceReady, projectId, composerOriginKey]);
+
+  /** The structured reference carries the exact same version as the visible Reader. */
+  const addToDraft = useCallback((): void => {
+    if (!detail || !loadedRevisionId || !canUseCurrentDraft()) return;
+    const admission = useLcosReferenceStore.getState().addEntitiesToDraft([{
+      entityType: 'artifact', entityId: String(detail.artifact.id), revisionId: loadedRevisionId,
+      displayLabel: detail.artifact.title,
+    }], useLcosShellStore.getState().composerTarget?.intent);
+    if (admission.reason) { setNote(admission.reason); return; }
+    setNote('已加入本次引用，保留正在阅读的版本；尚未发送。');
+  }, [detail, loadedRevisionId, canUseCurrentDraft]);
+
   const citeSelection = useCallback((): void => {
-    if (detail === null || loadedRevisionId === undefined) return;
+    if (!detail || !loadedRevisionId || !canUseCurrentDraft()) return;
     const selection = typeof window === 'undefined' ? null : window.getSelection();
     const container = contentRef.current;
-    const belongsToReader = selection !== null && selection.rangeCount > 0 && container !== null
+    const belongs = selection !== null && selection.rangeCount > 0 && container !== null
       && Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index))
         .every((range) => container.contains(range.startContainer) && container.contains(range.endContainer));
-    const excerpt = belongsToReader ? (selection?.toString().trim() ?? '') : '';
-    if (excerpt === '') {
-      setNote('先选中正文再摘录（未选中时不生成无来源引用）');
-      return;
-    }
-    const trace: ReaderSourceTraceV1 = {
-      artifactId: String(detail.artifact.id),
-      revisionId: loadedRevisionId,
-      title: detail.artifact.title,
-    };
-    useLcosReferenceStore.getState().addEntityToDraft({
-      entityType: 'artifact',
-      entityId: trace.artifactId,
-      displayLabel: trace.title,
-    });
+    const excerpt = belongs ? selection?.toString().trim() ?? '' : '';
+    if (!excerpt) { setNote('先选中正文再摘录，未生成无来源引用。'); return; }
+    const trace: ReaderSourceTraceV1 = { artifactId: String(detail.artifact.id), revisionId: loadedRevisionId, title: detail.artifact.title };
+    const admission = useLcosReferenceStore.getState().addEntitiesToDraft([{ entityType: 'artifact', entityId: trace.artifactId,
+      revisionId: trace.revisionId, displayLabel: trace.title }], useLcosShellStore.getState().composerTarget?.intent);
+    if (admission.reason) { setNote(admission.reason); return; }
     const shell = useLcosShellStore.getState();
-    const block = readerCitationBlockV1(trace, excerpt);
-    shell.setComposerPrompt(shell.composerPrompt.trim() === '' ? block : `${shell.composerPrompt}\n\n${block}`);
+    const key = composerInputKey(shell.composerTarget);
+    const caret = key ? restoredComposerCaret(shell.composerCaret, projectId, key, shell.composerPrompt)
+      : { start: shell.composerPrompt.length, end: shell.composerPrompt.length };
+    const prefix = shell.composerPrompt.slice(0, caret.start);
+    const suffix = shell.composerPrompt.slice(caret.end);
+    const insertion = `${prefix && !prefix.endsWith('\n') ? '\n\n' : ''}${readerCitationBlockV1(trace, excerpt)}${suffix ? '\n\n' : ''}`;
+    const next = prefix + insertion + suffix;
+    shell.setComposerPrompt(next);
+    if (key) shell.rememberComposerCaret({ projectId, targetKey: key, text: next,
+      start: prefix.length + insertion.length, end: prefix.length + insertion.length });
     setLastTrace(readerSourceTraceLabelV1(trace));
-    setNote('摘录已作为引用进入 Composer 草稿（带 Source Trace）');
-  }, [detail, loadedRevisionId]);
+    setNote('摘录与同版本材料已加入本次输入；尚未发送。');
+  }, [detail, loadedRevisionId, canUseCurrentDraft, projectId]);
 
   /** 回到来源：按 Core identity 在当前投影里解析节点，再走既有 locate owner（不用旧 rect）。 */
   const sourceReturn = useCallback((): void => {
@@ -523,6 +559,7 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
         fileName={fileName}
         contentRef={contentRef}
         onScroll={rememberScroll}
+        onContentReady={contentReady}
         zoom={readerZoom}
         loading={contentLoading}
         error={contentError}
@@ -531,10 +568,19 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
 
       {/* 正文动作与窗口分组操作各自保持原有语义，不把引用当成分组命令。 */}
       <div data-lcos-reader-actions className="flex flex-wrap items-center gap-2">
-        <button type="button" data-lcos-reader-to-draft onClick={addToDraft} className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>加入引用</button>
-        {(content?.kind === 'text' || content?.kind === 'pdf') && <button type="button" data-lcos-reader-cite onClick={citeSelection} className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>摘录为引用</button>}
+        <button type="button" data-lcos-reader-to-draft disabled={!referenceReady} onMouseDown={(event) => event.preventDefault()} onClick={addToDraft} className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>加入引用</button>
+        {(content?.kind === 'text' || content?.kind === 'pdf') && <button type="button" data-lcos-reader-cite disabled={!referenceReady} onMouseDown={(event) => event.preventDefault()} onClick={citeSelection} className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>摘录为引用</button>}
         {detail.revisions.length > 1 && currentRevisionId !== undefined && <button type="button" data-lcos-reader-compare-toggle onClick={runCompare} disabled={compareBusy} title={isHistorical ? '对比当前版本与所选历史版本' : '对比当前版本与上一版本'} className="rounded-full px-2.5 py-1 text-[11px] disabled:opacity-40" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>{compareBusy ? '正在对比…' : isHistorical ? '对比当前与所选版本' : '对比上一版与当前'}</button>}
         <button type="button" data-lcos-reader-source-return onClick={sourceReturn} className="rounded-full px-2.5 py-1 text-[11px]" style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>回到来源</button>
+        {onReturnToComposer && <button type="button" data-lcos-reader-input-return
+          onClick={() => {
+            const shell = useLcosShellStore.getState();
+            if (shell.projectId !== projectId || composerOriginKey !== undefined && composerInputKey(shell.composerTarget) !== composerOriginKey) {
+              setNote('原输入已改变，请从当前输入重新打开材料。'); return;
+            }
+            onReturnToComposer();
+          }} className="rounded-full px-2.5 py-1 text-[11px]"
+          style={{ background: lcosTokens.color.raised, color: lcosTokens.color.text }}>返回当前输入</button>}
         <span data-lcos-reader-draft-count={draftCount} className="text-[11px]" style={{ color: lcosTokens.color.muted }}>草稿引用 {draftCount}</span>
       </div>
 
@@ -582,6 +628,7 @@ function ReaderContent({
   fileName,
   contentRef,
   onScroll,
+  onContentReady,
   zoom,
   loading,
   error,
@@ -592,6 +639,7 @@ function ReaderContent({
   fileName: string;
   contentRef: React.RefObject<HTMLDivElement | null>;
   onScroll: (event: React.UIEvent<HTMLDivElement>) => void;
+  onContentReady: (content: NonNullable<ReaderVisibleContent>) => void;
   zoom: number;
   loading: boolean;
   error?: string;
@@ -604,6 +652,7 @@ function ReaderContent({
       fileName={fileName}
       contentRef={contentRef}
       onScroll={onScroll}
+      onContentReady={onContentReady}
       zoom={zoom}
       loading={loading}
       error={error}

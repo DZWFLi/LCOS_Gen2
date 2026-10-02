@@ -9,6 +9,7 @@
 
 import { createNodeCardRegistry, type LcosNodeSpecies } from '@local-creative-os/web-gen2';
 
+import { ExecutionNodeBody } from './ExecutionNodeBody';
 import { GlythNodeBody } from './GlythNodeBody';
 import { speciesBodyFor } from './LcosSpeciesBodies';
 import { PortalNodeBody } from './PortalNodeBody';
@@ -25,6 +26,7 @@ export const LCOS_REGISTERED_SPECIES: readonly LcosNodeSpecies[] = [
   'draft',
   'context-reference',
   'run',
+  'result-slot',
   'decision',
   'glyth',
   'collection',
@@ -39,6 +41,6 @@ export const lcosNodeCardRegistry = createNodeCardRegistry<LcosNodeSpecies, Lcos
 for (const species of LCOS_REGISTERED_SPECIES) {
   // glyth / portal 有各自的交互 body（打开会话窗口 / 打开入口预览），其余走统一物种 body。
   const card: LcosNodeCard =
-    species === 'glyth' ? GlythNodeBody : species === 'portal' ? PortalNodeBody : speciesBodyFor(species);
+    species === 'run' || species === 'result-slot' ? ExecutionNodeBody : species === 'glyth' ? GlythNodeBody : species === 'portal' ? PortalNodeBody : speciesBodyFor(species);
   lcosNodeCardRegistry.registerNodeCard(species, card);
 }

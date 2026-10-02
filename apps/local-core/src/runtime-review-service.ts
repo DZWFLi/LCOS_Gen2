@@ -66,7 +66,6 @@ export class RuntimeReviewService {
 
   accept(returnId: ArtifactReturnId, input: AcceptArtifactReturnInput): AcceptArtifactReturnResult {
     const result = this.repository.acceptArtifactReturn(returnId, input.expectedBaseRevisionId, this.now())
-    this.emit(result.run.id, 'run.completed', { projectId: String(result.run.projectId), returnId: String(returnId) })
     // F6 P0-A2：accept 诞生/更新的 artifact 立即进索引（fire-and-forget，不阻塞 review 返回）。
     if (this.#semantic !== undefined) {
       void this.#semantic.reindexArtifact(String(result.run.projectId), String(result.artifactReturn.targetArtifactId))
@@ -76,8 +75,16 @@ export class RuntimeReviewService {
       const slotId = this.repository.getRunResultSlotId(String(result.run.id))
       if (slotId !== undefined) {
         try {
-          const views = this.repository.getArtifactViews(String(result.artifactReturn.targetArtifactId))
-          const viewId = views[0]?.id
+          const slot = this.#resultSlots.get(slotId)
+          const views = [...this.repository.getArtifactViews(String(result.artifactReturn.targetArtifactId))]
+          // Use an adopted current view in the reserved worksite when present;
+          // array insertion order is not a revision or destination decision.
+          views.sort((a, b) => {
+            const rank = (view: typeof a): number => (String(view.revisionId) === String(result.currentRevision.id) ? 0 : 2)
+              + (String(view.scopeId) === slot?.scopeId ? 0 : 1)
+            return rank(a) - rank(b) || String(a.id).localeCompare(String(b.id))
+          })
+          const viewId = slot?.artifactViewId ?? views.find((view) => String(view.revisionId) === String(result.currentRevision.id))?.id
           if (viewId !== undefined) {
             const materialized = this.#resultSlots.materialize(slotId, String(result.run.id), String(result.artifactReturn.targetArtifactId), String(viewId))
             // F6 B6：materialize 挂 parent Run 的 ChangeSet（undo = 槽位回 review；record 在
@@ -111,6 +118,7 @@ export class RuntimeReviewService {
         }
       }
     }
+    this.emit(result.run.id, 'run.completed', { projectId: String(result.run.projectId), returnId: String(returnId) })
     return result
   }
 

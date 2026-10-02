@@ -1,3 +1,7 @@
+import { draftReferenceUnavailableReason, snapshotDraftReference } from './referenceSnapshot';
+import { draftReferenceKey, sameDraftReference } from '../referenceBridge';
+import { useLcosShellStore } from '../shell/lcosShellStore';
+import { toast } from '@/components/Common/Toast';
 import { Check, FileText } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
@@ -18,6 +22,7 @@ export function ComposerReferencePicker({ open, onOpenChange, disabled, onPicked
   readonly disabled: boolean;
   readonly onPicked: () => void;
 }): React.JSX.Element {
+  const intent = useLcosShellStore((state) => state.composerTarget?.intent);
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -33,11 +38,12 @@ export function ComposerReferencePicker({ open, onOpenChange, disabled, onPicked
   const references = useLcosReferenceStore((state) => state.draft.orderedEntityRefs);
   const candidates = new Map<string, { ref: CoreEntityRefLike; title: string; image?: string }>();
   for (const node of nodes) {
-    const ref = bindings.get(node.id);
+    const bound = bindings.get(node.id);
+    const ref = bound ? snapshotDraftReference(bound) : undefined;
     if (!ref) continue;
     const data = node.data as Record<string, unknown>;
     const title = ref.descriptor?.title ?? data.label ?? data.title;
-    candidates.set(ref.entityType + ':' + ref.entityId, {
+    candidates.set(draftReferenceKey(ref), {
       ref, title: typeof title === 'string' && title.trim() ? title : '未命名对象',
       ...(node.type === 'image' ? { image: referenceImageSource(data, canvasId ?? undefined) } : {}),
     });
@@ -69,16 +75,17 @@ export function ComposerReferencePicker({ open, onOpenChange, disabled, onPicked
       }}>
     {candidates.size === 0 ? <p className="px-3 py-2 text-xs">当前画布还没有可引用的对象</p>
       : [...candidates].map(([key, item]) => {
-        const included = references.some((ref) => ref.entityType === item.ref.entityType && ref.entityId === item.ref.entityId);
-        return <DropdownMenuItem key={key} disabled={disabled || included}
+        const included = references.some((ref) => sameDraftReference(ref, item.ref));
+        return <DropdownMenuItem key={key} disabled={disabled || included || draftReferenceUnavailableReason(item.ref, intent) !== undefined}
           icon={item.image ? <img src={item.image} alt="" className="h-8 w-10 rounded-md object-cover" /> : <FileText size={20} />}
           trailing={included ? <Check size={14} aria-label="已引用" /> : undefined}
           onClick={() => {
-            useLcosReferenceStore.getState().addEntityToDraft(item.ref);
+            const result = useLcosReferenceStore.getState().addEntitiesToDraft([item.ref], useLcosShellStore.getState().composerTarget?.intent);
+            if (result.reason) { toast(result.reason, { tone: 'danger' }); return; }
             onOpenChange(false);
             onPicked();
           }}>
-          <span className="block max-w-52 truncate">{item.title}</span>
+          <span className="block max-w-52 truncate">{item.title}{item.ref.revisionId ? ` · 版本 ${item.ref.revisionId.slice(0,8)}` : ''}{draftReferenceUnavailableReason(item.ref, intent) !== undefined ? ' · 暂不支持本次引用' : ''}</span>
         </DropdownMenuItem>;
       })}
     </div>

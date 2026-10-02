@@ -23,6 +23,7 @@ import { useWarehouseBrowse } from '../../professional/useWarehouseBrowse';
 import atlasCloseIcon from '../../ui/context/assets/atlas-close.svg';
 import { ContextAtlasView } from '../../ui/context/ContextAtlasView';
 import { ContextCollectionActionGlyph } from '../../ui/context/ContextCollectionFace';
+import { CanonicalCollectionView } from '../../nodes/CanonicalCollectionView';
 import { ContextCollectionView } from '../../ui/context/ContextCollectionView';
 import { LcosSurfaceFeedback } from '../../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../../ui/lcosTokens';
@@ -134,8 +135,9 @@ export function ContextAtlasStage({ projectId, workspaces, currentContextId, mod
                     const hasDestination = childTargets.some((workspace) => targetReason(workspace) === undefined);
                     const hasProjection = projected(item);
                     const activate = (): void => { setFocusedItemRef(`${item.entityRef.type}:${item.entityRef.id}`); };
+                    const CollectionView = mode === 'main-collections' ? CanonicalCollectionView : ContextCollectionView;
                     return (
-                      <ContextCollectionView
+                      <CollectionView projectId={projectId} collectionId={item.entityRef.id}
                         key={`${item.kind}:${item.entityRef.id}`}
                         title={item.title ?? '未命名'}
                         atlasVisualKind={mode === 'main-collections' ? 'collection' : 'context'}

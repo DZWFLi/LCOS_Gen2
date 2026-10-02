@@ -12,12 +12,13 @@
 // it is NEVER derived from Huabu selection and never mutates Core truth.
 
 import { create } from 'zustand';
+import { snapshotDraftReference, prepareDraftReferences, draftReferenceUnavailableReason } from './composer/referenceSnapshot';
 
 import {
   createReferenceControllerState,
   orderedReferences,
   removeReference,
-  sameEntityRef,
+  sameDraftReference,
   toggleReference,
   type CoreEntityRefLike,
   type ReferenceControllerState,
@@ -28,7 +29,7 @@ import type { ProjectedNodeDescriptor } from '@local-creative-os/web-gen2';
 /**
  * 节点 → Core 实体引用（R2 起附带呈现描述）。
  * descriptor 是**呈现事实**（kind/可用性/revision → 次级行 + 物种），由 host 在
- * reconcile 后从 Core 快照派生；它不参与引用相等（sameEntityRef 只比 entityType/entityId），
+ * reconcile 后从 Core 快照派生；点取时把所见 revision 捕获到草稿地址，后续 descriptor 更新不改已选版本，
  * 也不落库、不复制真值。
  */
 export interface LcosNodeEntityRef extends CoreEntityRefLike {
@@ -66,9 +67,12 @@ export interface LcosReferenceState {
   resetNodeEntities(): void;
   forgetNode(nodeId: string): void;
   /** Toggle one node's entity in the ordered draft references. */
-  toggleNodeReference(nodeId: string): boolean;
+  toggleNodeReference(nodeId: string, intent?: string): boolean;
+  /** Toggle the exact material captured when the user pressed, not a later revision. */
+  toggleEntityReference(ref: LcosNodeEntityRef, intent?: string): boolean;
   /**（Wave 5）直接把实体加入草稿（Assembly/卡面条目；Selection≠Reference）。 */
-  addEntityToDraft(ref: LcosNodeEntityRef): void;
+  addEntityToDraft(ref: LcosNodeEntityRef, intent?: string): boolean;
+  addEntitiesToDraft(refs: readonly LcosNodeEntityRef[], intent?: string): { readonly added: number; readonly reason?: string };
   /** Remove only this explicit reference; keep the entity, node and selection. */
   removeEntityFromDraft(ref: CoreEntityRefLike): void;
   /** Ordered read for the Reference Strip. */
@@ -141,16 +145,34 @@ export const useLcosReferenceStore = create<LcosReferenceState>((set, get) => ({
     });
   },
 
-  toggleNodeReference: (nodeId) => {
+  toggleNodeReference: (nodeId, intent) => {
     const ref = get().nodeEntityRefs.get(nodeId);
-    if (!ref) return false;
+    return ref ? get().toggleEntityReference(snapshotDraftReference(ref), intent) : false;
+  },
+
+  toggleEntityReference: (ref, intent) => {
+    const included = get().draft.orderedEntityRefs.some((item) => sameDraftReference(item, ref));
+    if (!included && draftReferenceUnavailableReason(ref, intent)) return false;
     set((state) => ({ draft: toggleReference(state.draft, ref) }));
     return true;
   },
 
-  addEntityToDraft: (ref) => {
-    set((state) => state.draft.orderedEntityRefs.some((item) => sameEntityRef(item, ref))
-      ? state : { draft: toggleReference(state.draft, ref) });
+  addEntityToDraft: (ref, intent) => get().addEntitiesToDraft([ref], intent).reason === undefined,
+
+  addEntitiesToDraft: (refs, intent) => {
+    const prepared = prepareDraftReferences(refs, intent);
+    if (!prepared.ok) return { added: 0, reason: prepared.reason };
+    let added = 0;
+    set((state) => {
+      let draft = state.draft;
+      for (const ref of prepared.references) {
+        if (!draft.orderedEntityRefs.some((item) => sameDraftReference(item, ref))) {
+          draft = toggleReference(draft, ref); added++;
+        }
+      }
+      return draft === state.draft ? state : { draft };
+    });
+    return { added };
   },
 
   removeEntityFromDraft: (ref) => {
@@ -162,7 +184,7 @@ export const useLcosReferenceStore = create<LcosReferenceState>((set, get) => ({
   isNodeReferenced: (nodeId) => {
     const ref = get().nodeEntityRefs.get(nodeId);
     if (!ref) return false;
-    return get().draft.orderedEntityRefs.some((x) => sameEntityRef(x, ref));
+    return get().draft.orderedEntityRefs.some((x) => sameDraftReference(x, snapshotDraftReference(ref)));
   },
 
   reset: () => {
@@ -186,7 +208,7 @@ export function dropDraftReferenceOnNodeDelete(nodeId: string): void {
   const state = useLcosReferenceStore.getState();
   const ref = state.nodeEntityRefs.get(nodeId);
   if (!ref) return;
-  const draft = removeReference(state.draft, ref);
+  const draft = removeReference(state.draft, snapshotDraftReference(ref));
   useLcosReferenceStore.setState({ draft });
   state.forgetNode(nodeId);
 }

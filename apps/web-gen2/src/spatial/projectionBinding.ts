@@ -16,6 +16,7 @@ export type EntityType =
   | 'conversation'
   | 'skill'
   | 'run'
+  | 'result-slot'
   | 'relation'
   | 'note'
   | 'scope'

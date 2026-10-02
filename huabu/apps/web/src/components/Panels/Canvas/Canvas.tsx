@@ -90,6 +90,7 @@ import { isMac } from '@/utils/platform';
 import { getEdgeIdsBetweenSelectedNodes } from '@/utils/selection';
 
 import { applyNodeGeometryPreviews } from './applyNodeGeometryPreview';
+import { canvasDragHandlers } from '@/lcos-seam/nodeDragPolicy';
 import {
   canDirectlyManipulateWithPointer,
   closestNodeElement,
@@ -569,6 +570,9 @@ export const Canvas: React.FC<CanvasProps> = ({
     selectNodes,
     refreshWorldReferences,
   } = useCanvasStore.getState();
+  const dragHandlers = useMemo(() => canvasDragHandlers({
+    onNodeDragStart, onNodeDrag, onNodeDragStop, onNodesChange,
+  }, hostExtension?.nodeDragPolicy), [hostExtension?.nodeDragPolicy, onNodeDragStart, onNodeDrag, onNodeDragStop, onNodesChange]);
   const { setPendingNodeType } = useToolStore.getState();
 
   const [isBoxSelecting, setIsBoxSelecting] = useState(false);
@@ -1668,7 +1672,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         deleteKeyCode={null}
         nodes={displayNodes}
         edges={chromeMode === 'lcos' ? connectionViewEdges : displayEdges}
-        onNodesChange={onNodesChange}
+        onNodesChange={dragHandlers.onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleNodeConnect}
         onConnectEnd={onConnectEnd}
@@ -1687,9 +1691,9 @@ export const Canvas: React.FC<CanvasProps> = ({
         connectOnClick={false}
         isValidConnection={isValidConnection}
         connectionMode={ConnectionMode.Loose}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDrag={onNodeDrag}
-        onNodeDragStop={onNodeDragStop}
+        onNodeDragStart={dragHandlers.onNodeDragStart}
+        onNodeDrag={dragHandlers.onNodeDrag}
+        onNodeDragStop={dragHandlers.onNodeDragStop}
         nodeTypes={mergedNodeTypes}
         edgeTypes={edgeTypes}
         onInit={(instance) => {

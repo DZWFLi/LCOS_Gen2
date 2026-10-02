@@ -87,6 +87,7 @@ export function LcosComposerView(props: LcosComposerViewProps): JSX.Element {
           data-lcos-composer-input
           value={props.text}
           onChange={props.onTextChange}
+          onSelect={props.onSelect}
           onKeyDown={props.onKeyDown}
           readOnly={props.readOnly}
           rows={3}
@@ -100,8 +101,9 @@ export function LcosComposerView(props: LcosComposerViewProps): JSX.Element {
                 disabled={props.attachAction.disabled}
                 title={props.attachAction.disabledReason ?? props.attachAction.label}
                 aria-label={props.attachAction.label}
+                aria-pressed={props.attachAction.pressed}
                 onClick={props.attachAction.onClick}>
-                <LcosNearfieldGlyph name="attach" />
+                {props.attachAction.icon ?? <LcosNearfieldGlyph name="attach" />}
               </LcosIconButton>
             )}
             {props.referencePicker}

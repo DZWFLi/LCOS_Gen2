@@ -4,6 +4,9 @@
 // schedule. Idempotent: re-running reconciles toward Core truth without duplicating
 // Huabu nodes/edges.
 
+import { worksiteProjectionInput } from './worksiteProjectionInput.js';
+import type { CoreRunClient } from '../backend/runs.js';
+import { reconcileExecutionProjection, type ExecutionReconciliation } from './reconcileExecutionProjection.js';
 import type { CoreProjectClient } from '../backend/projects.js';
 import type { CoreRelationClient } from '../backend/relations.js';
 import type { CoreConversationClient } from '../backend/conversations.js';
@@ -32,6 +35,7 @@ export interface ReconciliationResult {
   skippedRelations: number;
   failures: ReconciliationFailureSummary;
   degraded: boolean;
+  execution?: { runsScanned: number; runsProjected: number; slotsScanned: number; slotsProjected: number; promoted: number };
 }
 
 export interface ReconciliationFailureSummary {
@@ -41,6 +45,7 @@ export interface ReconciliationFailureSummary {
   collectionProjection: number;
   relationProjection: number;
   orphanCleanup: number;
+  executionProjection?: number;
 }
 
 export interface ReconciliationDeps {
@@ -57,6 +62,7 @@ export interface ReconciliationDeps {
    */
   conversations?: CoreConversationClient;
   collections?: CoreCollectionClient;
+  runs?: CoreRunClient;
 }
 
 function projectionArtifactKind(kind: unknown): ArtifactProjectionSource['kind'] {
@@ -243,28 +249,39 @@ export class ReconciliationRunner {
     const rawArtifacts = allArtifacts.filter((artifact) =>
       typeof artifact !== 'object' || artifact === null || (artifact as { archivedAt?: unknown }).archivedAt === undefined);
     const targetWorkspace = graph?.workspaces?.find((workspace) => String(workspace.canvasId ?? '') === canvasId);
-    const viewPresentation = viewPresentationByArtifact(
-      (Array.isArray(graph?.artifactViews) ? graph.artifactViews : []) as readonly {
-        id?: unknown;
-        artifactId?: unknown;
-        scopeId?: unknown;
-        referenceKind?: unknown;
-        revisionId?: unknown;
-        size?: { width?: unknown; height?: unknown };
-        displayMode?: unknown;
-      }[],
-      {
-        ...(targetWorkspace?.scopeId === undefined ? {} : { scopeId: String(targetWorkspace.scopeId) }),
-        ...(targetWorkspace === undefined ? {} : { focusedViewIds: new Set(targetWorkspace.focusedViewIds.map(String)) }),
-      },
-    );
+    let execution: ExecutionReconciliation | undefined;
+    let executionReadFailed = false;
+    if (this.deps.runs) {
+      try {
+        const snapshot = await this.deps.runs.readExecutionProjection(projectId);
+        execution = await reconcileExecutionProjection({ projectId, canvasId, snapshot,
+          ...(targetWorkspace === undefined ? {} : { workspace: targetWorkspace }),
+          activeArtifactIds: new Set(rawArtifacts.map((value) => String((value as { id?: string }).id ?? ''))),
+          runs: this.deps.runs, nodeProjector: this.deps.nodeProjector, bindings: this.deps.bindings });
+      } catch (error) {
+        executionReadFailed = true;
+        console.warn('[lcos] Execution projection unavailable; existing Run/slot nodes are retained.', error);
+      }
+    }
+    const worksiteInput = worksiteProjectionInput(graph, targetWorkspace);
+    const viewPresentation = viewPresentationByArtifact(worksiteInput.views, {
+      focusedViewIds: worksiteInput.preferredViews,
+    });
     const mimeTypes = mimeTypeByArtifact({
       ...(graph?.artifacts === undefined ? {} : { artifacts: graph.artifacts }),
       ...(graph?.artifactRevisions === undefined ? {} : { artifactRevisions: graph.artifactRevisions }),
       ...(graph?.fileRecords === undefined ? {} : { fileRecords: graph.fileRecords }),
     }, viewPresentation);
 
+    // If the execution census is unavailable, a Run draft may have an unseen
+    // reserved slot. Keep existing sources but do not materialize that draft at
+    // a new location until its owner can be read again.
+    const deferredArtifactIds = execution?.blockedArtifactIds ?? new Set(executionReadFailed
+      ? (graph?.artifactRevisions ?? []).filter((revision) => revision.status === 'draft' && revision.runId !== undefined)
+        .map((revision) => String(revision.artifactId)) : []);
     const sources = rawArtifacts
+      .filter((value) => !worksiteInput.artifactIds || worksiteInput.artifactIds.has(String((value as {id?: unknown}).id ?? '')))
+      .filter((value) => !deferredArtifactIds.has(String((value as { id?: string }).id ?? '')))
       .map((a) => {
         const artifactId = String((a as { id?: unknown; artifactId?: unknown }).id ?? (a as { artifactId?: unknown }).artifactId ?? '');
         const view = viewPresentation.get(artifactId);
@@ -278,7 +295,11 @@ export class ReconciliationRunner {
           mimeTypes.get(artifactId)?.revisionId,
         );
       })
-      .filter((s): s is ArtifactProjectionSource => s !== undefined);
+      .filter((s): s is ArtifactProjectionSource => s !== undefined)
+      .map((source) => {
+        const revision = graph?.artifactRevisions?.find((value) => String(value.id) === source.currentRevisionId);
+        return { ...source, ...(revision ? { revisionStatus: revision.status } : {}) };
+      });
     const artifactReport = await this.deps.nodeProjector.projectArtifactsWithReport(sources);
     const artifactBindings = [...artifactReport.bindings];
     const failures: ReconciliationFailureSummary = {
@@ -288,12 +309,26 @@ export class ReconciliationRunner {
       collectionProjection: 0,
       relationProjection: 0,
       orphanCleanup: 0,
+      ...(this.deps.runs ? { executionProjection: executionReadFailed ? 1 : execution?.failures ?? 0 } : {}),
     };
+
+    const noteReport = worksiteInput.notes.length === 0 ? {bindings: [], failures: []} : await this.deps.nodeProjector.projectBatchWithReport(worksiteInput.notes.map((note) => ({
+      projectId, entityType: 'note' as const, entityId: String(note.id), kind: 'text' as const,
+      title: String(note.body).split(/\r?\n/, 1)[0]?.slice(0, 80) || '笔记',
+    })));
+    failures.artifactProjection += noteReport.failures.length;
 
     const entityKey = (entityType: string, entityId: string): string => `${entityType}:${entityId}`;
     const nodeIdByEntity = new Map<string, string>();
-    for (const binding of artifactBindings) {
+    for (const binding of [...artifactBindings, ...noteReport.bindings, ...(execution?.bindings ?? [])]) {
       nodeIdByEntity.set(entityKey(String(binding.entityType), binding.entityId), binding.spatialId);
+    }
+
+    // An existing source involved in a pending revision is still a real
+    // relation endpoint. Deferring its NEW projection must not hide its identity.
+    for (const artifactId of deferredArtifactIds) {
+      const retained = await this.deps.bindings.findNode(projectId, canvasId, 'artifact', artifactId);
+      if (retained) nodeIdByEntity.set(entityKey('artifact', artifactId), retained.spatialId);
     }
 
     // Workflow scopes are real Core scope identities, projected through the
@@ -394,6 +429,14 @@ export class ReconciliationRunner {
       }
     }
 
+    for (const binding of await this.deps.bindings.list()) {
+      if (binding.projectId === projectId && binding.canvasId === canvasId && binding.spatialKind === 'node') {
+        const exists = binding.entityType === 'artifact'
+          ? rawArtifacts.some((a) => String((a as {id?: unknown}).id) === binding.entityId)
+          : binding.entityType === 'note' && (graph?.notes ?? []).some((n) => String(n.id) === binding.entityId);
+        if (exists) nodeIdByEntity.set(entityKey(binding.entityType, binding.entityId), binding.spatialId);
+      }
+    }
     const relations = await this.deps.relations.listRelations(projectId);
     let reconciledEdges = 0;
     let skippedRelations = 0;
@@ -508,9 +551,23 @@ export class ReconciliationRunner {
       }
     }
 
+    if (execution) {
+      // Only a complete successful identity read permits removal. 503 is not an empty list.
+      for (const binding of bindings) {
+        if (binding.projectId !== projectId || binding.canvasId !== canvasId || binding.spatialKind !== 'node') continue;
+        const obsolete = binding.entityType === 'run' ? !execution.runIds.has(binding.entityId)
+          : binding.entityType === 'result-slot' ? !execution.slotIds.has(binding.entityId) : false;
+        if (!obsolete) continue;
+        try { await this.deps.nodeProjector.removeOrphanNode(binding); removedOrphanNodes += 1; }
+        catch (error) { failures.orphanCleanup += 1; console.warn('[lcos] Execution node cleanup deferred.', error); }
+      }
+    }
+
     return {
       projectId,
       canvasId,
+      ...(execution ? { execution: { runsScanned: execution.runIds.size, runsProjected: execution.runsProjected,
+        slotsScanned: execution.slotIds.size, slotsProjected: execution.slotsProjected, promoted: execution.promoted } } : {}),
       artifactsScanned: rawArtifacts.length,
       artifactsProjected: artifactBindings.length,
       conversationsScanned,
@@ -526,6 +583,7 @@ export class ReconciliationRunner {
       skippedRelations,
       failures,
       degraded:
+        (failures.executionProjection ?? 0) > 0 ||
         failures.artifactProjection > 0 ||
         failures.conversationProjection > 0 ||
         failures.workflowScopeProjection > 0 ||

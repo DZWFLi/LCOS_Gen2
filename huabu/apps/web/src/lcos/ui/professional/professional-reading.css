@@ -167,3 +167,22 @@
 .lcos-reader-body { min-block-size: min-content; }
 .lcos-reader-page, .lcos-reader-media-page { min-block-size: 280px; flex-shrink: 1; }
 .lcos-reader-body > :not(.lcos-reader-page):not(.lcos-reader-media-page) { flex-shrink: 0; }
+
+/* Reader uses the existing Milkdown schema/theme; only its owned measure and
+   padding adapt here. No global editor or canvas typography is replaced. */
+.lcos-reader-markdown .milkdown,
+.lcos-reader-markdown .milkdown .ProseMirror {
+  background: transparent;
+  color: inherit;
+  min-block-size: 0;
+}
+.lcos-reader-markdown .milkdown .ProseMirror {
+  padding: 0;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.lcos-reader-markdown img { max-inline-size: 100%; block-size: auto; }
+.lcos-reader-markdown pre { max-inline-size: 100%; overflow-x: auto; }
+[data-lcos-reader-render-error] { font-size: 13px; overflow-wrap: anywhere; }

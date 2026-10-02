@@ -20,11 +20,11 @@ describe('drop geometry after pan/zoom and unmount', () => {
     expect(registry.hitTest({ x: 520, y: 220 })).toBeUndefined();
     expect(registry.get(target.targetId)).toBeUndefined();
   });
-  it('retains the existing priority and enabled semantics with live geometry', () => {
+  it('keeps a disabled visible receiver as a rejection instead of dropping onto its background', () => {
     const registry = new DropTargetRegistry();
     registry.register({ ...target, enabled: false, readRect: () => target.rect });
-    expect(registry.hitTest({ x: 20, y: 20 })).toBeUndefined();
+    expect(registry.hitTest({ x: 20, y: 20 })?.enabled).toBe(false);
     registry.register({ ...target, targetId: 'canvas', priority: 1 });
-    expect(registry.hitTest({ x: 20, y: 20 })?.targetId).toBe('canvas');
+    expect(registry.hitTest({ x: 20, y: 20 })?.targetId).toBe(target.targetId);
   });
 });

@@ -118,6 +118,10 @@ export function useCanvasPointerRouter(
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') cancelAll();
     };
+    const onHidden = (): void => { if (document.visibilityState === 'hidden') cancelAll(); };
+    const onLostCapture = (event: PointerEvent): void => { if (core.ownerOf(event.pointerId)) core.handleCancel(event); };
+    document.addEventListener('visibilitychange', onHidden);
+    el.addEventListener('lostpointercapture', onLostCapture);
     window.addEventListener('blur', cancelAll);
     window.addEventListener('keydown', onKeyDown);
     el.addEventListener('pointerdown', onDown, { capture: true });
@@ -127,6 +131,8 @@ export function useCanvasPointerRouter(
 
     return () => {
       cancelAll();
+      document.removeEventListener('visibilitychange', onHidden);
+      el.removeEventListener('lostpointercapture', onLostCapture);
       window.removeEventListener('blur', cancelAll);
       window.removeEventListener('keydown', onKeyDown);
       el.removeEventListener('pointerdown', onDown, { capture: true });

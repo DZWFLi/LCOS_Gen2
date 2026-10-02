@@ -8,6 +8,8 @@
 // 消费者：Huabu 侧 `useLcosReferenceStore` 的 nodeEntityRefs.descriptor（presentation state），
 // 供单一 NodePresentation Junction 决定物种与次级行。
 
+import { executionStatusLabel } from './executionPresentation.js';
+
 import { resolveNodeSpecies, type LcosNodeSpecies } from './nodeSpecies.js';
 
 /** Core Artifact 的呈现事实（字段名与 domain Artifact 对齐）。 */
@@ -44,6 +46,15 @@ export interface ProjectedEntityFacts {
   readonly provider?: string;
   readonly active?: boolean;
   readonly waiting?: boolean;
+  readonly revisionStatus?: 'draft' | 'current' | 'superseded';
+  readonly execution?: {
+    readonly runId?: string;
+    readonly status: string;
+    readonly pendingReturnCount: number;
+    readonly resultSlotId?: string;
+    readonly artifactId?: string;
+    readonly artifactViewId?: string;
+  };
   readonly collectionMemberCount?: number;
   readonly collectionMemberLabels?: readonly string[];
   readonly collectionMembers?: readonly { readonly type: 'artifact' | 'note' | 'collection' | 'scope' | 'workspace' | 'conversation' | 'run'; readonly id: string; readonly label: string }[];
@@ -85,6 +96,9 @@ const AVAILABILITY_LABEL: Readonly<Record<string, string>> = {
  */
 export function buildNodeSecondaryLine(facts: ProjectedEntityFacts): string {
   const parts: string[] = [];
+  if (facts.entityType === 'run' || facts.entityType === 'result-slot') {
+    return executionStatusLabel(facts.execution?.status);
+  }
 
   // 会话/Glyth：次级行是"身份 + 运行态"，与 artifact 的 kind/revision 不是一套事实。
   if (facts.entityType === 'conversation') {
@@ -118,7 +132,7 @@ export function buildNodeSecondaryLine(facts: ProjectedEntityFacts): string {
  * 从真实事实解析物种（实体类型 → Core kind → Huabu 原生节点类型，逐级降级）。
  *
  * huabuNodeType 兜底**故意收得很窄**：只认"本身没有可编辑/可视化内容、必须由 LCOS 呈现"
- * 的原生类型（当前只有 `canvasRef`）。`note`/`text`/`image`/`frame` 等一律不兜底 ——
+ * 的原生类型（`canvasRef` / `spacePreview`；Portal body保留原生预览控件）。`note`/`text`/`image`/`frame` 等一律不兜底 ——
  * 未绑定 Core 的用户节点必须留在 native body（编辑能力与画布自带渲染不能被我方 body 顶掉）。
  *
  * 说明：working 仍需要 Run 的活动状态；draft 则由 Core artifact 的 sourceRunId
@@ -133,6 +147,7 @@ export function resolveNodeSpeciesFromFacts(facts: {
   readonly sourceKind?: string;
   /** Huabu 原生节点类型（机械投影的结果）。 */
   readonly huabuNodeType?: string;
+  readonly revisionStatus?: 'draft' | 'current' | 'superseded';
 }): LcosNodeSpecies {
   const byEntity = resolveNodeSpecies({
     entityType: facts.entityType,
@@ -141,6 +156,7 @@ export function resolveNodeSpeciesFromFacts(facts: {
     sourceKind: facts.sourceKind,
     sourceRunId: facts.sourceRunId,
     managed: facts.managed,
+    revisionStatus: facts.revisionStatus,
   });
   if (byEntity !== 'unknown') return byEntity;
 
@@ -149,7 +165,7 @@ export function resolveNodeSpeciesFromFacts(facts: {
   if (facts.entityType === 'artifact') return 'source';
 
   // 无 Core 绑定时只认"纯入口壳"类型；其余一律 unknown（→ native body，不静默降级）。
-  if (facts.huabuNodeType === 'canvasRef') return 'portal';
+  if ((facts.huabuNodeType === 'canvasRef' || facts.huabuNodeType === 'spacePreview')) return 'portal';
   return 'unknown';
 }
 

@@ -155,7 +155,7 @@ describe('Arc hit surface and More lifecycle', () => {
     await renderArc(); expect(host.querySelector('[data-lcos-action-arc]')).not.toBeNull();
   });
 
-  it('routes right click to the same compact near-field Arc instead of a second scrolling command menu', async () => {
+  it('right click opens existing management without discarding the already selected node', async () => {
     await renderArc();
     const canvas = document.createElement('div'); canvas.dataset.canvasRoot = '';
     const node = document.createElement('div'); node.className = 'react-flow__node'; node.dataset.id = 'glyth-node';
@@ -163,10 +163,10 @@ describe('Arc hit surface and More lifecycle', () => {
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 50 });
     await act(async () => node.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(true);
-    expect(mocks.selectNodes).toHaveBeenCalledExactlyOnceWith(['glyth-node']);
+    expect(mocks.selectNodes).not.toHaveBeenCalled();
     expect(host.querySelector('[data-lcos-context-menu]')).toBeNull();
     expect(host.querySelector('[data-lcos-action-arc]')).not.toBeNull();
-    expect(host.querySelector('[data-lcos-arc-panel]')).toBeNull();
+    expect(host.querySelector('[data-lcos-arc-panel]')).not.toBeNull();
   });
 
   it('makes the orbit parent click-through while keeping the More panel in its own interactive host', async () => {

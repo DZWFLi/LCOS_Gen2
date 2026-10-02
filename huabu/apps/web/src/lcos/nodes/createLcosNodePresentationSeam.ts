@@ -1,3 +1,4 @@
+import { LcosCanvasTextBody } from './LcosCanvasTextBody';
 // createLcosNodePresentationSeam — 全节点呈现 **唯一 junction**（R2）。
 //
 // 输入：nodeId + nativeType + data；输出：LCOS 物种 body 或 native fallback（undefined）。
@@ -30,6 +31,16 @@ export function createLcosNodePresentationSeam(): CanvasNodeBodySeam {
     resolve(input: CanvasNodeBodySlotInput) {
       const ref = useLcosReferenceStore.getState().nodeEntityRefs.get(input.nodeId);
       const descriptor = ref?.descriptor;
+      // Reuse the editor only for native text or an explicitly current, managed
+      // text identity. Unknown bindings wait for metadata; historical/imported
+      // and draft bodies must never briefly edit the current revision.
+      const currentManagedText = ref?.entityType === 'artifact' && descriptor?.managed === true
+        && (descriptor.artifactKind === 'markdown' || descriptor.artifactKind === 'text')
+        && descriptor.revisionStatus !== 'draft'
+        && (!descriptor.presentedRevisionId || descriptor.presentedRevisionId === descriptor.currentRevisionId);
+      if (input.nodeType === 'text' && input.data?.contentMissing !== true && (!ref || currentManagedText)
+        || (input.nodeType === 'note' && currentManagedText)) return LcosCanvasTextBody;
+
       if (ref !== undefined && descriptor === undefined && (ref.entityType === 'artifact' || ref.entityType === 'scope')) {
         return BoundNodeLoadingBody;
       }
@@ -37,6 +48,7 @@ export function createLcosNodePresentationSeam(): CanvasNodeBodySeam {
         ...(ref ? { entityType: ref.entityType } : {}),
         ...(descriptor?.artifactKind === undefined ? {} : { artifactKind: descriptor.artifactKind }),
         ...(descriptor?.managed === undefined ? {} : { managed: descriptor.managed }),
+        ...(descriptor?.revisionStatus === undefined ? {} : { revisionStatus: descriptor.revisionStatus }),
         ...(descriptor?.sourceRunId === undefined ? {} : { sourceRunId: descriptor.sourceRunId }),
         ...(descriptor?.mimeType === undefined ? {} : { mimeType: descriptor.mimeType }),
         ...(descriptor?.sourceKind === undefined ? {} : { sourceKind: descriptor.sourceKind }),
@@ -51,6 +63,7 @@ export function createLcosNodePresentationSeam(): CanvasNodeBodySeam {
       const ref = useLcosReferenceStore.getState().nodeEntityRefs.get(input.nodeId);
       if (!ref) return undefined;
       if (ref.entityType === 'conversation') return conversationBodyHost;
+      if (ref.entityType === 'collection' || ref.entityType === 'run' || ref.entityType === 'result-slot') return collectionBodyHost;
       const descriptor = ref.descriptor;
       if (descriptor === undefined && (ref.entityType === 'artifact' || ref.entityType === 'scope')) return collectionBodyHost;
       // Collection faces own their silhouette; the native white note carrier must
@@ -58,7 +71,7 @@ export function createLcosNodePresentationSeam(): CanvasNodeBodySeam {
       if (descriptor?.species === 'collection' || descriptor?.species === 'workflow-collection') {
         return collectionBodyHost;
       }
-      const family = resolveVisualFamily({ entityType: ref.entityType, artifactKind: descriptor?.artifactKind, mimeType: descriptor?.mimeType, sourceKind: descriptor?.sourceKind });
+      const family = resolveVisualFamily({ entityType: ref.entityType, artifactKind: descriptor?.artifactKind, mimeType: descriptor?.mimeType, sourceKind: descriptor?.sourceKind, revisionStatus: descriptor?.revisionStatus });
       if (family === 'web' || family === 'video') return mediaBodyHost;
       return resolveLcosNodeHostPresentation({
         entityType: ref.entityType,
@@ -66,6 +79,7 @@ export function createLcosNodePresentationSeam(): CanvasNodeBodySeam {
         ...(descriptor?.mimeType === undefined ? {} : { mimeType: descriptor.mimeType }),
         ...(descriptor?.sourceKind === undefined ? {} : { sourceKind: descriptor.sourceKind }),
         ...(descriptor?.managed === undefined ? {} : { managed: descriptor.managed }),
+        ...(descriptor?.revisionStatus === undefined ? {} : { revisionStatus: descriptor.revisionStatus }),
       });
     },
     subscribe(listener: () => void) {

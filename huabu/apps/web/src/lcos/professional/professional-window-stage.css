@@ -1,0 +1,52 @@
+/* Figma 5388:27475: one outer 48px chrome, independent content tabs and panes.
+   Existing window/group state owns every action; this stylesheet owns no layout truth. */
+.lcos-professional-region {
+  box-sizing: border-box;
+  pointer-events: auto;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--lcos-color-surface, #fff);
+  border: 1px solid var(--lcos-window-border);
+  box-shadow: var(--lcos-window-shadow);
+  border-radius: 16px;
+}
+.lcos-professional-panes { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.lcos-professional-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.lcos-professional-body-slot { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.lcos-professional-reader-slots { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.lcos-professional-reader-slots > [hidden] { display: none; }
+.lcos-retained-reader, .lcos-retained-reader-content { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; block-size: 100%; }
+.lcos-retained-reader[hidden] { display: none; }
+.lcos-reader-pane-tabs { padding: 12px 18px 8px; flex-shrink: 0; }
+.lcos-reader-window-shell > [data-lcos-window-drag-handle] { flex-shrink: 0; }
+.lcos-reader-pane-footer { display: flex; align-items: center; justify-content: flex-start; padding: 0 32px 24px; flex-shrink: 0; min-height: 44px; }
+.lcos-reader-pane-footer[data-side='end'] { justify-content: flex-end; }
+.lcos-reader-pane-footer button { font: inherit; font-size: 12px; line-height: 18px; }
+.lcos-professional-splitter { position: relative; flex: 0 0 5px; background: transparent; touch-action: none; }
+.lcos-professional-splitter::after { content: ''; position: absolute; background: var(--lcos-window-border); }
+.lcos-professional-splitter[aria-orientation='vertical'] { cursor: col-resize; }
+.lcos-professional-splitter[aria-orientation='vertical']::after { left: 2px; top: 0; bottom: 0; width: 1px; }
+.lcos-professional-splitter[aria-orientation='horizontal'] { cursor: row-resize; }
+.lcos-professional-splitter[aria-orientation='horizontal']::after { top: 2px; left: 0; right: 0; height: 1px; }
+.lcos-reader-window-shell .lcos-professional-splitter[aria-orientation='vertical']::after { top: 60px; bottom: 72px; }
+.lcos-professional-splitter:hover::after, .lcos-professional-splitter:focus-visible::after { background: var(--lcos-color-info, #547869); }
+.lcos-professional-splitter:focus-visible { outline: 2px solid var(--lcos-color-info, #547869); outline-offset: -1px; }
+[data-lcos-window-drag-handle] { touch-action: none; user-select: none; cursor: grab; }
+[data-lcos-window-drag-handle]:active { cursor: grabbing; }
+.lcos-professional-body-slot .lcos-reader-body { box-sizing: border-box; min-height: 0; height: 100%; }
+.lcos-reader-window-shell .lcos-reader-body { padding: 24px 46px 0; }
+.lcos-reader-window-shell .lcos-reader-body > .lcos-reader-header { flex-shrink: 0; }
+.lcos-reader-window-shell .lcos-reader-page, .lcos-reader-window-shell .lcos-reader-media-page { min-height: 80px; }
+@media (max-width: 760px) {
+  .lcos-reader-window-shell .lcos-reader-body { padding-inline: 20px; }
+  .lcos-reader-pane-footer { padding-inline: 18px; padding-bottom: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcos-professional-region, .lcos-professional-panes { scroll-behavior: auto; }
+}
+/* Touch scroll in content tabs stays native; mouse dragging uses the existing Stage. */
+.lcos-reader-pane-tabs[data-lcos-window-drag-handle] { touch-action: pan-x; }
