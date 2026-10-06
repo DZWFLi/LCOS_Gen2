@@ -35,6 +35,38 @@ it('removes one explicit reference through the real Composer without deleting it
   expect(useLcosReferenceStore.getState().nodeEntityRefs.get('node-a')).toEqual(first);
   expect(useLcosShellStore.getState().composerPrompt).toBe('继续保留这段输入');
   expect(host.querySelectorAll('[data-lcos-composer-ref]')).toHaveLength(1);
+  expect(host.querySelector('.lcos-composer-reference-count')?.textContent).toBe('1');
+});
+
+it('uses a friendly fixed-version label while preserving the exact revision in the tooltip', async () => {
+  const revisionId = 'revision-2026-10-06-exact-identifier';
+  useLcosReferenceStore.getState().setProject('project-a');
+  useLcosReferenceStore.getState().addEntityToDraft({
+    entityType: 'artifact', entityId: 'method-file', revisionId, displayLabel: '施工方法',
+  });
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host); roots.push(root);
+  await act(async () => root.render(<LcosComposerHost projectId="project-a" workspaceId="workspace-a" anchor={null} open inline onClose={() => {}} />));
+  const item = host.querySelector<HTMLElement>('[data-lcos-composer-ref]');
+  expect(item?.querySelector('small')?.textContent).toBe('已固定版本');
+  expect(item?.title).toContain(revisionId);
+  expect(item?.querySelector('.lcos-composer-reference-open')?.getAttribute('aria-label')).toContain('已固定版本');
+});
+
+it('shows the canonical target while keeping targetReferences out of the appended reference strip', async () => {
+  useLcosReferenceStore.getState().setProject('project-a');
+  useLcosShellStore.getState().openComposer({
+    nodeId: 'node-a', title: '品牌研究', intent: 'delegate',
+    anchor: { x: 0, y: 0, width: 1, height: 1 },
+    targetReferences: [{ entityType: 'artifact', entityId: 'target-artifact' }],
+  });
+  useLcosShellStore.getState().setComposerPrompt('继续研究');
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host); roots.push(root);
+  await act(async () => root.render(<LcosComposerHost projectId="project-a" workspaceId="workspace-a" anchor={null} open inline onClose={() => {}} />));
+  expect(host.querySelector('[data-lcos-composer-context-label]')?.textContent).toBe('当前工作目标');
+  expect(host.querySelector('.lcos-composer-title')?.textContent).toBe('品牌研究');
+  expect(host.querySelector('[data-lcos-composer-reference-heading]')?.textContent).toContain('本次引用');
+  expect(host.querySelector('[data-lcos-composer-reference-empty]')?.textContent).toContain('拖入材料');
+  expect(host.querySelector('[data-lcos-composer-ref]')).toBeNull();
 });
 
 

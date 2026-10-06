@@ -1,13 +1,15 @@
-import { useAvoidingHudPosition } from './useAvoidingHudPosition';
 // T2 C2-2B: known identity -> complete bindings -> explicit destination -> exact projection.
 import { SqliteBindingStore } from '@local-creative-os/web-gen2';
 import { ArrowRight, Focus, MapPin, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import useCanvasStore from '@/store/canvasStore';
-import { waitForProjectedEntity } from './waitForProjectedEntity';
-import { resolveOccurrenceDestination, type OccurrenceDestination } from './resolveOccurrenceDestination';
+
 import { useNavigationHudSlot } from './NavigationHudSlot';
+import { resolveOccurrenceDestination, type OccurrenceDestination } from './resolveOccurrenceDestination';
+import { useAvoidingHudPosition } from './useAvoidingHudPosition';
 import { useHudViewport } from './useHudViewport';
+import { waitForProjectedEntity } from './waitForProjectedEntity';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
 import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { useLcosReferenceStore } from '../lcosReferenceState';
@@ -32,7 +34,7 @@ interface OccurrenceRow {
   readonly label: string;
 }
 export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
-  const slot = useNavigationHudSlot();
+  const { active: activeSlot, activate: activateSlot, close: closeSlot } = useNavigationHudSlot();
   const viewport = useHudViewport();
   const activeSurface = useLcosShellStore((s) => s.activeSurface);
   const environment = useLcosShellStore((s) => s.windowEnvironment);
@@ -51,14 +53,14 @@ export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
   const bindings = useMemo(() => new SqliteBindingStore(session.http, props.projectId), [session, props.projectId]);
   const { switchWorksite } = useLcosWorksiteNav({ projectId: props.projectId, canvasBySurface: props.canvasBySurface, ensureCanvas: props.ensureCanvas });
   const invalidate = useCallback(() => { generation.current += 1; arrival.current?.abort(); }, []);
-  const close = useCallback(() => { invalidate(); setArriving(false); slot.close('where'); }, [invalidate, slot.close]);
+  const close = useCallback(() => { invalidate(); setArriving(false); closeSlot('where'); }, [closeSlot, invalidate]);
   const collect = useCallback(async (requested?: { entityId: string; entityType: string; title?: string }) => {
     invalidate(); const version = generation.current;
     const canvas = useCanvasStore.getState();
     const selected = canvas.nodes.find((node) => node.selected)?.id;
     const selectedRef = selected === undefined ? undefined : useLcosReferenceStore.getState().nodeEntityRefs.get(selected);
     const ref = requested ?? selectedRef;
-    slot.activate('where'); setRows([]); setArriving(false); setMessage(undefined);
+    activateSlot('where'); setRows([]); setArriving(false); setMessage(undefined);
     setTitle(requested?.title ?? selectedRef?.descriptor?.title ?? '当前对象');
     if (!ref) { setLoading(false); setMessage('先选择一个对象，再查看它的位置。'); return; }
     lastRequest.current = { entityId: ref.entityId, entityType: ref.entityType, ...(requested?.title ? { title: requested.title } : {}) };
@@ -86,30 +88,32 @@ export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
     if (bindingResult.status === 'rejected') setMessage('其他位置读取失败；当前现场的位置仍可使用。');
     else if (workspaceResult.status === 'rejected') setMessage('部分现场信息读取失败，可重试。');
     else if (all.length === 0) setMessage('这个对象目前没有可定位的画布投影。');
-  }, [activeSurface, bindings, invalidate, props.canvasBySurface, props.projectId, session, slot.activate]);
+  }, [activeSurface, activateSlot, bindings, invalidate, props.canvasBySurface, props.projectId, session]);
+  useEffect(() => { if (activeSlot !== 'where') invalidate(); }, [activeSlot, invalidate]);
+  useEffect(() => { close(); return invalidate; }, [props.projectId, close, invalidate]);
   useEffect(() => {
     if (!request) return;
     consume?.(); void collect(request);
   }, [request, consume, collect]);
-  useEffect(() => { if (slot.active !== 'where') invalidate(); }, [slot.active, invalidate]);
-  useEffect(() => { close(); return invalidate; }, [props.projectId, close, invalidate]);
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return;
       const target = event.target instanceof Element ? event.target : null;
       if (event.key.toLowerCase() === 'f' && !event.metaKey && !event.ctrlKey && !event.altKey && !target?.closest('input,textarea,[contenteditable="true"]')) {
         event.preventDefault(); void collect();
-      } else if (event.key === 'Escape' && slot.active === 'where') { event.preventDefault(); event.stopImmediatePropagation(); close(); }
+      } else if (event.key === 'Escape' && activeSlot === 'where') { event.preventDefault(); event.stopImmediatePropagation(); close(); }
     };
     window.addEventListener('keydown', key, true); return () => window.removeEventListener('keydown', key, true);
-  }, [collect, close, slot.active]);
+  }, [activeSlot, collect, close]);
   const go = async (row: OccurrenceRow): Promise<void> => {
-    if (arriving || (!row.local && !row.destination)) return;
+    if (arriving || (!row.local && row.destination === undefined)) return;
     const controller = new AbortController(); arrival.current = controller; setArriving(true); setMessage(undefined);
     try {
-      const surface = row.local ? activeSurface : row.destination!.surface;
+      const destination = row.destination;
+      const surface = row.local ? activeSurface : destination?.surface;
+      if (surface === undefined) return;
       if (!row.local && !await switchWorksite(surface, { canvasId: row.canvasId,
-        ...(row.destination?.workspaceId ? { workspaceId: row.destination.workspaceId } : {}) })) {
+        ...(destination?.workspaceId ? { workspaceId: destination.workspaceId } : {}) })) {
         if (!controller.signal.aborted) setMessage('目标现场暂时无法打开，请重试。'); return;
       }
       if (controller.signal.aborted) return;
@@ -124,7 +128,7 @@ export function LcosFocusWhere(props: LcosFocusWhereProps): React.JSX.Element {
   const offsets = lcosHudEdgeOffsets(environment ?? null, viewport);
   const placement = useAvoidingHudPosition({ x: (offsets.left + viewport.width - offsets.right) / 2,
     y: offsets.top + 56, width: Math.min(380, viewport.width - offsets.left - offsets.right), height: 160 }, { x: 'center' }, '[data-lcos-shell-project-cluster],[data-lcos-navigator-island]');
-  if (slot.active !== 'where') return <div data-lcos-focus-where data-open="false" hidden />;
+  if (activeSlot !== 'where') return <div data-lcos-focus-where data-open="false" hidden />;
   return <div ref={placement.ref} data-lcos-focus-where data-open="true" role="dialog" aria-label="对象位置"
     className="pointer-events-auto fixed z-40 rounded-2xl p-2"
     style={{ ...lcosGlassStyle, width: Math.min(380, viewport.width - offsets.left - offsets.right), top: placement.rect.y,

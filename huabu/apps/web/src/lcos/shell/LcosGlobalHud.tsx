@@ -57,6 +57,7 @@ export function LcosGlobalHud(props: LcosGlobalHudProps): React.JSX.Element {
       <LcosRailway
         projectId={props.projectId}
         surfaceByWorkspace={props.surfaceByWorkspace}
+        ensureWorkspaceCanvas={props.ensureWorkspaceCanvas}
         activateDestination={activateDestination}
       />
       <LcosFocusWhere

@@ -18,7 +18,7 @@ describe('Temporal rail request continuity', () => {
       expect(host.firstElementChild?.getAttribute('data-state')).toBe('error');
       await act(async () => host.querySelector('button')?.click());
       expect(getIndex).toHaveBeenLastCalledWith('p', 'child', expect.any(AbortSignal));
-      expect(host.firstElementChild?.getAttribute('data-state')).toBe('empty');
+      expect(host.firstElementChild).toBeNull();
     } finally { await act(async () => root.unmount()); }
   });
   it('ignores a late successful index from the previous child', async () => {
@@ -30,7 +30,7 @@ describe('Temporal rail request continuity', () => {
       await act(async () => root.render(<TemporalRail projectId="p" workspaceId="new" />));
       expect((getIndex.mock.calls[0]?.[2] as AbortSignal).aborted).toBe(true);
       await act(async () => finish({ value: { facts: [{}], mid: [] } }));
-      expect(host.firstElementChild?.getAttribute('data-state')).toBe('empty');
+      expect(host.firstElementChild).toBeNull();
     } finally { await act(async () => root.unmount()); }
   });
 });

@@ -1,18 +1,21 @@
+import {
+  collectionPreviewMembers,
+  type CollectionMemberPreview as CoreCollectionMemberPreview,
+  type CoreCollectionMembersSnapshot,
+  type CoreCollectionMemberRef,
+} from '@local-creative-os/web-gen2';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { collectionPreviewMembers } from '@local-creative-os/web-gen2';
-import type { CoreCollectionMembersSnapshot, CoreCollectionMemberRef } from '@local-creative-os/web-gen2';
+
+import { removeCollectionMember } from './collectionMemberActions';
+import { CollectionMemberPreview, isReadableCollectionArtifact } from './CollectionMemberPreview';
+import { CollectionMembersMenu } from './CollectionMembersMenu';
+import { Gen1CollectionFace, type Gen1CollectionFaceProps } from './Gen1CollectionFace';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
-import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
 import { SessionRefreshQueue } from '../collaboration/sessionRefreshQueue';
-import { ContextCollectionView } from '../ui/context/ContextCollectionView';
-import type { ContextCollectionViewProps } from '../ui/context/ContextCollectionView';
-import { CollectionMemberPreview } from './CollectionMemberPreview';
-import { CollectionMembersMenu } from './CollectionMembersMenu';
-import { removeCollectionMember } from './collectionMemberActions';
+import { useLcosReferenceStore } from '../lcosReferenceState';
+import { ContextCollectionView, type ContextCollectionViewProps } from '../ui/context/ContextCollectionView';
 import './collection-preview.css';
-import { Gen1CollectionFace } from './Gen1CollectionFace';
-import type { Gen1CollectionFaceProps } from './Gen1CollectionFace';
 
 export interface CanonicalCollectionViewProps extends ContextCollectionViewProps {
   readonly presentation?: 'context' | 'compact';
@@ -22,12 +25,13 @@ export interface CanonicalCollectionViewProps extends ContextCollectionViewProps
   readonly projectId: string;
   readonly collectionId: string;
   readonly density?: 'mark' | 'summary' | 'working' | 'reading';
+  readonly onReadMember?: (member: CoreCollectionMemberPreview) => void;
 }
 const EMPTY_MEMBERS = [] as const;
 /** Ephemeral read projection only: all bodies consume the existing Core members
  * endpoint and project invalidation subscription. No new membership store.
  */
-function CollectionReadView({ projectId, collectionId, density, presentation = 'compact', sizing = 'tile', folder, ...props }: CanonicalCollectionViewProps): React.JSX.Element {
+function CollectionReadView({ projectId, collectionId, density, presentation = 'compact', sizing = 'tile', folder, onReadMember, ...props }: CanonicalCollectionViewProps): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const [snapshot, setSnapshot] = useState<CoreCollectionMembersSnapshot>();
   const [status, setStatus] = useState<'loading'|'ready'|'error'>('loading');
@@ -77,7 +81,9 @@ function CollectionReadView({ projectId, collectionId, density, presentation = '
       readError={status === 'error' ? summary : undefined} onRetry={refresh}
       sheets={members.slice(0, 3).map((member, index) =>
         <CollectionMemberPreview key={JSON.stringify([member.type,member.id])} projectId={projectId} member={member}
-          client={session.artifacts} enabled={density !== 'mark'} presentation="gen1-sheet" sheetIndex={index}/>)}/>
+          client={session.artifacts} enabled={density !== 'mark'} presentation="gen1-sheet" sheetIndex={index}
+          onRead={status === 'ready' && isReadableCollectionArtifact(member) && onReadMember
+            ? () => onReadMember(member) : undefined}/>)}/>
       : <ContextCollectionView {...props} title={snapshot?.collection.title ?? props.title} atlasVisualKind="collection" organization="未指定"
       memberSummary={summary} memberLabels={undefined} members={undefined} onRemoveMember={undefined}
       previewUrl={undefined} secondaryPreviewUrl={undefined} hideEmptyPreviews

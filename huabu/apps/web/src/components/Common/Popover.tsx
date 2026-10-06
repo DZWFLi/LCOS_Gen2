@@ -280,7 +280,7 @@ export const Popover: FC<PopoverProps> = ({
     if (!onDismiss || !dismissOnEscape) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
         e.preventDefault();
         e.stopImmediatePropagation();
         onDismiss();

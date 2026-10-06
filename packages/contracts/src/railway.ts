@@ -1,10 +1,11 @@
-import type { AssemblyApplyResultV1, AssemblySourceRefV1 } from './assembly.js'
+import type { AssemblyApplyResultV1, AssemblySourceRefV1, AssemblyTargetRefV1 } from './assembly.js'
 
 /** Railway addresses are canonical references, never canvas IDs or labels. */
 export type RailwaySurfaceKindV1 = 'main' | 'context' | 'workflow'
 export type RailwayCanonicalRefV1 =
   | { readonly kind: 'surface_root'; readonly projectId: string; readonly surface: RailwaySurfaceKindV1 }
   | { readonly kind: 'worksite'; readonly projectId: string; readonly worksiteId: string }
+  | { readonly kind: 'spatial'; readonly projectId: string; readonly entityType: 'collection' | 'scope'; readonly entityId: string }
   | { readonly kind: 'receiver_conversation'; readonly projectId: string; readonly connectedConversationId: string }
 export interface RailwayLegacyRefV1 {
   readonly kind: 'legacy'
@@ -15,6 +16,9 @@ export interface RailwayLegacyRefV1 {
   readonly raw: unknown
 }
 export type RailwayStoredRefV1 = RailwayCanonicalRefV1 | RailwayLegacyRefV1
+export type RailwayReceiveTargetV1 =
+  | { readonly owner: 'collection-membership'; readonly collectionId: string }
+  | { readonly owner: 'assembly'; readonly targetRef: AssemblyTargetRefV1 }
 export interface RailwayOrderV1 {
   readonly schemaVersion: 1
   readonly projectId: string
@@ -26,12 +30,16 @@ export interface RailwayDestinationV1 {
   readonly key: string
   readonly ref: RailwayStoredRefV1
   readonly label: string
-  readonly role: 'surface' | 'worksite' | 'receiver' | 'legacy'
+  readonly role: 'surface' | 'worksite' | 'spatial' | 'receiver' | 'legacy'
   readonly available: boolean
   readonly reason?: string
   readonly surface?: RailwaySurfaceKindV1
   readonly workspaceId?: string
   readonly canvasId?: string
+  /** Canonical aggregate identity when the destination itself can be dragged as a source. */
+  readonly sourceRef?: AssemblySourceRefV1
+  /** Explicit mutation owner; consumers must not infer a route from labels or entity names. */
+  readonly receiveTarget?: RailwayReceiveTargetV1
   /** Receiver entries open their existing Work View; they do not change active receiver. */
   readonly accepts: readonly ('artifactView' | 'note')[]
 }
@@ -72,6 +80,7 @@ export function railwayStableKeyV1(ref: RailwayStoredRefV1): string {
   switch (ref.kind) {
     case 'surface_root': return JSON.stringify([ref.kind, ref.projectId, ref.surface])
     case 'worksite': return JSON.stringify([ref.kind, ref.projectId, ref.worksiteId])
+    case 'spatial': return JSON.stringify([ref.kind, ref.projectId, ref.entityType, ref.entityId])
     case 'receiver_conversation': return JSON.stringify([ref.kind, ref.projectId, ref.connectedConversationId])
     case 'legacy': return JSON.stringify([ref.kind, ref.projectId, ref.legacyKind, ref.legacyViewId, ref.raw])
   }
@@ -85,6 +94,9 @@ export function parseRailwayStoredRefV1(value: unknown, projectId: string): Rail
     return { kind: r.kind, projectId, surface: r.surface as RailwaySurfaceKindV1 }
   if (r.kind === 'worksite' && typeof r.worksiteId === 'string' && r.worksiteId.trim() && exact(['kind', 'projectId', 'worksiteId']))
     return { kind: r.kind, projectId, worksiteId: r.worksiteId }
+  if (r.kind === 'spatial' && (r.entityType === 'collection' || r.entityType === 'scope')
+    && typeof r.entityId === 'string' && r.entityId.trim() && exact(['kind', 'projectId', 'entityType', 'entityId']))
+    return { kind: r.kind, projectId, entityType: r.entityType, entityId: r.entityId }
   if (r.kind === 'receiver_conversation' && typeof r.connectedConversationId === 'string' && r.connectedConversationId.trim() && exact(['kind', 'projectId', 'connectedConversationId']))
     return { kind: r.kind, projectId, connectedConversationId: r.connectedConversationId }
   if (r.kind === 'legacy' && typeof r.legacyKind === 'string' && typeof r.legacyViewId === 'string' && Object.hasOwn(r, 'raw')

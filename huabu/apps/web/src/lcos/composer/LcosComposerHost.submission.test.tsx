@@ -32,6 +32,7 @@ beforeEach(() => { mocks.delegate.mockReset(); mocks.send.mockReset(); useLcosSh
 afterEach(() => { if (root) act(() => root!.unmount()); root = undefined; document.body.replaceChildren(); vi.restoreAllMocks(); });
 async function mount(next = target('a')) {
   const shell = useLcosShellStore.getState(); shell.setProject('project'); shell.openComposer(next); shell.setComposerPrompt('原始输入');
+  useLcosReferenceStore.getState().setProject('project');
   el = document.createElement('div'); document.body.append(el); root = createRoot(el);
   await act(async () => root!.render(<LcosComposerHost projectId="project" workspaceId="workspace" anchor={null} inline open onClose={() => {}} />));
 }
@@ -69,11 +70,21 @@ it('mounts continuation choices inside the same Composer without creating a wind
   const toggle = el.querySelector<HTMLButtonElement>('.lcos-continuation-toggle');
   expect(toggle).not.toBeNull();
   await act(async () => toggle!.click());
-  expect(el.querySelector('select')?.options).toHaveLength(4);
+  expect(el.querySelectorAll('fieldset input[type="radio"]')).toHaveLength(4);
+  expect(el.querySelector<HTMLInputElement>('input[value="continue_existing"]')?.checked).toBe(true);
   expect(el.querySelector('textarea')?.value).toBe('原始输入');
   expect(useLcosShellStore.getState().windows).toHaveLength(0);
   expect(mocks.send).not.toHaveBeenCalled();
   expect(mocks.delegate).not.toHaveBeenCalled();
+});
+
+it('does not submit a visible draft when the reference owner belongs to another project', async () => {
+  await mount();
+  await act(async () => useLcosReferenceStore.getState().setProject('other-project'));
+  await act(async () => submitKey());
+  expect(mocks.delegate).not.toHaveBeenCalled();
+  expect(mocks.send).not.toHaveBeenCalled();
+  expect(useLcosShellStore.getState().composerPrompt).toBe('原始输入');
 });
 
 

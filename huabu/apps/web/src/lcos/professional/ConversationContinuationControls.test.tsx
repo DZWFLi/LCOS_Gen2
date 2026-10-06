@@ -7,13 +7,54 @@ const newSession = vi.fn();
 const fork = vi.fn();
 const refresh = vi.fn(async () => undefined);
 const onSubmitted = vi.fn();
-const openWindow = vi.fn();
+const shellMock = vi.hoisted(() => {
+  type ShellState = {
+    readonly continuationRequests: ReadonlyMap<string, unknown>;
+    readonly setContinuationRequest: (key: string, request: unknown) => void;
+    readonly openWindow: ReturnType<typeof vi.fn>;
+  };
+  const listeners = new Set<() => void>();
+  const openWindow = vi.fn();
+  let state: ShellState;
+  const setContinuationRequest = vi.fn((key: string, request: unknown) => {
+    const continuationRequests = new Map(state.continuationRequests);
+    if (request === undefined) continuationRequests.delete(key);
+    else continuationRequests.set(key, request);
+    state = { ...state, continuationRequests };
+    listeners.forEach((listener) => listener());
+  });
+  state = { continuationRequests: new Map(), setContinuationRequest, openWindow };
+  return {
+    openWindow,
+    subscribe: (listener: () => void): (() => void) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    getState: (): ShellState => state,
+    reset: (): void => {
+      state = { ...state, continuationRequests: new Map() };
+      listeners.forEach((listener) => listener());
+    },
+  };
+});
+const openWindow = shellMock.openWindow;
 const projection = {
   capabilities: { canResume: true, canSelectedContext: true, canBlankNew: true, canFork: false },
   capabilityReasons: { canFork: '当前协作者不支持完整历史分支' },
 };
 vi.mock('@local-creative-os/web-gen2', () => ({ CoreCollaborationClient: class { resume = resume; newSession = newSession; fork = fork; } }));
-vi.mock('../shell/lcosShellStore', () => ({ useLcosShellStore: { getState: () => ({ openWindow }) } }));
+vi.mock('../shell/lcosShellStore', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const useLcosShellStore = Object.assign(
+    <T,>(selector: (state: ReturnType<typeof shellMock.getState>) => T): T => useSyncExternalStore(
+      shellMock.subscribe,
+      () => selector(shellMock.getState()),
+      () => selector(shellMock.getState()),
+    ),
+    { getState: shellMock.getState },
+  );
+  return { useLcosShellStore };
+});
 vi.mock('../app/lcosCoreClient', () => ({ createLcosCoreSession: () => ({ http: {} }) }));
 vi.mock('../collaboration/useCollaborationSession', () => ({ useCollaborationSession: () => ({ status: 'ready', projection }) }));
 vi.mock('../collaboration/collaborationSessionStore', () => ({ useCollaborationSessionStore: { getState: () => ({ refresh }) } }));
@@ -27,6 +68,7 @@ afterEach(() => {
   document.body.replaceChildren();
   vi.clearAllMocks();
   resume.mockReset(); newSession.mockReset(); fork.mockReset();
+  shellMock.reset();
 });
 
 const base: ConversationContinuationControlsProps = {
@@ -34,7 +76,10 @@ const base: ConversationContinuationControlsProps = {
   draftReferences: [{ entityType: 'artifact', entityId: 'a1' }],
   referenceItems: [{ key: 'artifact:a1', label: '山野研究', onRemove: vi.fn() }], onSubmitted,
 };
-const accepted = { ok: true, receipt: { command: 'new_session' } };
+const accepted = (command: 'new_session' | 'resume' | 'fork', conversationId: string, continuationOperationId: string) => ({
+  ok: true as const,
+  receipt: { command, conversationId, continuationOperationId },
+});
 const failed = { ok: false, error: { code: 'provider_offline', retryable: true, userMessage: '连接中断，请重试原请求' } };
 
 async function render(props: Partial<ConversationContinuationControlsProps> = {}) {
@@ -64,7 +109,6 @@ describe('compact continuation controls', () => {
     await expand(el); await chooseMode(el, 'selected_context');
     expect(el.textContent).toContain('不继承原会话历史');
     expect(el.textContent).toContain('山野研究');
-    expect(el.textContent).toContain('当前目录');
     expect(el.querySelector('[aria-label^="移除引用"]')).toBeNull();
     expect(resume).not.toHaveBeenCalled(); expect(newSession).not.toHaveBeenCalled();
   });
@@ -78,7 +122,8 @@ describe('compact continuation controls', () => {
   });
 
   it('submits blank_new without draft references and presents acceptance rather than completion', async () => {
-    newSession.mockResolvedValue(accepted);
+    newSession.mockImplementation((_projectId, _action, input: { conversationId: string; operationId: string }) =>
+      Promise.resolve(accepted('new_session', input.conversationId, input.operationId)));
     const { el } = await render(); await expand(el); await chooseMode(el, 'blank_new'); await confirm(el);
     expect(newSession).toHaveBeenCalledWith('p1', 'blank_new', { conversationId: 'c1', operationId: expect.any(String) });
     expect(el.textContent).toContain('请求已提交，等待外部确认');
@@ -87,7 +132,8 @@ describe('compact continuation controls', () => {
   });
 
   it('retains the original selected references and labels during retry while the current draft changes', async () => {
-    newSession.mockResolvedValueOnce(failed).mockResolvedValueOnce(accepted);
+    newSession.mockResolvedValueOnce(failed).mockImplementationOnce((_projectId, _action, input: { conversationId: string; operationId: string }) =>
+      Promise.resolve(accepted('new_session', input.conversationId, input.operationId)));
     const { el, rerender } = await render(); await expand(el); await chooseMode(el, 'selected_context'); await confirm(el);
     const first = newSession.mock.calls[0]?.[2];
     await rerender({ draftReferences: [], referenceItems: [] });
@@ -120,11 +166,13 @@ describe('compact continuation controls', () => {
   });
 
   it('ignores a previous target callback and does not leak its receipt into the new target', async () => {
-    let finish!: (value: typeof accepted) => void;
-    resume.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    let finish!: (value: ReturnType<typeof accepted>) => void;
+    let operationId = '';
+    resume.mockImplementation((_projectId, input: { conversationId: string; operationId: string }) =>
+      new Promise<ReturnType<typeof accepted>>((resolve) => { finish = resolve; operationId = input.operationId; }));
     const { el, rerender } = await render(); await expand(el); await confirm(el);
     await rerender({ conversationId: 'c2' });
-    await act(async () => finish(accepted));
+    await act(async () => finish(accepted('resume', 'c1', operationId)));
     await expand(el);
     expect(el.querySelector('[data-lcos-continuation-receipt]')).toBeNull();
     expect(onSubmitted).not.toHaveBeenCalled();

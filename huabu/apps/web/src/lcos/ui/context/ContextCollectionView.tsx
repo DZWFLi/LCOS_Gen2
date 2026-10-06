@@ -36,6 +36,7 @@ export function ContextCollectionView({
   disabled = false,
   disabledReason,
   active = false,
+  folderVisual = false,
   action,
   legacyAtlasKind,
   selected = false,
@@ -77,7 +78,7 @@ export function ContextCollectionView({
         whileHover={reducedMotion || disabled ? undefined : { y: -8, scale: 1.025 }}
         transition={reducedMotion ? { duration: 0 } : PRESENTATION_SPRING}
       >
-        <ContextCollectionFace primaryPreview={primaryPreview} secondaryPreview={secondaryPreview} memberControls={memberControls} title={title} active={active} organization={organization} atlasVisualKind={atlasVisualKind} rendition={rendition}
+        <ContextCollectionFace primaryPreview={primaryPreview} secondaryPreview={secondaryPreview} memberControls={memberControls} title={title} active={active} selected={selected} folderVisual={folderVisual} folderFocusWithin={focus.focused} organization={organization} atlasVisualKind={atlasVisualKind} rendition={rendition}
           {...(sourceLabel === undefined ? {} : { sourceLabel })}
           {...(memberLabels === undefined ? {} : { memberLabels })}
           {...(members === undefined ? {} : { members })}

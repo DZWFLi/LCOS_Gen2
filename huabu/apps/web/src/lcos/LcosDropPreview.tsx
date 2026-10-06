@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import useCanvasStore from '@/store/canvasStore';
 
+import { resolveDropPointerTarget } from './drop/dropPointerResolution';
 import { useLcosDropStore } from './lcosDropState';
 import { useLcosReferenceStore } from './lcosReferenceState';
 import { lcosGlassStyle, lcosTokens } from './ui/lcosTokens';
@@ -14,29 +15,49 @@ export function LcosDropPreview(): React.JSX.Element | null {
   const state = useLcosDropStore((s) => s.state);
   const resolution = useLcosDropStore((s) => s.resolution);
   const nativeSource = useLcosDropStore((s) => s.nativeSource);
-  const sourceNodeId = useLcosDropStore((s) => s.carrySourceNodeId) ?? nativeSource?.nodes[0]?.nodeId;
+  const carrySourceNodeId = useLcosDropStore((s) => s.carrySourceNodeId);
+  const sourceNodeId = carrySourceNodeId ?? nativeSource?.nodes[0]?.nodeId;
   const targets = useLcosDropStore((s) => s.targets);
   const source = useCanvasStore((s) => s.nodes.find((node) => node.id === sourceNodeId));
   const bindings = useLcosReferenceStore((s) => s.nodeEntityRefs);
   const wrapper = useCanvasStore((s) => s.canvasWrapper);
-  if (state.status !== 'preview') return null;
+  const active = state.status === 'tracking' || state.status === 'dwell';
+  if (!active && state.status !== 'preview') return null;
 
-  const { destination, payload } = state;
-  const target = targets().find((item) => item.targetId === destination.targetId);
-  const rect = target?.readRect ? target.readRect() : target?.rect;
+  const payload = state.payload;
+  const targetList = targets();
+  const destination = state.status === 'preview' ? state.destination : undefined;
+  const target = destination ? targetList.find((item) => item.targetId === destination.targetId) : undefined;
+  const rect = target?.rect;
   const canvasRect = wrapper?.getBoundingClientRect();
   const ineligible = resolution?.status === 'ineligible';
+  const candidates = active ? targetList.flatMap((candidate) => {
+    const liveRect = candidate.rect;
+    if (!Number.isFinite(liveRect.left) || !Number.isFinite(liveRect.top)
+      || !Number.isFinite(liveRect.width) || !Number.isFinite(liveRect.height)
+      || liveRect.width <= 0 || liveRect.height <= 0) return [];
+    const result = resolveDropPointerTarget(payload, candidate, {
+      native: nativeSource !== null,
+      rightCarry: carrySourceNodeId !== null,
+      ...(nativeSource?.blockedReason === undefined ? {} : { blockedReason: nativeSource.blockedReason }),
+    });
+    return result.resolution?.status === 'ready' ? [{ target: candidate, rect: liveRect }] : [];
+  }) : [];
+  if (active && candidates.length === 0) return null;
   const sourceData = source?.data as Record<string, unknown> | undefined;
   const media = source?.type === 'image' && typeof sourceData?.src === 'string' ? sourceData.src : undefined;
   const binding = payload.kind === 'object'
     ? [...bindings.values()].find((ref) => ref.entityType === payload.entityType && ref.entityId === payload.entityId)
     : undefined;
-  const rawTitle = sourceData?.label ?? sourceData?.title ?? binding?.descriptor?.title;
+  const payloadTitle = payload.kind === 'assembly' ? payload.reference?.displayLabel
+    : payload.kind === 'object' ? payload.displayLabel : undefined;
+  const rawTitle = sourceData?.label ?? sourceData?.title ?? payloadTitle ?? binding?.descriptor?.title;
   const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle
     : payload.kind === 'file' ? payload.name : payload.kind === 'url' ? '链接'
       : payload.kind === 'text' ? '文本片段' : '材料';
   const action = resolution?.status === 'ready'
-    ? resolution.intent.kind === 'assembly-apply' && resolution.intent.targetRef.kind === 'conversation'
+    ? resolution.intent.kind === 'railway-bookmark' ? '固定整个空间到左侧 Rail · 原内容保留'
+    : resolution.intent.kind === 'assembly-apply' && resolution.intent.targetRef.kind === 'conversation'
       ? `持久加入「${target?.label ?? '此会话'}」的上下文`
       : resolution.intent.kind === 'collection-membership' ? `加入集合「${target?.label ?? '目标集合'}」`
       : resolution.intent.kind === 'composer-reference' ? '仅加入本次草稿引用'
@@ -49,26 +70,51 @@ export function LcosDropPreview(): React.JSX.Element | null {
   const visibleHost = collectionId !== undefined && useCanvasStore.getState().nodes.some((node) => node.type === 'frame'
     && node.data.lcosCollectionId === collectionId && !node.hidden && !node.data.locked
     && !useCanvasStore.getState().collapsedFrameIds.has(node.id));
-  const message = ineligible ? resolution.reason : `${action}${nativeSource ? visibleHost ? ' · 在此落位' : ' · 源对象保留' : ''}`;
+  const message = active ? '拖到高亮位置，查看具体接收方式'
+    : ineligible ? `${target?.label ?? '这个位置'}：${resolution.reason}` : `${action}${nativeSource ? visibleHost ? ' · 在此落位' : ' · 源对象保留' : ''}`;
   const displayTitle = nativeSource && nativeSource.nodes.length > 1 ? `${title} 等 ${nativeSource.nodes.length} 项` : title;
+  const receptorRect = rect && rect.width > 0 && rect.height > 0 ? rect : undefined;
 
   return createPortal(<>
-    {!ineligible && rect && canvasRect && target?.kind !== 'canvas' && (
-      <div data-lcos-drop-receptor className="lcos-drop-receptor" aria-hidden style={{
-        position: 'fixed', left: rect.left - 5, top: rect.top - 5,
-        width: rect.width + 10, height: rect.height + 10,
+    {active && candidates.map(({ target: candidate, rect: candidateRect }) => (
+      <div key={candidate.targetId} data-lcos-drop-receptor data-state="candidate"
+        data-target-label={candidate.label} className="lcos-drop-receptor lcos-drop-receptor-candidate"
+        aria-hidden="true" style={{
+        position: 'fixed', left: candidateRect.left, top: candidateRect.top,
+        width: candidateRect.width, height: candidateRect.height, boxSizing: 'border-box',
+        borderRadius: candidate.kind === 'collaboration-reference' ? '50%' : 18,
+      }}>
+        <span className="lcos-drop-receptor-label">{candidate.label}</span>
+      </div>
+    ))}
+    {state.status === 'preview' && receptorRect && target?.kind !== 'canvas' && (
+      <div data-lcos-drop-receptor data-state={ineligible ? 'rejected' : 'receptive'}
+        data-target-label={target?.label}
+        className="lcos-drop-receptor" aria-hidden="true" style={{
+        position: 'fixed', left: receptorRect.left, top: receptorRect.top,
+        width: receptorRect.width, height: receptorRect.height, boxSizing: 'border-box',
         borderRadius: target?.kind === 'collaboration-reference' ? '50%' : 18,
       }} />
     )}
-    <div data-lcos-drop-preview className="lcos-drop-feedback" role="status"
-      style={{ position: 'fixed', left: Math.max(0, Math.min((canvasRect?.left ?? 0) + destination.previewPoint.x, window.innerWidth - 300)), top: Math.max(0, Math.min((canvasRect?.top ?? 0) + destination.previewPoint.y, window.innerHeight - 105)) }}>
-      {!nativeSource && <div data-lcos-carry-proxy className="lcos-drop-proxy" style={lcosGlassStyle} aria-hidden>
-        {media ? <img src={media} alt="" draggable={false} /> : <FileText size={25} strokeWidth={1.4} />}
-      </div>}
-      <div className="lcos-drop-caption" style={{ ...lcosGlassStyle, color: ineligible ? lcosTokens.color.muted : lcosTokens.color.text }}>
-        {ineligible ? <X size={14} aria-hidden /> : <Link2 size={14} aria-hidden />}
-        <span><strong>{displayTitle}</strong><small>{message}</small></span>
+    {state.status === 'preview' && destination && (
+      <div data-lcos-drop-preview className="lcos-drop-feedback" role="status"
+        style={{ position: 'fixed', left: Math.max(0, Math.min((canvasRect?.left ?? 0) + destination.previewPoint.x, window.innerWidth - 300)), top: Math.max(0, Math.min((canvasRect?.top ?? 0) + destination.previewPoint.y, window.innerHeight - 105)) }}>
+        {!nativeSource && <div data-lcos-carry-proxy className="lcos-drop-proxy" style={lcosGlassStyle} aria-hidden>
+          {media ? <img src={media} alt="" draggable={false} /> : <FileText size={25} strokeWidth={1.4} />}
+        </div>}
+        <div className="lcos-drop-caption" style={{ ...lcosGlassStyle, color: ineligible ? lcosTokens.color.muted : lcosTokens.color.text }}>
+          {ineligible ? <X size={14} aria-hidden /> : <Link2 size={14} aria-hidden />}
+          <span><strong>{displayTitle}</strong><small>{message}</small></span>
+        </div>
       </div>
-    </div>
+    )}
+    {active && (
+      <div data-lcos-drop-preview data-presentation="candidates" className="lcos-drop-feedback lcos-drop-guidance" role="status">
+        <div className="lcos-drop-caption" style={lcosGlassStyle}>
+          <Link2 size={14} aria-hidden />
+          <span><strong>{displayTitle}</strong><small>{message}</small></span>
+        </div>
+      </div>
+    )}
   </>, document.body);
 }

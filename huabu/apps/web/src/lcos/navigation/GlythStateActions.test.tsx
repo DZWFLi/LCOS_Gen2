@@ -1,9 +1,17 @@
+import { buildLcosNodeCommands, primaryNodeCommands, describeProjectedEntity } from '@local-creative-os/web-gen2';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildLcosNodeCommands, primaryNodeCommands, describeProjectedEntity } from '@local-creative-os/web-gen2';
-import type { CollaborationSessionProjectionV1 } from '@local-creative-os/contracts';
+
+import { useCanvasAttentionStore } from '@/store/canvasAttentionStore';
+
+import { LcosActionArc } from './LcosActionArc';
+import { useLcosReferenceStore } from '../lcosReferenceState';
+import { GlythNodeBody } from '../nodes/GlythNodeBody';
+import { useLcosShellStore } from '../shell/lcosShellStore';
+
 import type { CollaborationSessionEntry } from '../collaboration/collaborationSessionStore';
+import type { CollaborationSessionProjectionV1 } from '@local-creative-os/contracts';
 
 const mocks = vi.hoisted(() => ({
   entry: undefined as CollaborationSessionEntry | undefined,
@@ -23,8 +31,8 @@ vi.mock('../ui/nearfield/LcosActionOrbitMotion', () => ({
   LcosActionOrbitMotion: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   LcosActionArcMotionHost: (props: React.ComponentPropsWithoutRef<'div'>) => <div {...props} />,
 }));
-vi.mock('../ui/nearfield/LcosActionOrbView', () => ({ LcosActionOrbView: (props: { label: string; actionId?: string; disabledReason?: string; more?: boolean; onClick: () => void }) =>
-  <button aria-label={props.label} data-lcos-arc-primary={props.actionId} data-lcos-arc-more={props.more || undefined} disabled={props.disabledReason !== undefined} onClick={props.onClick}>{props.label}</button>,
+vi.mock('../ui/nearfield/LcosActionOrbView', () => ({ LcosActionOrbView: (props: { label: string; actionId?: string; disabledReason?: string; more?: boolean; expanded?: boolean; buttonRef?: React.Ref<HTMLButtonElement>; onClick: () => void }) =>
+  <button ref={props.buttonRef} aria-label={props.label} aria-expanded={props.expanded} data-lcos-arc-primary={props.actionId} data-lcos-arc-more={props.more || undefined} disabled={props.disabledReason !== undefined} onClick={props.onClick}>{props.label}</button>,
 }));
 vi.mock('../pin/LcosColorPinProvider', () => ({ useOptionalLcosColorPins: () => null }));
 vi.mock('../collaboration/useCollaborationSession', () => ({ useCollaborationSession: () => mocks.entry }));
@@ -35,11 +43,7 @@ vi.mock('../nodes/NodeReferenceMarker', () => ({ NodeReferenceMarker: () => null
 vi.mock('../ui/glyth/GlythBodyView', () => ({ GlythBodyView: ({ pose }: { pose: string }) => <div data-real-donor-pose={pose} /> }));
 vi.mock('../lcosDropState', () => ({ useLcosDropStore: (select: (value: Record<string, unknown>) => unknown) => select({ ...mocks.drop, registerTarget: mocks.registerTarget, unregisterTarget: mocks.unregisterTarget }) }));
 
-import { LcosActionArc } from './LcosActionArc';
-import { GlythNodeBody } from '../nodes/GlythNodeBody';
-import { useLcosReferenceStore } from '../lcosReferenceState';
-import { useLcosShellStore } from '../shell/lcosShellStore';
-import { useCanvasAttentionStore } from '@/store/canvasAttentionStore';
+
 
 const base: CollaborationSessionProjectionV1 = {
   schemaVersion: 1, projectId: 'p-actions', conversationId: 'c-actions',
@@ -127,7 +131,7 @@ describe('Glyth donor follows current projection, preserving receiving reaction'
     ready(projection({ userState: 'working' })); await mount();
     expect(host.querySelector('[data-lcos-glyth-state="working"]')?.textContent).toBe('正在执行');
     ready(projection({ userState: 'needs_user' })); await mount();
-    expect(host.querySelector('[data-lcos-glyth-state="needs_user"]')?.textContent).toBe('等你回应');
+    expect(host.querySelector('[data-lcos-glyth-state="needs_user"]')?.textContent).toBe('需要你处理');
     ready(projection({ userState: 'ready' })); await mount();
     expect(host.querySelector('[data-lcos-glyth-state="ready"]')?.textContent).toBe('可以继续');
     mocks.entry = { status: 'error' }; await mount();
@@ -166,32 +170,38 @@ describe('Arc hit surface and More lifecycle', () => {
     expect(mocks.selectNodes).not.toHaveBeenCalled();
     expect(host.querySelector('[data-lcos-context-menu]')).toBeNull();
     expect(host.querySelector('[data-lcos-action-arc]')).not.toBeNull();
-    expect(host.querySelector('[data-lcos-arc-panel]')).not.toBeNull();
+    const panel = document.querySelector<HTMLElement>('[data-lcos-arc-panel]')!;
+    expect(panel).not.toBeNull();
+    expect(panel.querySelector('[data-lcos-command="compose"]')).toBeNull();
+    expect(panel.querySelector('[data-lcos-command="open"]')).toBeNull();
+    expect(host.querySelector('[data-lcos-arc-primary="compose"]')).not.toBeNull();
+    expect(host.querySelector('[data-lcos-arc-primary="open"]')).not.toBeNull();
   });
 
   it('makes the orbit parent click-through while keeping the More panel in its own interactive host', async () => {
     await renderArc();
     expect(host.querySelector<HTMLElement>('[data-test-floating]')!.style.pointerEvents).toBe('none');
     await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
-    expect(host.querySelector('[data-lcos-arc-panel]')).not.toBeNull();
-    expect(host.querySelectorAll('[data-test-floating]')).toHaveLength(2);
-    expect(host.querySelectorAll<HTMLElement>('[data-test-floating]')[1]!.style.pointerEvents).not.toBe('none');
+    expect(document.querySelector('[data-lcos-arc-panel]')).not.toBeNull();
+    expect(document.querySelector('.lcos-action-arc-menu')).not.toBeNull();
+    expect(host.querySelectorAll('[data-test-floating]')).toHaveLength(1);
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })));
-    expect(host.querySelector('[data-lcos-arc-panel]')).toBeNull();
+    expect(document.querySelector('[data-lcos-arc-panel]')).toBeNull();
     expect(host.querySelector('[data-lcos-action-arc]')).not.toBeNull();
   });
   it('keeps More compact and moves size/accent controls into adjacent inspectors', async () => {
     await renderArc();
     await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
-    const panel = host.querySelector('[data-lcos-arc-panel]')!;
+    const panel = document.querySelector('[data-lcos-arc-panel]')!;
     expect(panel.querySelector('[data-lcos-size-width]')).toBeNull();
     expect(panel.querySelector('[data-lcos-accent]')).toBeNull();
     expect(panel.querySelectorAll('button').length).toBeLessThan(16);
-    expect(host.querySelectorAll('[data-test-floating]')[1]?.getAttribute('data-placement')).toBe('right-start');
     await act(async () => panel.querySelector<HTMLButtonElement>('[data-lcos-command="size"]')!.click());
+    expect(document.querySelector('[data-lcos-arc-panel]')).toBeNull();
     expect(host.querySelector('[data-lcos-arc-inspector="size"]')).not.toBeNull();
     expect(host.querySelector('[data-lcos-size-width]')).not.toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="返回更多命令"]')!.click());
+    expect(document.querySelector('[data-lcos-arc-panel]')).not.toBeNull();
   });
   it('opens accent palette only when the existing command model exposes it', async () => {
     mocks.nodes = [{ id: 'free-image', type: 'image', selected: true, position: { x: 20, y: 20 }, width: 160, height: 120, data: { label: '素材' } }];
@@ -199,15 +209,58 @@ describe('Arc hit surface and More lifecycle', () => {
     useLcosReferenceStore.setState({ bindingCanvasId: 'canvas-actions', bindingIdentitiesReady: true });
     await renderArc();
     await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-panel] [data-lcos-command="accent"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-lcos-arc-panel] [data-lcos-command="accent"]')!.click());
     expect(host.querySelector('[data-lcos-arc-inspector="accent"]')).not.toBeNull();
     expect(host.querySelectorAll('[data-lcos-accent]').length).toBeGreaterThan(0);
+  });
+  it('omits unsupported native Core choices without changing their existing command guards', async () => {
+    await renderArc();
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
+    const panel = document.querySelector<HTMLElement>('[data-lcos-arc-panel]')!;
+    expect(panel.querySelector('[data-lcos-command="fit"]')).toBeNull();
+    expect(panel.querySelector('[data-lcos-command="session-diagnostics"]')).toBeNull();
+    expect(panel.querySelector('[data-lcos-command="session-options"]')).toBeNull();
+    expect(panel.querySelector('[data-lcos-command="delete"]')).toBeNull();
+    expect(panel.querySelector('[data-lcos-command="move-space"]')).toBeNull();
+    expect(model(projection()).find(command => command.id === 'delete')?.disabledReason).toBe('这是 Core 投影，删除后会重新投影出现；请在 Core 侧移除');
+    expect(model(projection()).find(command => command.id === 'move-space')?.disabledReason).toBe('当前对象还不能跨现场移动');
+  });
+  it('keeps usable native deletion and relocation available for an unbound image', async () => {
+    mocks.nodes = [{ id: 'free-image', type: 'image', selected: true, position: { x: 20, y: 20 }, width: 160, height: 120, data: { label: '素材' } }];
+    useLcosReferenceStore.getState().reset(); useLcosReferenceStore.getState().setProject('p-actions');
+    useLcosReferenceStore.setState({ bindingCanvasId: 'canvas-actions', bindingIdentitiesReady: true });
+    await renderArc();
+    expect(host.querySelector<HTMLButtonElement>('[data-lcos-arc-primary="delete"]')?.disabled).toBe(false);
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
+    expect(document.querySelector<HTMLButtonElement>('[data-lcos-arc-panel] [data-lcos-command="move-space"]')?.disabled).toBe(false);
+  });
+  it('keeps continuation fallback and diagnostics visible when the main action cannot serve the state', async () => {
+    ready(projection({
+      capabilities: { ...base.capabilities, canSend: false },
+      capabilityReasons: { canSend: '当前协作方式暂不能继续' },
+    }));
+    await renderArc();
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
+    let panel = document.querySelector<HTMLElement>('[data-lcos-arc-panel]')!;
+    expect(panel.querySelector<HTMLButtonElement>('[data-lcos-command="session-options"]')).not.toBeNull();
+    expect(panel.querySelector<HTMLButtonElement>('[data-lcos-command="compose"]')?.disabled).toBe(true);
+
+    await act(async () => panel.querySelector<HTMLButtonElement>('[data-lcos-command="session-options"]')!.click());
+    expect(useLcosShellStore.getState().windows).toMatchObject([{ bodyKey: 'conversation', target: 'c-actions' }]);
+    ready(projection({ userState: 'unavailable' }));
+    await renderArc();
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
+    panel = document.querySelector<HTMLElement>('[data-lcos-arc-panel]')!;
+    expect(panel.querySelector('[data-lcos-command="session-diagnostics"]')).not.toBeNull();
+    await act(async () => panel.querySelector<HTMLButtonElement>('[data-lcos-command="session-diagnostics"]')!.click());
+    expect(useLcosShellStore.getState().windows).toHaveLength(1);
+    expect(useLcosShellStore.getState().windows[0]).toMatchObject({ bodyKey: 'conversation', target: 'c-actions' });
   });
   it('does not consume an Escape already used by a higher priority layer', async () => {
     await renderArc(); await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
     const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }); event.preventDefault();
     await act(async () => window.dispatchEvent(event));
-    expect(host.querySelector('[data-lcos-arc-panel]')).not.toBeNull();
+    expect(document.querySelector('[data-lcos-arc-panel]')).not.toBeNull();
   });
 });
 

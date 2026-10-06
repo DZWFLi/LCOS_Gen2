@@ -5,6 +5,7 @@ import enterIcon from './assets/collection-enter.svg';
 import thingIcon from './assets/context-thing.svg';
 import timeIcon from './assets/context-time.svg';
 import './context-spatial.css';
+import FolderComponent from './RareFolderComponent';
 
 import type { PreviewMediaProps } from '../spatial/PreviewMedia';
 import type { ReactNode } from 'react';
@@ -38,6 +39,11 @@ export interface ContextCollectionFaceProps {
   readonly disabled?: boolean;
   readonly disabledReason?: string;
   readonly action?: ReactNode;
+  /** Atlas's selected card is a toggle state; the existing caller owns selection. */
+  readonly selected?: boolean;
+  /** Enables the directly adopted Rare UI folder presentation for Atlas only. */
+  readonly folderVisual?: boolean;
+  readonly folderFocusWithin?: boolean;
   readonly onActivate?: () => void;
   readonly activationLabel?: string;
   /** Supplied by the existing host; not an inferred organization. */
@@ -60,7 +66,7 @@ function AtlasKindEmblem({ kind }: { readonly kind: Exclude<ContextAtlasVisualKi
  * Identity, membership, activation and attention remain inputs, not a second store.
  */
 export function ContextCollectionFace({
-  title, active = false, organization, atlasVisualKind = 'collection', rendition = '总览', previewUrl, secondaryPreviewUrl,
+  title, active = false, selected = false, folderVisual = false, folderFocusWithin = false, organization, atlasVisualKind = 'collection', rendition = '总览', previewUrl, secondaryPreviewUrl,
   previewFit, secondaryPreviewFit, disabled = false, disabledReason,
   action, onActivate, activationLabel, unspecifiedGlyph, sourceLabel,
   memberLabels,
@@ -72,26 +78,39 @@ export function ContextCollectionFace({
     ? undefined
     : organization === '未指定' ? '组织未标注' : `按${organization}组织`;
   const label = memberSummary ?? [sourceLabel, organizationLabel].filter((fact): fact is string => fact !== undefined).join(' · ');
-  const hasRealCover = Boolean(primaryPreview || secondaryPreview || previewUrl || secondaryPreviewUrl);
+  const primaryCardContent = primaryPreview ?? (previewUrl
+    ? <PreviewMedia src={previewUrl} label={`${title} 封面`} {...(previewFit === undefined ? {} : { fit: previewFit })} />
+    : undefined);
+  const secondaryCardContent = secondaryPreview ?? (secondaryPreviewUrl
+    ? <PreviewMedia src={secondaryPreviewUrl} label={`${title} 第二份材料预览`} {...(secondaryPreviewFit === undefined ? {} : { fit: secondaryPreviewFit })} />
+    : undefined);
+  const hasRealCover = Boolean(primaryCardContent || secondaryCardContent);
   return <>
-    {onActivate && !disabled ? <button type="button" className="lcos-context-collection-hit"
-      aria-label={activationLabel ?? `进入集合 · ${title}`}
-      title={activationLabel ?? `进入集合 · ${title}`} onClick={onActivate} /> : null}
-    <div className="lcos-context-collection-back" aria-hidden />
-    <div className="lcos-context-collection-tab" aria-hidden />
-    {primaryPreview || previewUrl ? <div className="lcos-context-collection-cover cover-a">
-      {primaryPreview ?? (
-      <PreviewMedia src={previewUrl} label={`${title} 封面`}
-        {...(previewFit === undefined ? {} : { fit: previewFit })} />)}
-    </div> : null}
-    {secondaryPreview || secondaryPreviewUrl ? <div className="lcos-context-collection-cover cover-b">
-      {secondaryPreview ?? (
-      <PreviewMedia src={secondaryPreviewUrl} label={`${title} 第二份材料预览`}
-        {...(secondaryPreviewFit === undefined ? {} : { fit: secondaryPreviewFit })} />)}
-    </div> : null}
+    {folderVisual ? <FolderComponent
+      className="lcos-atlas-folder"
+      color="blue"
+      size="sm"
+      selected={selected}
+      open={selected}
+      focusWithin={folderFocusWithin}
+      onActivate={disabled ? undefined : onActivate}
+      activationLabel={activationLabel ?? `选中并预览 · ${title}`}
+      cardContents={[primaryCardContent, secondaryCardContent]}
+    /> : <>
+      {onActivate && !disabled ? <button type="button" className="lcos-context-collection-hit"
+        aria-label={activationLabel ?? `进入集合 · ${title}`}
+        aria-pressed={selected}
+        title={activationLabel ?? `进入集合 · ${title}`} onClick={onActivate} /> : null}
+      <div className="lcos-context-collection-back" aria-hidden />
+      <div className="lcos-context-collection-tab" aria-hidden />
+      {primaryCardContent ? <div className="lcos-context-collection-cover cover-a">{primaryCardContent}</div> : null}
+      {secondaryCardContent ? <div className="lcos-context-collection-cover cover-b">{secondaryCardContent}</div> : null}
+    </>}
     {!hasRealCover && atlasVisualKind !== 'collection' ? <AtlasKindEmblem kind={atlasVisualKind} /> : null}
-    <div className="lcos-context-collection-pocket-base" aria-hidden />
-    <div className="lcos-context-collection-pocket" aria-hidden />
+    {!folderVisual && <>
+      <div className="lcos-context-collection-pocket-base" aria-hidden />
+      <div className="lcos-context-collection-pocket" aria-hidden />
+    </>}
     {active ? <span className="lcos-context-collection-current">当前现场</span> : null}
     <div className="lcos-context-collection-copy">
       {organization !== undefined ? <span className="lcos-context-collection-icon" aria-hidden>

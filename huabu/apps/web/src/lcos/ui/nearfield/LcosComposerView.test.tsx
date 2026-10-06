@@ -16,7 +16,7 @@ afterEach(async () => {
   host = undefined;
 });
 const defaults = (): LcosComposerViewProps => ({
-  presentation: 'nearfield', state: 'editing', title: '当前对象', targetId: 'n1',
+  presentation: 'nearfield', state: 'editing', contextLabel: '当前工作目标', title: '当前对象', targetId: 'n1',
   references: [], text: '真实草稿', canSubmit: true, submitTitle: '提交',
   onTextChange: vi.fn(), onKeyDown: vi.fn(), onClose: vi.fn(), onSubmit: vi.fn(),
 });
@@ -57,6 +57,15 @@ describe('controlled Composer presentation', () => {
     expect(element.querySelector('[data-lcos-nearfield-glyph="at"]')).toBeNull();
     expect(element.querySelector('.lcos-composer-receiver')).toBeNull();
   });
+  it('labels the current receiver and keeps the empty reference target visible for Drop', async () => {
+    const { element } = await render({
+      contextLabel: '当前接收者', identity: <span>Glyth</span>, title: '设计会话',
+    });
+    expect(element.querySelector('[data-lcos-composer-context-label]')?.textContent).toBe('当前接收者');
+    expect(element.querySelector('.lcos-composer-title')?.textContent).toBe('设计会话');
+    expect(element.querySelector('[data-lcos-composer-reference-empty]')?.textContent).toContain('拖入材料');
+    expect(element.querySelector('.lcos-composer-reference-heading')?.textContent).toContain('本次引用');
+  });
   it('preserves explicit reference order and calls the supplied remover exactly once', async () => {
     const remove = vi.fn();
     const { element } = await render({ references: [
@@ -67,6 +76,7 @@ describe('controlled Composer presentation', () => {
       .toEqual(['artifact:b', 'artifact:a']);
     await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="移除引用 B"]')?.click());
     expect(remove).toHaveBeenCalledTimes(1);
+    expect(element.querySelector('.lcos-composer-reference-count')?.textContent).toBe('2');
   });
   it('closing delegates only the close callback', async () => {
     const { props, element } = await render();

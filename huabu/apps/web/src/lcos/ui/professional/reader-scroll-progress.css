@@ -1,0 +1,40 @@
+.lcos-reader-content-frame {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.lcos-reader-body > .lcos-reader-content-frame { flex-shrink: 1; }
+.lcos-reader-content-frame > .lcos-reader-page {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+  block-size: 100%;
+}
+
+.lcos-reader-scroll-progress {
+  position: absolute !important;
+  inset-block-end: 14px !important;
+  inset-inline-start: 50% !important;
+  z-index: 4 !important;
+  max-inline-size: calc(100% - 24px);
+  transform: translateX(-50%) !important;
+  pointer-events: auto;
+}
+
+.lcos-reader-scroll-progress [data-slot='scroll-progress-surface'] {
+  border-color: var(--gen2-border) !important;
+  background: color-mix(in srgb, var(--gen2-surface) 92%, transparent) !important;
+  color: var(--gen2-text);
+  box-shadow: 0 8px 24px rgba(31, 46, 61, .14) !important;
+}
+
+.lcos-reader-scroll-progress .text-foreground { color: var(--gen2-text); }
+.lcos-reader-scroll-progress .stroke-foreground { stroke: var(--gen2-accent); }
+.lcos-reader-scroll-progress button:focus-visible {
+  outline: 2px solid var(--gen2-accent);
+  outline-offset: -2px;
+}

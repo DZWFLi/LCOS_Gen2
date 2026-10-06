@@ -11,9 +11,11 @@ import '../ui/families/project-system.css';
 import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
 
 /** Figma 5306:4057; native Popover owns placement and outside/Escape dismissal. */
-export function LcosProjectSystemMenu({ name, target, assemblyTitle }: {
-  readonly name: string; readonly target?: AssemblyTargetRefV1; readonly assemblyTitle: string;
+export function LcosProjectSystemMenu({ name, worksiteName, target, assemblyTitle }: {
+  readonly name: string; readonly worksiteName?: string; readonly target?: AssemblyTargetRefV1; readonly assemblyTitle: string;
 }): React.JSX.Element {
+  const resolvedWorksiteName = worksiteName?.trim() || undefined;
+  const identityName = resolvedWorksiteName === undefined ? name : `${name} / ${resolvedWorksiteName}`;
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -25,12 +27,12 @@ export function LcosProjectSystemMenu({ name, target, assemblyTitle }: {
     return () => cancelAnimationFrame(frame);
   }, [position]);
   return <>
-    <button ref={trigger} type="button" data-lcos-project-identity aria-label={`${name} · 项目菜单`}
+    <button ref={trigger} type="button" data-lcos-project-identity aria-label={`${identityName} · 项目菜单`} title={identityName}
       aria-haspopup="dialog" aria-expanded={position !== null} onClick={() => {
         if (position) { close(); return; }
         const rect = trigger.current?.getBoundingClientRect();
         if (rect) setPosition({ x: rect.left, y: rect.bottom + 8 });
-      }}><LcosProjectIdentityView name={name} /></button>
+      }}><LcosProjectIdentityView name={name} worksiteName={resolvedWorksiteName} /></button>
     {position && <Popover position={position} onDismiss={close} className="lcos-project-system-popover">
       <div ref={panel} role="dialog" aria-label="项目菜单" className="lcos-system-panel lcos-project-system-menu">
         <header><Link to="/projects" title="返回项目列表" onClick={close}>{name}</Link><LcosButton appearance="oreo" variant="secondary" onClick={close}>关闭</LcosButton></header>

@@ -1,10 +1,13 @@
-import { useLcosReferenceStore } from '../../lcosReferenceState';
-import { useLcosShellStore } from '../../shell/lcosShellStore';
-import { ContextAtlasStage } from '../context/ContextAtlasStage';
 import useCanvasStore from '@/store/canvasStore';
+
+import { useLcosReferenceStore } from '../../lcosReferenceState';
+import { isReadableCollectionArtifact } from '../../nodes/CollectionMemberPreview';
+import { useLcosShellStore } from '../../shell/lcosShellStore';
 import { isCanonicalCollectionItem } from '../context/contextAtlasSemantics';
+import { ContextAtlasStage } from '../context/ContextAtlasStage';
 
 import type { WarehouseItemV1 } from '@local-creative-os/contracts';
+import type { CollectionMemberPreview as CoreCollectionMemberPreview } from '@local-creative-os/web-gen2';
 
 /** Main is a canonical Collection locator; Context owns worksite/child navigation semantics. */
 export function MainCollectionAtlas({ projectId, onClose }: {
@@ -24,6 +27,19 @@ export function MainCollectionAtlas({ projectId, onClose }: {
     onClose();
     return true;
   };
+  const readMember = (_collectionId: string, member: CoreCollectionMemberPreview): void => {
+    const shell = useLcosShellStore.getState();
+    const references = useLcosReferenceStore.getState();
+    if (shell.projectId !== projectId || references.projectId !== projectId || !isReadableCollectionArtifact(member)) return;
+    const sourceNodeId = [...references.nodeEntityRefs.entries()].find(
+      ([, ref]) => ref.entityType === 'artifact' && ref.entityId === member.id,
+    )?.[0];
+    const options = {
+      ...(member.revisionId ? { revisionId: member.revisionId } : {}),
+      ...(sourceNodeId === undefined ? {} : { source: { surface: 'main' as const, nodeId: sourceNodeId } }),
+    };
+    shell.openReader(member.label, member.id, Object.keys(options).length > 0 ? options : undefined);
+  };
   return <ContextAtlasStage mode="main-collections" projectId={projectId} workspaces={[]}
-    onClose={onClose} onEnterSurface={activate} />;
+    onClose={onClose} onEnterSurface={activate} onReadMember={readMember} />;
 }

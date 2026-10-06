@@ -1,37 +1,56 @@
-import { alignNodes, spreadNodes, type AlignDirection } from '@huabu/shared/canvas-engine';
-import { withCollectionGeometryCompanions } from '../nodes/collectionDragCompanions';
 import { FolderPlus, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+
+import { alignNodes, spreadNodes, type AlignDirection } from '@huabu/shared/canvas-engine';
+
+import { toast } from '@/components/Common/Toast';
 import { MultiSelectToolbar } from '@/components/Panels/Canvas/FloatingToolbars/MultiSelectToolbar';
 import { deletableCanvasNodeIds } from '@/hooks/shortcuts/deleteSelection';
 import { createLcosCoreSession } from '@/lcos/app/lcosCoreClient';
+import { isNativeAccentSurfaceEnabled, NodeBodyResolverContext } from '@/lcos-seam/nodeBodySlot';
 import useCanvasStore from '@/store/canvasStore';
-import { toast } from '@/components/Common/Toast';
-import { useLcosReferenceStore } from '../lcosReferenceState';
-import { waitForProjectedEntity } from './waitForProjectedEntity';
-import { useLcosShellStore } from '../shell/lcosShellStore';
-import { LcosIconButton } from '../ui/primitives/LcosIconButton';
+
+import { planSelectionLayout, layoutNodeLocked, selectionVisibleBounds } from './selectionLayout';
 import { prepareDraftReferences } from '../composer/referenceSnapshot';
 import { snapshotCanvasDropNodes, sameCanvasDropNode } from '../drop/nativeCanvasDropGeometry';
+import { useLcosReferenceStore } from '../lcosReferenceState';
+import { waitForProjectedEntity } from './waitForProjectedEntity';
+import { withCollectionGeometryCompanions } from '../nodes/collectionDragCompanions';
 import { collectionHostMemberIds } from '../nodes/collectionHost';
-import { planSelectionLayout, layoutNodeLocked, selectionVisibleBounds } from './selectionLayout';
+import { useLcosShellStore } from '../shell/lcosShellStore';
+import { LcosIconButton } from '../ui/primitives/LcosIconButton';
+
 import type { SelectionLayoutAction } from './selectionLayout';
-import type { CoreCollectionMemberRef } from '@local-creative-os/web-gen2';
 import type { CanvasNodeId } from '@huabu/shared';
+import type { CoreCollectionMemberRef } from '@local-creative-os/web-gen2';
 
 const MEMBER_TYPES = new Set(['artifact','note','collection','scope','workspace','conversation','run']);
+const subscribeNoop = (_listener: () => void): (() => void) => () => undefined;
 
 /** Shared native selection is the only target set. UI actions capture that set
  * once; asynchronous creation may not retarget a later selection or camera. */
 export function LcosMultiSelectToolbar(): React.JSX.Element {
   const nodes = useCanvasStore((state) => state.nodes);
+  const bodySeam = useContext(NodeBodyResolverContext);
   const canvasId = useCanvasStore((state) => state.canvasId);
   const projectId = useLcosShellStore((state) => state.projectId);
   const refs = useLcosReferenceStore((state) => state.nodeEntityRefs);
   const picking = useLcosReferenceStore((state) => state.referencePickOwner !== null);
   const ready = useLcosReferenceStore((state) => state.bindingIdentitiesReady
     && state.projectId === projectId && state.bindingCanvasId === canvasId);
-  const selected = useMemo(() => nodes.filter((node) => node.selected).map((node) => node.id), [nodes]);
+  const selectedNodes = useMemo(() => nodes.filter((node) => node.selected), [nodes]);
+  const selected = useMemo(() => selectedNodes.map((node) => node.id), [selectedNodes]);
+  const getNativeAccentSelection = () => nodes.filter((node) => node.selected).every((node) =>
+    isNativeAccentSurfaceEnabled(bodySeam?.resolveHostPresentation?.({
+      nodeId: node.id,
+      nodeType: node.type ?? '',
+      data: node.data,
+    })));
+  const nativeAccentSelection = useSyncExternalStore(
+    bodySeam?.subscribe ?? subscribeNoop,
+    getNativeAccentSelection,
+    getNativeAccentSelection,
+  );
   const selectedKey = JSON.stringify(selected);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -132,8 +151,9 @@ export function LcosMultiSelectToolbar(): React.JSX.Element {
       aria-label="对所选对象开始 AI 工作" title={workRefs.ok ? '对这组对象工作；额外引用保持独立' : workRefs.reason}
       onClick={startWork}><Sparkles size={16} aria-hidden/></LcosIconButton>
   </div> : null;
-  return <MultiSelectToolbar presentation="lcos" selectionAction={selectionAction}
-    contextMenuRequest={contextRequest} suppressed={picking || nodes.some((node)=>node.dragging || node.resizing)}
+  return <MultiSelectToolbar presentation="lcos" hideGeometrySize showFontSize={false}
+    showAccentColor={nativeAccentSelection} hideDisabledActions selectionAction={selectionAction}
+    contextMenuRequest={contextRequest} suppressed={picking || selectedNodes.some((node)=>node.dragging || node.resizing)}
     onAlign={align} onSpread={()=>align()} onTidy={()=>runLayout('tidy')}
     onDistribute={selected.length>=3 ? (axis)=>runLayout(axis==='x'?'distribute-x':'distribute-y') : undefined}
     {...(deleteReason===undefined?{}:{deleteDisabledReason:deleteReason})}

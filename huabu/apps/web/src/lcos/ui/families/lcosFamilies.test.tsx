@@ -100,6 +100,25 @@ describe('R1 共享组件族', () => {
     }
   });
 
+  it('keeps the existing create-color-group action reachable without an overflowed pin list', () => {
+    const onCreatePin = vi.fn();
+    const el = render(
+      <LcosNavigatorIslandView
+        state="彩色标"
+        pins={[{ id: 'used', tone: 'teal', label: '当前组', count: 1 }]}
+        onCreatePin={onCreatePin}
+      />,
+    );
+    expect(el.querySelector('[data-lcos-pin-overflow]')).toBeNull();
+    const more = el.querySelector<HTMLButtonElement>('[data-lcos-nav-part="overflow"]');
+    expect(more?.getAttribute('aria-label')).toBe('颜色组操作');
+    act(() => more?.click());
+    const create = document.body.querySelector<HTMLButtonElement>('[data-lcos-pin-overflow] button:last-child');
+    expect(create?.textContent).toContain('新建颜色组');
+    act(() => create?.click());
+    expect(onCreatePin).toHaveBeenCalledOnce();
+  });
+
   it('Railway 目的地数量即变体轴（1 / 4）', () => {
     const one = render(
       <LcosRailwayView items={[{ key: 'main', label: '主', icon: () => <span />, selected: true }]} />,

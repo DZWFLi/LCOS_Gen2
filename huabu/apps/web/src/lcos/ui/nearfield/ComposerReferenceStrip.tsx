@@ -1,20 +1,23 @@
 import { LcosNearfieldGlyph } from './LcosNearfieldGlyph';
 import { LcosIconButton } from '../primitives/LcosIconButton';
 
-import type { ComposerReferenceViewItem } from './composerViewTypes';
+import type { ComposerReferenceStripProps } from './composerViewTypes';
 import type { JSX } from 'react';
 
 /** Gen1 ordered explicit-reference strip, reskinned with Figma Oreo Tag geometry. */
-export function ComposerReferenceStrip({
-  items,
-}: {
-  readonly items: readonly ComposerReferenceViewItem[];
-}): JSX.Element | null {
-  if (items.length === 0) return null;
+export function ComposerReferenceStrip({ items, emptyLabel }: ComposerReferenceStripProps): JSX.Element | null {
+  if (items.length === 0) {
+    return emptyLabel === undefined ? null : (
+      <div className="lcos-composer-reference-empty" data-lcos-composer-reference-empty role="status">
+        {emptyLabel}
+      </div>
+    );
+  }
   return (
     <div className="lcos-composer-references" role="list" aria-label="本次显式引用">
-      {items.map((item, index) => (
-        <div
+      {items.map((item, index) => {
+        const tooltip = [item.tooltip, item.unavailableReason].filter((part): part is string => part !== undefined).join(' · ');
+        return <div
           key={item.key}
           role="listitem"
           className="lcos-composer-reference"
@@ -22,7 +25,7 @@ export function ComposerReferenceStrip({
           data-reference-key={item.key}
           data-reference-order={index + 1}
           data-unavailable={item.unavailableReason !== undefined || undefined}
-          title={item.unavailableReason ?? item.label}
+          title={tooltip || item.label}
         >
           {item.onOpen ? <button type="button" className="lcos-composer-reference-open" onClick={item.onOpen}
             aria-label={`查看引用 ${item.label}${item.versionLabel ? ` · ${item.versionLabel}` : ''}`}>
@@ -44,8 +47,8 @@ export function ComposerReferenceStrip({
               <LcosNearfieldGlyph name="close" size={10} />
             </LcosIconButton>
           )}
-        </div>
-      ))}
+        </div>;
+      })}
     </div>
   );
 }

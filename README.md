@@ -30,3 +30,6 @@ Main、Context、Workflow 是同一 Project 的三个语义工作现场，共享
 - 施工认知与账本：`docs/construction/PROJECT_READBACK.md`、`SOURCE_ADOPTION_LEDGER.md`、`FIGMA_SOURCE_LEDGER.md`、`HUABU_RETIREMENT_LEDGER.md`
 - 逐 Wave handoff：`docs/handoffs/GEN2_NewFrontend_WaveN_*.md`
 - 浏览器验收脚本：`scripts/e2e/`（本地 Chromium + playwright-core）
+# Component credit
+
+Surface navigation adopts [Rare UI](https://rareui.com), by Swami Malode. The copied component retains its source credit and license in `huabu/apps/web/src/lcos/ui/vendor/rareui/`.

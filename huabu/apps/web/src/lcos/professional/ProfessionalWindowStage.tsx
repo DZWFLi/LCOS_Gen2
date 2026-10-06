@@ -14,33 +14,35 @@ import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 import { useCanvasAttentionStore } from '@/store/canvasAttentionStore';
 
 
-import { RunWorkViewBody } from './RunWorkViewBody';
 import { ArchiveBody } from './ArchiveBody';
 import { ArtifactReaderBody } from './ArtifactReaderBody';
 import { AssemblyBody } from './AssemblyBody';
 import { ConversationWorkViewBody } from './ConversationWorkViewBody';
 import { PortalPreviewBody, type PortalTargetResolution } from './PortalPreviewBody';
+import { clampProfessionalSplitRatio, professionalSplitLimits, professionalSplitRatioAtPoint, sameProfessionalRegionLayout } from './professionalGestureGeometry';
+import { beginProfessionalPointerGesture } from './professionalPointerGesture';
+import { visibleWindowIdsForStage, currentProfessionalViewport, useProfessionalViewport } from './professionalStageVisibility';
+import { resolveProfessionalWindowDropTarget, sameProfessionalDropTarget, type ProfessionalWindowDropAction, type ProfessionalWindowDropRegionTarget } from './professionalWindowDropTarget';
 import {
   deriveProfessionalStageRegionPlacementsV1,
   professionalFloatingBoundsV1,
   PROFESSIONAL_STAGE_MIN_HEIGHT,
   PROFESSIONAL_STAGE_MIN_WIDTH,
 } from './professionalWindowStageLayout';
-import { resolveProfessionalWindowDropTarget, sameProfessionalDropTarget, type ProfessionalWindowDropAction, type ProfessionalWindowDropRegionTarget } from './professionalWindowDropTarget';
-import { RuntimeDoctorBody } from './RuntimeDoctorBody';
-import { visibleWindowIdsForStage, currentProfessionalViewport, useProfessionalViewport } from './professionalStageVisibility';
-import { beginProfessionalPointerGesture } from './professionalPointerGesture';
-import { clampProfessionalSplitRatio, professionalSplitLimits, professionalSplitRatioAtPoint, sameProfessionalRegionLayout } from './professionalGestureGeometry';
 import { professionalDockWidth } from './professionalWindowStageLayout';
+import { RetainedReaderBody } from './RetainedReaderBody';
+import { RuntimeDoctorBody } from './RuntimeDoctorBody';
+import { RunWorkViewBody } from './RunWorkViewBody';
+import { composerInputKey } from '../composer/composerInputJourney';
+import { composerHasVisibleWindowOwner } from '../composer/composerPresentationOwner';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useLcosShellStore, type LcosWindow } from '../shell/lcosShellStore';
 import { activeWindowIdForRegion, createWindowRegion, normalizeWindowRegion, windowIdsForRegion } from '../shell/windowRegionTopology';
 import { LcosWindowChrome } from '../ui/families/LcosWindowChrome';
-import { ReaderContentTabsView } from '../ui/professional/ReaderContentTabsView';
-import { LcosButton } from '../ui/primitives/LcosButton';
-import { RetainedReaderBody } from './RetainedReaderBody';
-import './professional-window-stage.css';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
+import { LcosButton } from '../ui/primitives/LcosButton';
+import { ReaderContentTabsView } from '../ui/professional/ReaderContentTabsView';
+import './professional-window-stage.css';
 
 import type { LcosWindowRegion, WindowRegionInput } from '../shell/windowRegionTopology';
 import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
@@ -90,7 +92,7 @@ interface WindowGestureStyle {
 }
 
 function preferredWidthFor(window: LcosWindow): number {
-  return window.bodyKey === 'reader' ? 1120 : window.bodyKey === 'assembly' ? (window.composerOriginKey ? 1000 : 640) : window.bodyKey === 'portal-preview' ? 472 : 520;
+  return window.bodyKey === 'reader' ? 1120 : window.bodyKey === 'assembly' ? (window.composerOriginKey ? 1000 : 420) : window.bodyKey === 'portal-preview' ? 472 : 520;
 }
 
 const currentViewport = currentProfessionalViewport;
@@ -138,12 +140,14 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
   const clearWindowEnvironment = useLcosShellStore((s) => s.clearWindowEnvironment);
   const composerOpen = useLcosShellStore((s) => s.composerOpen);
   const composerReceiver = useLcosShellStore((s) => s.composerTarget?.receiverConversationId);
+  const composerFocusVersion = useLcosShellStore((s) => s.composerFocusVersion);
   const viewport = useProfessionalViewport();
   const [dropPreview, setDropPreview] = useState<WindowDropPreview | null>(null);
   const suppressTabClickRef = useRef(false);
   const regionElements = useRef(new Map<string, HTMLDivElement>());
   const [readerSlots, setReaderSlots] = useState<ReadonlyMap<string, HTMLElement>>(new Map());
   const readerSlotCallbacks = useRef(new Map<string, (element: HTMLDivElement | null) => void>());
+  const assemblyDockedWindowIds = useRef(new Set<string>());
   const slotRef = (id: string): ((element: HTMLDivElement | null) => void) => {
     let callback = readerSlotCallbacks.current.get(id);
     if (callback === undefined) {
@@ -169,11 +173,22 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
     gestureCleanupRef.current?.(); gestureCleanupRef.current = null;
   }, [projectId]);
   const active = windows.find((window) => window.active) ?? windows[windows.length - 1];
+  const previousComposerFocusVersion = useRef(composerFocusVersion);
   useLayoutEffect(() => {
     // Restored/opened windows own attention until the user returns to canvas.
     // Preserve selection; only its floating chrome yields to the active surface.
-    if (active?.id) useCanvasAttentionStore.getState().setCanvasEngaged(false);
-  }, [active?.id]);
+    const explicitlyResumedComposer = previousComposerFocusVersion.current !== composerFocusVersion;
+    previousComposerFocusVersion.current = composerFocusVersion;
+    if (!active?.id) return;
+    if (explicitlyResumedComposer) {
+      const state = useLcosShellStore.getState();
+      const visibleIds = visibleWindowIdsForStage(
+        state.windows, state.windowRegions, currentProfessionalViewport(),
+      ).windowIds;
+      if (state.composerOpen && !composerHasVisibleWindowOwner(state.composerTarget, state.windows, visibleIds)) return;
+    }
+    useCanvasAttentionStore.getState().setCanvasEngaged(false);
+  }, [active?.id, composerFocusVersion]);
   const regionEntries = useMemo(
     () => materializeRegionEntries(windows, windowRegions),
     [windowRegions, windows],
@@ -184,6 +199,23 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
     const visibleIds = new Set(visibility.windowIds);
     return regionEntries.filter((entry) => windowIdsForRegion(entry.region).some((id) => visibleIds.has(id)));
   }, [regionEntries, visibility.windowIds]);
+  // Assembly defaults to the fixed right bay while keeping geometry in the existing Stage/store owner.
+  useLayoutEffect(() => {
+    const live = useLcosShellStore.getState();
+    const liveWindowIds = new Set(windows.map((window) => window.id));
+    for (const id of assemblyDockedWindowIds.current) {
+      if (!liveWindowIds.has(id)) assemblyDockedWindowIds.current.delete(id);
+    }
+    for (const window of windows) {
+      if (window.bodyKey !== 'assembly' || assemblyDockedWindowIds.current.has(window.id)) continue;
+      const region = live.windowRegions.find((item) => windowIdsForRegion(item).includes(window.id));
+      if (region === undefined) continue;
+      assemblyDockedWindowIds.current.add(window.id);
+      if (normalizeWindowRegion(region).layout !== 'docked-right') {
+        live.detachWindowToDockRight(window.id, region.dockWidth ?? preferredWidthFor(window));
+      }
+    }
+  }, [windowRegions, windows]);
   const activeRegionId = active === undefined
     ? undefined
     : regionEntries.find((entry) => windowIdsForRegion(entry.region).includes(active.id))?.region.id;
@@ -572,16 +604,60 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
     };
   }, [activeRegionId, clearWindowEnvironment, publishWindowEnvironment, visibleEntries, viewport, windows.length]);
 
-  // Esc 栈：Professional Stage 只关闭全局前景窗口；inline Composer 仍先消费一次 Esc。
+  const returnComposerFromWindow = (item: LcosWindow): boolean => {
+    const originKey = item.composerOriginKey;
+    const current = useLcosShellStore.getState();
+    if (originKey === undefined || current.projectId !== projectId
+      || composerInputKey(current.composerTarget) !== originKey) return false;
+
+    if (item.bodyKey === 'assembly') {
+      // An Assembly Composer owns its own window; end the picker mode in place.
+      if (current.composerTarget?.nodeId.startsWith('assembly:')) {
+        if (!current.resumeComposer(originKey)) return false;
+        const owner = useLcosShellStore.getState().windows.find((window) => window.id === item.id);
+        if (owner) useLcosShellStore.getState().openAssembly(
+          owner.assemblyTargetRef ?? { kind: 'main' }, owner.title, owner.assemblyFollowsWorksite ?? false,
+        );
+        return true;
+      }
+
+    }
+
+    if (item.bodyKey !== 'assembly' && item.bodyKey !== 'reader') return false;
+    // Close only the borrowed Assembly/Reader before asking the original
+    // Conversation/Canvas owner to reclaim the same input.
+    closeWindow(item.id);
+    if (!useLcosShellStore.getState().resumeComposer(originKey)) return false;
+    const restored = useLcosShellStore.getState();
+    const visibleIds = visibleWindowIdsForStage(
+      restored.windows, restored.windowRegions, currentProfessionalViewport(),
+    ).windowIds;
+    if (!composerHasVisibleWindowOwner(restored.composerTarget, restored.windows, visibleIds)) {
+      useCanvasAttentionStore.getState().setCanvasEngaged(true);
+    }
+    return true;
+  };
+  const returnReader = (reader: LcosWindow): void => {
+    if (reader.composerOriginKey === undefined) {
+      returnReaderToSource(reader);
+      return;
+    }
+    if (!returnComposerFromWindow(reader)) closeWindow(reader.id);
+  };
+  const close = (item: LcosWindow): void => {
+    if (item.bodyKey === 'reader') returnReader(item);
+    else if (item.bodyKey === 'assembly' && item.composerOriginKey !== undefined) {
+      if (!returnComposerFromWindow(item)) closeWindow(item.id);
+    }
+    else closeWindow(item.id);
+  };
+
+  // Esc 栈：Professional Stage 只关闭全局前景窗口；inline Composer 仍先消费一次 Esc.
   useCloseOnEscape(windows.length > 0 && !inlineComposerOpen, () => {
     if (active === undefined) return;
-    if (active.bodyKey === 'reader') returnReaderToSource(active);
-    else closeWindow(active.id);
+    if (active.bodyKey === 'reader') returnReader(active);
+    else close(active);
   });
-
-  const close = (item: LcosWindow): void => {
-    if (item.bodyKey === 'reader') returnReaderToSource(item); else closeWindow(item.id);
-  };
   const activate = (id: string): void => {
     useCanvasAttentionStore.getState().setCanvasEngaged(false);
     activateWindow(id);
@@ -601,9 +677,9 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
   };
   const body = (item: LcosWindow): React.JSX.Element => <ProfessionalBody
     key={`${projectId}:${item.id}`} projectId={projectId} bodyKey={item.bodyKey}
-    onClose={() => closeWindow(item.id)}
+    onClose={() => close(item)}
     {...(item.composerOriginKey === undefined ? {} : { composerOriginKey: item.composerOriginKey,
-      onReturnComposer: () => { if (useLcosShellStore.getState().resumeComposer(item.composerOriginKey!)) closeWindow(item.id); } })}
+      onReturnComposer: () => { returnComposerFromWindow(item); } })}
     {...(item.target === undefined ? {} : { target: item.target })}
     {...(item.targetKind === undefined ? {} : { targetKind: item.targetKind })}
     {...(item.portalWorkspaceId === undefined ? {} : { portalWorkspaceId:item.portalWorkspaceId })}
@@ -635,6 +711,7 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
         const span = direction === 'vertical' ? placement.width : Math.max(0, placement.height - (readerShell ? 48 : 0));
         const ratio = clampProfessionalSplitRatio(region.splitRatio ?? 0.5, span, direction);
         const limits = professionalSplitLimits(span, direction);
+        const primaryPaneId = `lcos-professional-pane-${groups[0]?.id ?? region.id}`;
         return <div key={region.id}
           ref={(element) => { if (element === null) regionElements.current.delete(region.id); else regionElements.current.set(region.id, element); }}
           data-lcos-window-region-id={region.id} data-lcos-window-layout={region.layout}
@@ -663,8 +740,10 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
               const paneVisible = regionVisible && (!compact || members.some((item) => item.id === active?.id));
               const tabs = (compact ? windows : members).map((item) => ({ key: item.bodyKey, value: item.id, label: item.title, selected: item.id === (compact ? active?.id : selected.id) }));
               return <Fragment key={group.id}>
+                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- W3C APG Window Splitter treats a focusable separator as the widget (https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/). */}
                 {index === 1 && split && <div role="separator" tabIndex={0} data-lcos-window-splitter
                   className="lcos-professional-splitter" aria-label="调整分屏比例" aria-orientation={direction === 'horizontal' ? 'horizontal' : 'vertical'}
+                  aria-controls={primaryPaneId}
                   aria-valuemin={Math.round(limits.min * 100)} aria-valuemax={Math.round(limits.max * 100)} aria-valuenow={Math.round(ratio * 100)}
                   onPointerDown={(event) => beginSplitGesture(event, region)}
                   onKeyDown={(event) => {
@@ -677,7 +756,7 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
                     event.preventDefault(); event.stopPropagation();
                     useLcosShellStore.getState().setWindowRegionSplitRatio(region.id, clampProfessionalSplitRatio(next, span, direction));
                   }} />}
-                <section data-lcos-window-pane={group.id} className="lcos-professional-pane" aria-label={selected.title}
+                <section id={`lcos-professional-pane-${group.id}`} data-lcos-window-pane={group.id} className="lcos-professional-pane" aria-label={selected.title}
                   hidden={!paneVisible} inert={!paneVisible || undefined}
                   onFocusCapture={() => activate(selected.id)} onPointerDownCapture={() => activate(selected.id)}
                   style={{ display: paneVisible ? 'flex' : 'none', flex: split ? `${index === 0 ? ratio : 1 - ratio} 1 0%` : '1 1 100%' }}>
@@ -685,7 +764,11 @@ export function ProfessionalWindowStage({ projectId, resolvePortalTarget, onOpen
                     onPointerDown={(event) => handleChromePointer(event, region)} onClickCapture={consumeDraggedTabClick}>
                     <ReaderContentTabsView label={`阅读组 ${index + 1}`} items={members.map((item) => ({ id: item.id,
                       label: item.title.replace(/^阅读\s*·\s*/, ''), selected: item.id === selected.id }))} onActivate={activate} />
-                  </div> : <div data-lcos-window-drag-handle="enabled" onPointerDown={(event) => handleChromePointer(event, region)} onClickCapture={consumeDraggedTabClick}>
+                  </div> : <div {...(selected.bodyKey === 'assembly' ? { 'data-lcos-assembly-fixed-right': 'true' } : {
+                    'data-lcos-window-drag-handle': 'enabled',
+                    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => handleChromePointer(event, region),
+                    onClickCapture: consumeDraggedTabClick,
+                  })}>
                     <LcosWindowChrome layout={compact || members.length > 1 ? '分组' : docked ? '停靠' : '浮动'} title={selected.title}
                       tabs={compact || members.length > 1 ? tabs : undefined} onSelectTab={activate}
                       primaryActions={<button type="button" data-lcos-window-icon-button aria-label="关闭窗口" onClick={() => close(selected)}><X className="h-4 w-4" /></button>} />
@@ -771,6 +854,7 @@ function ProfessionalBody({
           projectId={projectId}
           targetRef={assemblyTargetRef ?? { kind: 'main' }}
           {...(composerOriginKey === undefined ? {} : { composerOriginKey })}
+          {...(onReturnComposer === undefined ? {} : { onReturnComposer })}
         />
       );
     case 'reader':

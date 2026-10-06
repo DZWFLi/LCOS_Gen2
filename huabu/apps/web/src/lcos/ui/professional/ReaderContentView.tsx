@@ -1,13 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react';
 
-import { MilkdownPreview } from '@/components/Milkdown';
 import { Button } from '@/components/Common/Button';
-
+import { MilkdownPreview } from '@/components/Milkdown';
 import { PreviewHeaderSlotContext } from '@/components/Nodes/PreviewHeaderSlot';
 
 import { Gen1ImageZoomStage } from './donor/Gen1ImageZoomStage';
+import ScrollProgress, { type ScrollProgressSection } from './donor/ScrollProgress';
 import './donor/gen1-reader.css';
 import './professional-reading.css';
+import './reader-scroll-progress.css';
 
 import type { ReactNode, Ref, UIEventHandler } from 'react';
 
@@ -154,31 +155,100 @@ function ReaderTextContent({ content, kind, contentRef, onScroll, onContentReady
   const [renderError, setRenderError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const [showSource, setShowSource] = useState(false);
+  const readerAnchorPrefix = `lcos-reader-${useId().replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const readerContentRef = useRef<HTMLDivElement>(null);
+  const [sections, setSections] = useState<readonly ScrollProgressSection[]>([]);
+  const [hasScrollableContent, setHasScrollableContent] = useState(false);
+  useImperativeHandle(contentRef, () => readerContentRef.current as HTMLDivElement);
   const latest = useRef({ content, onContentReady });
   latest.current = { content, onContentReady };
   const rich = renderedText === undefined && !showSource
     && (kind === 'markdown' || content.mimeType?.split(';')[0] === 'text/markdown');
+  const collectSections = useCallback(() => {
+    const container = readerContentRef.current;
+    if (container === null) {
+      setSections([]);
+      return;
+    }
+    const headings = Array.from(container.querySelectorAll<HTMLElement>(
+      '.lcos-reader-measure h1, .lcos-reader-measure h2, .lcos-reader-measure h3, .lcos-reader-measure h4, .lcos-reader-measure h5, .lcos-reader-measure h6',
+    ));
+    const next: ScrollProgressSection[] = [];
+    const scopedIdsBySource = new Map<string, string>();
+    headings.forEach((heading, index) => {
+      const label = heading.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      if (!label) return;
+      const storedSourceId = heading.getAttribute('data-lcos-reader-source-id');
+      const sourceId = storedSourceId ?? heading.id;
+      if (storedSourceId === null) heading.setAttribute('data-lcos-reader-source-id', sourceId);
+      const baseId = sourceId || `section-${index + 1}`;
+      const suffix = next.some((section) => section.id === `${readerAnchorPrefix}-${baseId}`)
+        ? `-${index + 1}`
+        : '';
+      const scopedId = `${readerAnchorPrefix}-${baseId}${suffix}`;
+      if (sourceId) scopedIdsBySource.set(sourceId, scopedId);
+      if (heading.id) scopedIdsBySource.set(heading.id, scopedId);
+      heading.id = scopedId;
+      next.push({ id: scopedId, label });
+    });
+    for (const link of container.querySelectorAll<HTMLAnchorElement>('.lcos-reader-measure a[href^="#"]')) {
+      const sourceId = link.getAttribute('href')?.slice(1);
+      const scopedId = sourceId === undefined ? undefined : scopedIdsBySource.get(sourceId);
+      if (scopedId !== undefined) link.setAttribute('href', `#${scopedId}`);
+    }
+    setSections(next);
+  }, [readerAnchorPrefix]);
+  const measureScrollableContent = useCallback(() => {
+    const container = readerContentRef.current;
+    const scrollable = container !== null && container.scrollHeight > container.clientHeight + 1;
+    setHasScrollableContent((current) => current === scrollable ? current : scrollable);
+  }, []);
   const ready = useCallback(() => {
+    collectSections();
+    measureScrollableContent();
     const { content: current, onContentReady: notify } = latest.current;
     notify?.(current);
-  }, []);
+  }, [collectSections, measureScrollableContent]);
   const failed = useCallback((error: Error) => setRenderError(error.message), []);
   useEffect(() => { if (!rich) ready(); }, [rich, content, renderedText, ready]);
-  return <div ref={contentRef} onScroll={onScroll} data-lcos-reader-content="text"
-    data-figma-node-id="5388:27484" className="lcos-reader-page">
-    <div className="lcos-reader-measure">
-      {rich ? <div data-lcos-reader-text-scale style={{ zoom: zoom / 100 }}>
-        <MilkdownPreview key={attempt} markdown={content.value} enableBlockDrag={false}
-          ariaLabel="正文（只读）" className="lcos-reader-richtext lcos-reader-markdown"
-          onRendered={ready} onError={failed} />
-      </div> : renderedText !== undefined ? <div className="lcos-reader-richtext" style={{ zoom: zoom / 100 }}>{renderedText}</div>
-        : <pre className="lcos-reader-plaintext" style={{ fontSize: `${16 * zoom / 100}px` }}>{content.value}</pre>}
-      {renderError && !showSource && <div role="alert" data-lcos-reader-render-error>
-        <p>此版本正文已读取，但格式预览未能载入：{renderError}</p>
-        <Button size="sm" variant="ghost" onClick={() => { setRenderError(undefined); setAttempt(n => n + 1); }}>重试格式预览</Button>
-        <Button size="sm" variant="ghost" onClick={() => setShowSource(true)}>查看同一版本原文</Button>
-      </div>}
+  useEffect(() => {
+    const container = readerContentRef.current;
+    if (container === null) return;
+    measureScrollableContent();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureScrollableContent);
+    observer?.observe(container);
+    const measure = container.querySelector('.lcos-reader-measure');
+    if (measure) observer?.observe(measure);
+    window.addEventListener('resize', measureScrollableContent);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measureScrollableContent);
+    };
+  }, [content, renderedText, zoom, showSource, measureScrollableContent]);
+  return <div data-lcos-reader-content-frame className="lcos-reader-content-frame">
+    <div ref={readerContentRef} onScroll={onScroll} data-lcos-reader-content="text"
+      data-figma-node-id="5388:27484" className="lcos-reader-page">
+      <div className="lcos-reader-measure">
+        {rich ? <div data-lcos-reader-text-scale style={{ zoom: zoom / 100 }}>
+          <MilkdownPreview key={attempt} markdown={content.value} enableBlockDrag={false}
+            ariaLabel="正文（只读）" className="lcos-reader-richtext lcos-reader-markdown"
+            onRendered={ready} onError={failed} />
+        </div> : renderedText !== undefined ? <div className="lcos-reader-richtext" style={{ zoom: zoom / 100 }}>{renderedText}</div>
+          : <pre className="lcos-reader-plaintext" style={{ fontSize: `${16 * zoom / 100}px` }}>{content.value}</pre>}
+        {renderError && !showSource && <div role="alert" data-lcos-reader-render-error>
+          <p>此版本正文已读取，但格式预览未能载入：{renderError}</p>
+          <Button size="sm" variant="ghost" onClick={() => { setRenderError(undefined); setAttempt(n => n + 1); }}>重试格式预览</Button>
+          <Button size="sm" variant="ghost" onClick={() => setShowSource(true)}>查看同一版本原文</Button>
+        </div>}
+      </div>
+      {feedback}
     </div>
-    {feedback}
+    {sections.length > 0 && hasScrollableContent && <ScrollProgress
+      data-lcos-reader-scroll-progress
+      aria-label="正文章节进度"
+      sections={[...sections]}
+      containerRef={readerContentRef}
+      className="lcos-reader-scroll-progress"
+    />}
   </div>;
 }

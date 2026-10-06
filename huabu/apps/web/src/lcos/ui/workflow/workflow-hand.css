@@ -3,6 +3,8 @@
 /* Workflow Hand / Task Card deep fidelity: Figma 5140:3012 + 5334:46 + 5335:110. */
 .lcos-workflow-hand-stage { position:fixed; inset:0; z-index:34; pointer-events:none; background:transparent; }
 .lcos-workflow-hand-shell { pointer-events:auto; position:absolute; left:50%; bottom:0; width:min(1080px,calc(100vw - 80px)); height:min(610px,calc(100vh - 150px)); transform:translateX(-50%); }
+.lcos-workflow-hand-stage[data-native-assembly-drop='true'] > .lcos-atlas-dismiss-plane,
+.lcos-workflow-hand-stage[data-native-assembly-drop='true'] .lcos-workflow-hand-shell { pointer-events:none; }
 .lcos-workflow-hand-head { position:absolute; left:0; right:0; top:0; display:flex; align-items:center; justify-content:space-between; color:var(--gen2-muted); font:400 12px/19px 'Noto Sans SC',sans-serif; }
 .lcos-workflow-hand-close { width:44px; height:44px; display:grid; place-items:center; border:0; background:transparent; border-radius:12px; color:var(--gen2-muted); }
 .lcos-workflow-hand-close:hover,.lcos-workflow-hand-close:focus-visible { background:rgba(255,255,255,.72); outline:2px solid var(--gen2-accent); outline-offset:2px; }
@@ -180,6 +182,7 @@
 .lcos-workflow-card-preview > .lcos-workflow-preview-close { position:absolute; right:5px; top:3px; min-height:28px; padding:6px; }
 .lcos-workflow-card-preview > span { padding-inline:8px; font-size:10px; color:var(--gen2-muted); }
 .lcos-workflow-card-preview > .lcos-workflow-preview-title { padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.lcos-workflow-entry-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 .lcos-workflow-preview-action { width:100%; min-height:38px; display:flex; align-items:center; gap:8px; padding:6px 8px; border:0; border-radius:8px; background:transparent; font:inherit; font-size:11px; text-align:left; }
 .lcos-workflow-preview-action:hover { background:var(--gen2-raised); }

@@ -49,6 +49,7 @@ export class RailwayDestinationService {
     const resolve = (ref: RailwayStoredRefV1): RailwayDestinationV1 => {
       const base = { key: railwayStableKeyV1(ref), ref, accepts: [] as readonly ('artifactView' | 'note')[] }
       if (ref.kind === 'legacy') return {...base, role: 'legacy', label: ref.legacyViewId || '无法识别的旧目的地', available: false, reason: '旧记录尚未确认用途，可保留或移除；不会自动变成工作现场。'}
+      if (ref.kind === 'spatial') return this.resolveSpatial(projectId, ref, project)
       if (ref.kind === 'receiver_conversation') {
         const conversation = this.metadata.getConnectedConversation(projectId, ref.connectedConversationId)
         const available = !!conversation && !conversation.conversationRef.startsWith('pending-')
@@ -57,7 +58,7 @@ export class RailwayDestinationService {
       }
       const candidates = ref.kind === 'surface_root'
         ? workspaces.filter((w) => roots.has(String(w.scopeId)) && w.preferredSurface === ref.surface)
-        : workspaces.filter((w) => String(w.id) === ref.worksiteId && !roots.has(String(w.scopeId)))
+        : workspaces.filter((w) => String(w.id) === ref.worksiteId)
       const workspace = candidates.length === 1 ? candidates[0] : undefined
       const surface = workspace && surfaceOf(workspace)
       const canvasId = workspace?.canvasId
@@ -65,9 +66,17 @@ export class RailwayDestinationService {
       const available = !!workspace && !!canvasId && !!surface && !sharedCanvas
       const reason = !workspace ? '目的地不存在或身份不唯一。' : !surface ? '现场类型尚未确认。'
         : !canvasId ? '这个现场还没有画布，暂不能进入或接收材料。' : sharedCanvas ? '多个现场共用同一画布，请先修复现场绑定。' : undefined
+      const receiveTarget = available
+        ? ref.kind === 'surface_root'
+          ? ref.surface === 'main' ? {owner:'assembly' as const,targetRef:{kind:'main' as const}}
+            : workspace ? {owner:'assembly' as const,targetRef:{kind:ref.surface,id:String(workspace.scopeId)}} : undefined
+          : undefined
+        : undefined
       return {...base, role: ref.kind === 'surface_root' ? 'surface' : 'worksite', label: workspace?.name || '原现场不可用', available,
         ...(reason ? {reason} : {}), ...(surface ? {surface} : {}), ...(canvasId ? {canvasId} : {}),
         ...(workspace ? {workspaceId: String(workspace.id)} : {}),
+        ...(ref.kind === 'worksite' && workspace ? {sourceRef:{kind:'scene' as const,id:String(workspace.id)}} : {}),
+        ...(receiveTarget ? {receiveTarget} : {}),
         accepts: available && ref.kind === 'worksite' ? ['artifactView', 'note'] : []}
     }
     const destinations = refs.map(resolve)
@@ -79,6 +88,27 @@ export class RailwayDestinationService {
     const candidates = candidateRefs.filter((r) => !seen.has(railwayStableKeyV1(r))).map(resolve)
       .sort((a,b) => a.label.localeCompare(b.label, 'zh-CN') || a.key.localeCompare(b.key))
     return {schemaVersion: 1, projectId, order, destinations, candidates, migrationRequired: !!record && !isV1}
+  }
+
+  private resolveSpatial(projectId: string, ref: Extract<RailwayStoredRefV1, {kind:'spatial'}>, project: NonNullable<ReturnType<SqliteMetadataRepository['get']>>): RailwayDestinationV1 {
+    const base = {key:railwayStableKeyV1(ref),ref,role:'spatial' as const,accepts:[] as readonly ('artifactView'|'note')[]}
+    if (ref.entityType === 'collection') {
+      const collection = project.collections?.filter((candidate) => String(candidate.id) === ref.entityId
+        && String(candidate.projectId) === projectId) ?? []
+      if (collection.length !== 1 || !collection[0]) return {...base,label:'原集合不可用',available:false,reason:'集合不存在或身份不唯一。'}
+      return {...base,label:collection[0].title,available:true,
+        sourceRef:{kind:'collection',id:String(collection[0].id)},
+        receiveTarget:{owner:'collection-membership',collectionId:String(collection[0].id)}}
+    }
+    const scopes = project.scopes.filter((candidate) => String(candidate.id) === ref.entityId
+      && String(candidate.projectId) === projectId)
+    const scope = scopes.length === 1 ? scopes[0] : undefined
+    if (!scope) return {...base,label:'原现场不可用',available:false,reason:'现场不存在或身份不唯一。'}
+    if (scope.kind !== 'context' && scope.kind !== 'workflow')
+      return {...base,label:scope.name,available:false,reason:'仅已确认的上下文或工作流现场可以固定到导航。'}
+    return {...base,label:scope.name,available:true,
+      sourceRef:{kind:scope.kind,id:String(scope.id)},
+      receiveTarget:{owner:'assembly',targetRef:{kind:scope.kind,id:String(scope.id)}}}
   }
 
   /** A read-only Portal address; a workspace need not be pinned to Railway. */
@@ -109,13 +139,23 @@ export class RailwayDestinationService {
     if (new Set(keys).size !== keys.length) throw new Error('目的地不能重复。')
     this.metadata.saveRailwayOrderRecord(projectId, {schemaVersion: 1, orderedRefs}, expectedVersion, () => {
       const current = this.read(projectId)
+      const project = this.metadata.get(projectId)
+      if (!project) throw new Error('项目不存在。')
+      const rootScopeIds = new Set(project.scopes.filter((scope) => scope.kind === 'root').map((scope) => String(scope.id)))
       const retained = new Set(current.order.orderedRefs.map(railwayStableKeyV1))
       const candidates = new Map(current.candidates.map((item) => [item.key, item]))
       for (const ref of orderedRefs) {
         const key = railwayStableKeyV1(ref)
         if (retained.has(key)) continue
-        if (ref.kind === 'legacy' || ref.kind === 'surface_root' || !candidates.get(key)?.available)
-          throw new Error('目的地已变化或尚不可用，请重新读取后添加。')
+        if (ref.kind === 'legacy' || ref.kind === 'surface_root') throw new Error('目的地已变化或尚不可用，请重新读取后添加。')
+        if (candidates.get(key)?.available) continue
+        if (ref.kind === 'spatial' && this.resolveSpatial(projectId,ref,project).available) continue
+        if (ref.kind === 'worksite') {
+          const workspace = project.workspaces.find((candidate) => String(candidate.id) === ref.worksiteId)
+          const isRootWorkspace = workspace !== undefined && rootScopeIds.has(String(workspace.scopeId))
+          if (isRootWorkspace && this.resolveWorkspace(projectId,ref.worksiteId).available) continue
+        }
+        throw new Error('目的地已变化或尚不可用，请重新读取后添加。')
       }
     })
     return this.read(projectId)

@@ -21,6 +21,8 @@ import type {
 } from '@local-creative-os/web-gen2';
 
 export type DropTargetKind =
+  | 'railway-bookmark'
+  | 'spatial-membership'
   | 'canvas'
   | 'railway-receive'
   | 'composer-reference'
@@ -42,6 +44,8 @@ export interface DropEntityRef extends CoreEntityRefLike {
 }
 
 export type DropTargetSemantic =
+  | { readonly kind: 'railway-bookmark'; readonly projectId: string }
+  | { readonly kind: 'spatial-membership'; readonly targetRef: AssemblyTargetRefV1 }
   | {
       readonly kind: 'canvas';
       readonly targetRef: AssemblyTargetRefV1;
@@ -101,6 +105,9 @@ export interface DropTargetRegistration {
   readonly semantic: DropTargetSemantic;
 }
 
+/** Resolver-only view of a live destination, without its ephemeral DOM geometry. */
+export type DropTargetCandidate = Pick<DropTargetRegistration, 'targetId' | 'enabled' | 'ineligibleReason' | 'semantic'>;
+
 export interface DropAssemblyApplyIntent {
   readonly kind: 'assembly-apply';
   readonly targetId: string;
@@ -159,7 +166,16 @@ export interface DropCollectionItemReceipt {
   readonly canonicalReceipt?: unknown;
 }
 
+/** A spatial object is referenced by Rail; its contents and geometry stay with its owner. */
+export interface DropRailwayBookmarkIntent {
+  readonly kind: 'railway-bookmark';
+  readonly targetId: string;
+  readonly projectId: string;
+  readonly refs: readonly RailwayCanonicalRefV1[];
+}
+
 export type DropIntent =
+  | DropRailwayBookmarkIntent
   | DropAssemblyApplyIntent
   | DropComposerReferenceIntent
   | DropCollaborationReferenceIntent

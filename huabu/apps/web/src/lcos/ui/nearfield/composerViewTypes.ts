@@ -10,12 +10,18 @@ export interface ComposerReferenceViewItem {
   readonly key: string;
   readonly label: string;
   readonly versionLabel?: string | undefined;
+  readonly tooltip?: string | undefined;
   readonly onOpen?: (() => void) | undefined;
   readonly thumbnailSrc?: string | undefined;
   readonly icon?: ReactNode;
   readonly unavailableReason?: string | undefined;
   /** Absent callback means no delete affordance, not a fake working action. */
   readonly onRemove?: (() => void) | undefined;
+}
+
+export interface ComposerReferenceStripProps {
+  readonly items: readonly ComposerReferenceViewItem[];
+  readonly emptyLabel?: string | undefined;
 }
 
 export interface ComposerVisualAction {
@@ -31,6 +37,7 @@ export interface LcosComposerViewProps {
   readonly presentation: 'nearfield' | 'inline';
   readonly state: ComposerVisualState;
   readonly targetId?: string | undefined;
+  readonly contextLabel: string;
   readonly title: string;
   /** The owner supplies the real receiver identity; never manufacture one from a title. */
   readonly identity?: ReactNode;

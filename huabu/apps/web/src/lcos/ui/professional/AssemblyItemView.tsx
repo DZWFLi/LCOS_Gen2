@@ -12,14 +12,15 @@ export interface AssemblyItemViewProps extends Omit<HTMLAttributes<HTMLDivElemen
   readonly subtitle?: ReactNode;
   readonly children: ReactNode;
   readonly actions: ReactNode;
+  readonly primaryAction?: ReactNode;
   readonly referenced?: boolean;
   readonly selected?: boolean;
   readonly onSelect?: () => void;
   readonly hideCaption?: boolean;
   readonly onPreview?: () => void;
 }
-/** GEN1 identity/reference separation; C02 actions reveal without changing masonry height. */
-export function AssemblyItemView({ title, identity, subtitle, children, actions, referenced = false,
+/** GEN1 identity/reference separation; the primary action stays beside the item metadata. */
+export function AssemblyItemView({ title, identity, subtitle, children, actions, primaryAction, referenced = false,
   selected = false, onSelect, onPreview, hideCaption = false, className, ...rest }: AssemblyItemViewProps): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
@@ -44,10 +45,11 @@ export function AssemblyItemView({ title, identity, subtitle, children, actions,
     </label> : null}
     {!hideCaption ? <div className="lcos-assembly-item-caption"><strong title={title}>{title}</strong>
       <span>{identity}{subtitle ? <>{identity ? ' · ' : ''}{subtitle}</> : null}</span></div> : null}
+    {primaryAction ? <div data-lcos-assembly-primary-action className="lcos-assembly-primary-action">{primaryAction}</div> : null}
     {referenced ? <span className="lcos-assembly-draft-mark">已在草稿</span> : null}
-    <LcosButton variant="ghost" data-lcos-assembly-more aria-label={`取用 ${title}`} aria-expanded={expanded}
+    <LcosButton variant="ghost" data-lcos-assembly-more aria-label={`更多操作 ${title}`} aria-expanded={expanded}
       aria-controls={id} className="lcos-assembly-more" onClick={() => setExpanded((current) => !current)}>
-      <img src={moreIcon} alt="" width={18} height={18} /><span>取用</span>
+      <img src={moreIcon} alt="" width={18} height={18} /><span>更多</span>
     </LcosButton>
     <div id={id} data-lcos-assembly-actions className="lcos-assembly-item-actions">{actions}</div>
   </div>;

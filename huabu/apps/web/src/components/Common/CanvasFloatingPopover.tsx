@@ -13,6 +13,8 @@ import { useStore, useViewport } from '@xyflow/react';
 import {
   useLayoutEffect,
   useMemo,
+  useRef,
+  useState,
   type CSSProperties,
   type ReactNode,
 } from 'react';
@@ -59,6 +61,10 @@ export interface CanvasFloatingPopoverProps {
   /** Optional managed dismissal; nested portals share FloatingTree. */
   onDismiss?: () => void;
   referenceElement?: { readonly current: HTMLElement | null };
+  /** Enables Floating UI focus management without enabling outside-press dismissal. */
+  managedFocus?: boolean;
+  /** Identity of the open target; changing it invalidates a stale return-focus element. */
+  focusReturnKey?: string;
   ariaLabel?: string;
 }
 
@@ -95,7 +101,7 @@ function CanvasFloatingPopoverInner({
   nearbyControls,
   className,
   style,
-  children, onDismiss, referenceElement, ariaLabel,
+  children, onDismiss, referenceElement, managedFocus = false, focusReturnKey, ariaLabel,
 }: CanvasFloatingPopoverProps) {
   const nodeId = useFloatingNodeId();
   const { zoom, x: vpX, y: vpY } = useViewport();
@@ -117,6 +123,11 @@ function CanvasFloatingPopoverInner({
   const hiddenByOtherSurface = useCanvasAttentionStore(
     (s) => !s.isCanvasEngaged,
   );
+  const managedFocusReference = useRef<HTMLElement | null>(null);
+  const managedFocusKey = useRef<string | null>(null);
+  const managedFocusWasOpen = useRef(false);
+  const [managedFocusVersion, setManagedFocusVersion] = useState(0);
+  const [managedFocusReturnAllowed, setManagedFocusReturnAllowed] = useState(false);
 
   // Virtual reference element: Floating UI calls `getBoundingClientRect`
   // on every position recalculation, so we always read fresh values
@@ -187,7 +198,34 @@ function CanvasFloatingPopoverInner({
   const dismiss = useDismiss(context, { enabled: onDismiss !== undefined,
     bubbles: { escapeKey: false, outsidePress: true }, outsidePress: (event) => event.button !== 2 });
   const { getFloatingProps } = useInteractions([dismiss]);
-  useLayoutEffect(() => { if (referenceElement?.current) refs.setReference(referenceElement.current); }, [referenceElement, refs, open]);
+  useLayoutEffect(() => {
+    if (!managedFocus) return;
+    if (open) {
+      const nextFocusKey = focusReturnKey ?? null;
+      if (!managedFocusWasOpen.current) {
+        const activeElement = document.activeElement;
+        const sourceElement = referenceElement?.current
+          ?? (activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null);
+        managedFocusReference.current = sourceElement?.isConnected ? sourceElement : null;
+        managedFocusKey.current = nextFocusKey;
+        managedFocusWasOpen.current = true;
+        setManagedFocusReturnAllowed(managedFocusReference.current !== null);
+        setManagedFocusVersion((version) => version + 1);
+      } else if (managedFocusKey.current !== nextFocusKey) {
+        managedFocusReference.current = null;
+        managedFocusKey.current = nextFocusKey;
+        setManagedFocusReturnAllowed(false);
+        setManagedFocusVersion((version) => version + 1);
+      }
+    } else {
+      managedFocusWasOpen.current = false;
+    }
+  }, [focusReturnKey, managedFocus, open, referenceElement]);
+  useLayoutEffect(() => {
+    const sourceElement = referenceElement?.current ?? (managedFocus ? managedFocusReference.current : null);
+    if (sourceElement?.isConnected) refs.setReference(sourceElement);
+    else if (managedFocus && open) refs.setReference(null);
+  }, [managedFocus, managedFocusReference, managedFocusVersion, open, referenceElement, refs]);
 
   // Attach the virtual reference imperatively. `elements.reference` in
   // `@floating-ui/react` is typed as `Element | null`, but virtual
@@ -236,7 +274,13 @@ function CanvasFloatingPopoverInner({
       {children}
     </div>;
   return <FloatingNode id={nodeId}><FloatingPortal>
-    {onDismiss ? <FloatingFocusManager context={context} modal={false} restoreFocus returnFocus closeOnFocusOut={false}>
+    {onDismiss !== undefined || managedFocus ? <FloatingFocusManager
+      context={context}
+      modal={false}
+      {...(managedFocus
+        ? { initialFocus: -1, returnFocus: managedFocusReturnAllowed ? managedFocusReference : false, restoreFocus: managedFocusReturnAllowed }
+        : { restoreFocus: true, returnFocus: true })}
+      closeOnFocusOut={false}>
       {content}
     </FloatingFocusManager> : content}
   </FloatingPortal></FloatingNode>;

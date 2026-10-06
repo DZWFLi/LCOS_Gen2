@@ -49,7 +49,7 @@ import { useIsNotMouse } from '@/hooks/useInputMode.ts';
 import { useMultiSelectModifierHeld } from '@/hooks/useMultiSelectModifier.ts';
 import { useNodeLOD } from '@/hooks/useNodeLOD.ts';
 import { shouldStandDownLegacyNodeToolbar, useCanvasChromeMode } from '@/lcos-seam/chromeModeSlot';
-import { useResolvedNodeHostPresentation } from '@/lcos-seam/nodeBodySlot';
+import { isNativeAccentSurfaceEnabled, useResolvedNodeHostPresentation } from '@/lcos-seam/nodeBodySlot';
 import {
   LcosNodePresentationProvider,
   resolveInteractionPhase,
@@ -416,7 +416,7 @@ export const NodeWrapper = memo(
     // Same binding-aware presentation seam that resolves the replacement body.
     // It controls only visible host chrome; Huabu still owns mechanics and geometry.
     const effectiveAllowOverflow = hostPresentation?.allowOverflow ?? allowOverflow;
-    const nativeSurfaceEnabled = hostPresentation === undefined || hostPresentation.surface === 'card';
+    const nativeSurfaceEnabled = isNativeAccentSurfaceEnabled(hostPresentation);
 
     // Deliberately *not* `resolveHeightMode`: this asks whether a layout
     // height exists to fill, not who owns it. An auto note now carries a
@@ -930,6 +930,7 @@ export const NodeWrapper = memo(
             selected={!!selected && selectedCount === 1}
             isNotMouse={isNotMouse}
             dragging={isDragging}
+            allowConnectedNodeCreation={chromeMode !== 'lcos' || hostPresentation === undefined}
           />
         </div>
       </>

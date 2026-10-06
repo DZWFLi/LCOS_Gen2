@@ -127,19 +127,37 @@ export function useLcosWorksite(projectId: string): LcosWorksiteState {
 
   const ensureWorkspaceCanvas = useCallback(
     async (workspaceId: string, force = false): Promise<string | undefined> => {
-      const workspace = workspaces.find((candidate) => String(candidate.id) === workspaceId);
-      if (!workspace) return undefined;
-      if (!force && workspace.canvasId !== undefined) return workspace.canvasId;
       try {
+        const publishWorkspaces = (next: readonly Workspace[]): void => {
+          setWorkspaces(next);
+          const workspaceSurface = new Map<string, LcosSurfaceKey>();
+          for (const candidate of next) {
+            const pref = candidate.preferredSurface as LcosSurfaceKey | undefined;
+            if (!pref || !Object.prototype.hasOwnProperty.call(SURFACE_PREFERENCE, pref)) continue;
+            workspaceSurface.set(String(candidate.id), pref);
+          }
+          setSurfaceByWorkspace(workspaceSurface);
+          if (rootScopeId !== undefined) setSurfaceCanvasMap(buildSurfaceCanvasMap(next, rootScopeId));
+        };
+        // Railway can save a new canonical workspace after this hook mounted.
+        // Re-read that identity before using the existing canvas creation owner.
+        let currentWorkspaces = workspaces;
+        let workspace = currentWorkspaces.find((candidate) => String(candidate.id) === workspaceId);
+        if (workspace === undefined) {
+          currentWorkspaces = await session.projects.getWorkspaces(projectId);
+          workspace = currentWorkspaces.find((candidate) => String(candidate.id) === workspaceId
+            && String(candidate.projectId) === projectId);
+        }
+        if (workspace === undefined) throw new Error('这个现场尚未保存到当前项目。');
+        if (!force && workspace.canvasId !== undefined) {
+          publishWorkspaces(currentWorkspaces);
+          return workspace.canvasId;
+        }
         const created = await createCanvas();
         const updated = await session.projects.updateWorkspaceCanvasId(projectId, workspaceId, created.canvasId);
-        // 不要在上游 updater 里再 setState：React 会在 render 阶段执行 updater，
-        // 于是变成 "Cannot update a component while rendering a different component"
-        // （干净数据目录下首次建立现场画布时实测到）。这里按闭包里的当前 workspaces 计算，
-        // 两个 setter 各自独立调用。
-        const next = workspaces.map((candidate) => String(candidate.id) === workspaceId ? updated : candidate);
-        setWorkspaces(next);
-        if (rootScopeId !== undefined) setSurfaceCanvasMap(buildSurfaceCanvasMap(next, rootScopeId));
+        // Keep the original independent setters; never nest them in a React updater.
+        const next = currentWorkspaces.map((candidate) => String(candidate.id) === workspaceId ? updated : candidate);
+        publishWorkspaces(next);
         return created.canvasId;
       } catch (error) {
         setStatusDetail(error instanceof Error ? error.message : String(error));

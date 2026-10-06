@@ -1,14 +1,5 @@
-import { Plus } from 'lucide-react';
-import { composerInputKey, restoredComposerCaret } from './composerInputJourney';
-import { draftReferenceUnavailableReason, snapshotDraftReference, runReferenceUnavailableReason } from './referenceSnapshot';
-import { draftReferenceKey, sameDraftReference } from '../referenceBridge';
-// LcosComposerHost — 统一提交入口（Figma Composer READY；T3-A04 机制）。
-// 显式引用 strip（reference store draft）+ 文本；Cmd/Ctrl+Enter 提交真实 Run（CoreRunClient.createRun）。
-// 提交后回执展示；失败保留草稿文本；不伪造成功。Draft 是 local UI intent，Run truth 在 Core。
-// workspaceId 必须用当前现场的真实 workspace（由 Shell 从 Core workspaces 反查传入）——
-// 写死 'main' 会被 Core 外键拒绝（FOREIGN KEY constraint failed → 409）。
-
 import { CoreCollaborationClient, HttpError } from '@local-creative-os/web-gen2';
+import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -18,6 +9,9 @@ import {
 import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 import useCanvasStore from '@/store/canvasStore';
 
+import { draftReferenceUnavailableReason, snapshotDraftReference, runReferenceUnavailableReason } from './referenceSnapshot';
+import { draftReferenceKey, sameDraftReference } from '../referenceBridge';
+import { composerInputKey, restoredComposerCaret } from './composerInputJourney';
 import { ComposerReferencePicker } from './ComposerReferencePicker';
 import {
   buildComposerContinuationInput,
@@ -25,19 +19,18 @@ import {
   canSubmitComposerContinuation,
   canSubmitComposerTarget,
 } from './composerSubmission';
+import { conversationSendKey, conversationSendWasRecorded, hasUnconfirmedConversationMessage, isComposerSendShortcut } from './conversationSendAttempt';
 import { LcosReceiverIdentity } from './LcosReceiverIdentity';
 import { referenceImageSource } from './referenceImageSource';
 import { useComposerContinuation } from './useComposerContinuation';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
 import { isDropPointExposed } from '../drop/dropOcclusion';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
 import { useLcosDropStore } from '../lcosDropState';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { buildSelectedContextReferences } from '../professional/conversationContinuationActions';
 import { ConversationContinuationControls } from '../professional/ConversationContinuationControls';
-import { conversationSendKey, conversationSendWasRecorded, hasUnconfirmedConversationMessage, isComposerSendShortcut } from './conversationSendAttempt';
-import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
-import type { CollaborationSendInputV1 } from '@local-creative-os/contracts';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { ScaleIn } from '../ui/motion/ScaleIn';
 import { LcosComposerView } from '../ui/nearfield/LcosComposerView';
@@ -47,6 +40,13 @@ import { createVoiceInput, isVoiceInputSupported, mergeVoiceText } from '../voic
 
 import type { DropTargetRegistration } from '../drop/dropTypes';
 import type { CoreEntityRefLike } from '../referenceBridge';
+import type { CollaborationSendInputV1 } from '@local-creative-os/contracts';
+
+// LcosComposerHost — 统一提交入口（Figma Composer READY；T3-A04 机制）。
+// 显式引用 strip（reference store draft）+ 文本；Cmd/Ctrl+Enter 提交真实 Run（CoreRunClient.createRun）。
+// 提交后回执展示；失败保留草稿文本；不伪造成功。Draft 是 local UI intent，Run truth 在 Core。
+// workspaceId 必须用当前现场的真实 workspace（由 Shell 从 Core workspaces 反查传入）——
+// 写死 'main' 会被 Core 外键拒绝（FOREIGN KEY constraint failed → 409）。
 
 const ENTITY_LABEL: Readonly<Record<string, string>> = {
   artifact: '材料',
@@ -105,6 +105,14 @@ export function LcosComposerHost({
   const draftRefs = useLcosReferenceStore((s) => s.draft.orderedEntityRefs);
   const text = useLcosShellStore((s) => s.composerPrompt);
   const composerTarget = useLcosShellStore((s) => s.composerTarget);
+  const focusReturnKey = JSON.stringify([
+    projectId,
+    composerTarget?.nodeId ?? null,
+    composerTarget?.intent ?? null,
+    composerTarget?.workspaceId ?? null,
+    composerTarget?.receiverConversationId ?? null,
+    composerTarget?.messageId ?? null,
+  ]);
   const retainedSend = useLcosShellStore((s) => composerTarget?.receiverConversationId
     ? s.conversationSendAttempts.get(conversationSendKey(projectId, composerTarget.receiverConversationId)) : undefined);
   const setText = useLcosShellStore((s) => s.setComposerPrompt);
@@ -473,23 +481,27 @@ export function LcosComposerHost({
     void handle.start();
   };
 
-  const referenceItems = draftRefs.map((ref) => ({
-    key: draftReferenceKey(ref),
-    versionLabel: ref.revisionId ? `版本 ${ref.revisionId.slice(0, 8)}` : undefined,
-    unavailableReason: isContinuation ? draftReferenceUnavailableReason(ref, 'continue') : runReferenceUnavailableReason(ref),
-    onOpen: ['artifact','artifactView','view'].includes(ref.entityType) ? () => { void inspectReference(ref, referenceLabel(ref)); } : undefined,
+  const referenceItems = draftRefs.map((ref) => {
     // Carry payload keeps exact identity minimal; use its live bound title for display.
-    label: referenceLabel(ref.displayLabel || ref.descriptor?.title ? ref
-      : [...nodeBindings.values()].find((bound) => bound.entityType === ref.entityType && bound.entityId === ref.entityId) ?? ref),
-    thumbnailSrc: (() => {
-      const image = nodes.find((node) => node.type === 'image'
-        && nodeBindings.get(node.id) !== undefined
-        && sameDraftReference(snapshotDraftReference(nodeBindings.get(node.id)!), ref));
-      return image === undefined ? undefined : referenceImageSource(image.data, canvasId ?? undefined);
-    })(),
-    onRemove: state === 'submitting' ? undefined
-      : () => useLcosReferenceStore.getState().removeEntityFromDraft(ref),
-  }));
+    const label = referenceLabel(ref.displayLabel || ref.descriptor?.title ? ref
+      : [...nodeBindings.values()].find((bound) => bound.entityType === ref.entityType && bound.entityId === ref.entityId) ?? ref);
+    return {
+      key: draftReferenceKey(ref),
+      label,
+      versionLabel: ref.revisionId ? '已固定版本' : undefined,
+      tooltip: ref.revisionId ? `${label} · 版本 ${ref.revisionId}` : undefined,
+      unavailableReason: isContinuation ? draftReferenceUnavailableReason(ref, 'continue') : runReferenceUnavailableReason(ref),
+      onOpen: ['artifact','artifactView','view'].includes(ref.entityType) ? () => { void inspectReference(ref, label); } : undefined,
+      thumbnailSrc: (() => {
+        const image = nodes.find((node) => node.type === 'image'
+          && nodeBindings.get(node.id) !== undefined
+          && sameDraftReference(snapshotDraftReference(nodeBindings.get(node.id)!), ref));
+        return image === undefined ? undefined : referenceImageSource(image.data, canvasId ?? undefined);
+      })(),
+      onRemove: state === 'submitting' ? undefined
+        : () => useLcosReferenceStore.getState().removeEntityFromDraft(ref),
+    };
+  });
   const content = (
     <LcosComposerView
       presentation={inline ? 'inline' : 'nearfield'}
@@ -498,12 +510,11 @@ export function LcosComposerHost({
         : (isContinuation ? continuationBlockedReason !== undefined : workspaceId === undefined || composerTarget?.receiverBlockedReason) ? 'blocked'
         : text.length === 0 ? 'empty' : 'editing'}
       targetId={composerTarget?.nodeId}
+      contextLabel={composerTarget?.receiverConversationId ? '当前接收者' : '当前工作目标'}
       identity={composerTarget?.receiverConversationId ? (
         <LcosReceiverIdentity projectId={projectId} conversationId={composerTarget.receiverConversationId} size={inline ? 28 : 25} />
       ) : undefined}
-      title={isContinuation
-        ? `继续「${composerTarget?.title ?? '当前会话'}」`
-        : `围绕「${composerTarget?.title ?? '当前对象'}」工作`}
+      title={composerTarget?.title ?? (isContinuation ? '当前会话' : '当前对象')}
       references={referenceItems}
       continuationControls={isContinuation && composerTarget?.receiverConversationId ? (<>
         {retainedSend && <div data-lcos-pending-send role="status" className="rounded-lg p-2 text-xs">
@@ -630,7 +641,7 @@ export function LcosComposerHost({
   );
 
   return inline ? content : anchor ? (
-    <CanvasFloatingPopover anchor={anchor} open={open} side="top" offset={10}>
+    <CanvasFloatingPopover anchor={anchor} open={open} side="top" offset={10} managedFocus focusReturnKey={focusReturnKey}>
       <ScaleIn initialScale={1}>{content}</ScaleIn>
     </CanvasFloatingPopover>
   ) : null;

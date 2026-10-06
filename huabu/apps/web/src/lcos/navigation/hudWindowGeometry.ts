@@ -1,6 +1,19 @@
 import { placeLocatorAnchorOutsideObstacles, rectsOverlapV1, toScreenRect,
   type ProfessionalRectV1, type ProfessionalWindowEnvironmentV1 } from '@local-creative-os/web-gen2';
 
+import { avoidNearbyControls } from '@/components/Common/boundedPopoverAvoidance';
+
+/** Availability is checked against the rendered dimensions, never the solver's safe-area clamp. */
+export function isActualHudRectAvailable(candidate: ProfessionalRectV1,
+  dimensions: Pick<ProfessionalRectV1, 'width' | 'height'>, safeRect: ProfessionalRectV1,
+  obstacles: readonly ProfessionalRectV1[]): boolean {
+  const actual = { ...candidate, ...dimensions };
+  const insideSafeRect = actual.x >= safeRect.x && actual.y >= safeRect.y
+    && actual.x + actual.width <= safeRect.x + safeRect.width
+    && actual.y + actual.height <= safeRect.y + safeRect.height;
+  return insideSafeRect && !obstacles.some((obstacle) => rectsOverlapV1(actual, obstacle));
+}
+
 /** Screen-space presentation only; the Stage remains the sole environment producer. */
 export function avoidHudWindows(preferred: ProfessionalRectV1, environment: ProfessionalWindowEnvironmentV1 | null,
   viewport: { width: number; height: number }, additionalObstacles: readonly ProfessionalRectV1[] = []): ProfessionalRectV1 {
@@ -16,7 +29,24 @@ export function avoidHudWindows(preferred: ProfessionalRectV1, environment: Prof
   const occupied = [...(environment?.occupiedRects ?? []), ...additionalObstacles].map((rect) => ({ left: rect.x - halfW,
     right: rect.x + rect.width + halfW, top: rect.y - halfH, bottom: rect.y + rect.height + halfH }));
   const placed = placeLocatorAnchorOutsideObstacles(anchor, anchors, occupied, 8);
-  return { x: placed.x - halfW, y: placed.y - halfH, width, height };
+  const result = { x: placed.x - halfW, y: placed.y - halfH, width, height };
+  const obstacles = [...(environment?.occupiedRects ?? []), ...additionalObstacles];
+  if (!obstacles.some((obstacle) => rectsOverlapV1(result, obstacle))) return result;
+
+  const fallback = avoidNearbyControls(
+    { x: result.x, y: result.y },
+    [{ x: 0, y: 0, width, height }],
+    obstacles,
+    safe,
+    Math.hypot(safe.width, safe.height),
+  );
+  const fallbackRect = { ...result, ...fallback };
+  const insideSafeRect = fallbackRect.x >= safe.x && fallbackRect.y >= safe.y
+    && fallbackRect.x + fallbackRect.width <= safe.x + safe.width
+    && fallbackRect.y + fallbackRect.height <= safe.y + safe.height;
+  return insideSafeRect && !obstacles.some((obstacle) => rectsOverlapV1(fallbackRect, obstacle))
+    ? fallbackRect
+    : result;
 }
 
 /** Choose an unobscured rectangle only when the user explicitly requests Fit. No camera reacts to window motion. */

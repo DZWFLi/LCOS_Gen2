@@ -97,3 +97,12 @@ RETIRED：Reader 主路径中的 Gen1TextDocument 调用、共享 wrapper 过期
 VERIFIED：本轮重新执行既有 989 项源码/Core 测试；wrapper 生命周期 15、Reader 16、文本保存 21 个浏览器隔离场景；完整差分及应用/反向验证见随 R15 交付的 verification。计数分开，不将隔离测试升级为整机。
 
 UNRESOLVED：正式依赖下载 EAI_AGAIN；正式 Vitest 不存在，实际 React19/Floating UI/Milkdown/Huabu 全应用未验。装配虚拟化、专业窗口采用路线、全部主画布组合动作和持久草稿恢复不计本轮完成。原有 MIT 版权声明保留；createMilkdown 引擎原文件和依赖清单保持不变。
+# 2026-10-06：真实 G2 SurfaceDock 直接采用 Rare UI
+
+- READ_SOURCE：`E:/TRAE项目/LCOS0.1收口/rareui-reference/components/ui/gooey-nav.tsx` 全文、`registry.json`、当前 `LcosSurfaceDock` / `LcosSurfaceDockView` / HUD 尺寸测量与真实导航调用。
+- ADOPTED：`swamimalode07/rare-ui@b4de46efe4eb2613e22bb8134b482ed4e0c7736a/components/ui/gooey-nav.tsx::GooeyNav/Segment/NavLabel/neckPath` → `huabu/apps/web/src/lcos/ui/vendor/rareui/gooey-nav.tsx` → `LcosSurfaceDockView` → `LcosSurfaceDock` → 原 `useLcosWorksiteNav.switchWorksite`。原春簧、拼接形状、受控选中与 reduced-motion 实现直接保留；仅 Next 路由转 React Router、cn 路径和现有 busy/disabled/aria 属性连接。未新增导航、相机或 truth owner。
+- VISUAL_SOURCE：用户 2026-10-06 指定 RareUI 与 G1/G2/Figma 同优先级；保留 Figma Shell `5386:256` 的三现场归属、底部位置、原图标和 safeRect 避让，颜色/间距接现有 tokens。宽度由原 HUD 测量适应可读标签。
+- RETIRED：`LcosSurfaceDockView` 中原三个 `LcosIconButton` 拼装及其旧 tile CSS；导航结果/错误反馈和切换等待约束保留。
+- VERIFIED：原组件受控选中/原目标 identity/busy 禁用回归及原导航测试 6/6；typecheck 通过（后续平行合并需独立复核）；真实浏览器 Main→Context→Workflow URL 切换成立，绑定对象连线端口 8 个而 native quick-create 入口 0；截图 `E:/TRAE项目/LCOS0.1收口/output/playwright/g2-main-rareui-20261006.png`。Browser 插件当前未提供，按已读 testing/playwright skill 使用正常 Playwright CLI；未绕过权限服务。
+- UNRESOLVED：这是一个生产组件采用，不代表 RareUI 已大幅覆盖整个 G2，不代表 Context/Workflow 整页成熟或核心用户旅程完成。当前项目 Atlas/Workflow 库没有真实卡片，带卡片链路仅组件/回调测试验证；未制造数据补画。
+- 来源署名与原许可证保留在 vendor/rareui/LICENSE 和仓库 README，组件信用链接 [Rare UI](https://rareui.com)。

@@ -9,18 +9,18 @@ import { useNavigate } from 'react-router-dom';
 
 import useCanvasStore from '@/store/canvasStore';
 
-import { createLcosCoreSession } from '../app/lcosCoreClient';
-import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
-import { resolvePortalAddress } from '../navigation/portalIdentity';
 import { LcosGlobalHud } from './LcosGlobalHud';
 import { LcosProjectSystemMenu } from './LcosProjectSystemMenu';
-import { useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
+import { SURFACE_LABEL, useLcosShellStore, type LcosSurfaceKey } from './lcosShellStore';
 import { LcosWorksiteStage } from './LcosWorksiteStage';
-import { PortalDropWorkspaceProvider, toPortalDropWorkspaces } from '../drop/PortalDropWorkspaceContext';
+import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { useLcosWorksiteNav } from '../app/useLcosWorksiteNav';
 import { useCollaborationSessionStore } from '../collaboration/collaborationSessionStore';
+import { PortalDropWorkspaceProvider, toPortalDropWorkspaces } from '../drop/PortalDropWorkspaceContext';
 import { useLcosHostStore } from '../host/lcosHostState';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { beginChildWorksiteNavigation } from '../navigation/childWorksiteNavigation';
+import { resolvePortalAddress } from '../navigation/portalIdentity';
 import { returnToSourceWorksite } from '../navigation/returnToSourceWorksite';
 import { useAvoidingHudPosition } from '../navigation/useAvoidingHudPosition';
 import { useHudViewport } from '../navigation/useHudViewport';
@@ -122,7 +122,7 @@ export function LcosProjectShell({
       projectId,sourceSurface:shell.activeSurface,
       ...(shell.activeWorkspaceId === null ? {} : {sourceWorkspaceId:shell.activeWorkspaceId}),
       sourceWasChild:childWorkspaceId !== undefined,targetSurface:target.targetSurface,
-      targetWorkspace:{id:target.workspaceId as import('@local-creative-os/domain').Workspace['id'],canvasId:target.canvasId},
+      targetWorkspace:{id:target.workspaceId as Workspace['id'],canvasId:target.canvasId},
       ...(target.sourceNodeId && useCanvasStore.getState().nodes.some((n) => n.id === target.sourceNodeId) ? {sourceNodeId:target.sourceNodeId} : {}),
       navigate,signal,
     });
@@ -130,7 +130,12 @@ export function LcosProjectShell({
 
   const childWorkspace = childWorkspaceId === undefined
     ? undefined
-    : workspaces.find((workspace) => String(workspace.id) === childWorkspaceId);
+    : workspaces.find((workspace) => String(workspace.id) === childWorkspaceId && String(workspace.projectId) === projectId);
+  const worksiteName = childWorkspace?.name?.trim() || undefined;
+  const sourceName = childReturn?.projectId !== projectId ? undefined : childReturn.sourceWasChild
+    ? workspaces.find((workspace) => String(workspace.id) === childReturn.sourceWorkspaceId && String(workspace.projectId) === projectId)?.name?.trim() || undefined
+    : SURFACE_LABEL[childReturn.sourceSurface];
+  const returnLabel = sourceName ? `返回「${sourceName}」` : '返回来源现场';
   const effectiveCanvasBySurface = childWorkspaceId === undefined
     ? canvasBySurface
     : { ...canvasBySurface, [surface]: childWorkspace?.canvasId };
@@ -144,10 +149,10 @@ export function LcosProjectShell({
 
   useEffect(() => { setMainHandOpen(false); setMainAtlasOpen(false); }, [projectId, activeSurface]);
   useEffect(() => {
-    document.title = (projectName ?? '创意工作台') + ' · LCOS';
-  }, [projectName]);
+    document.title = (projectName ?? '创意工作台') + (worksiteName ? ` / ${worksiteName}` : '') + ' · LCOS';
+  }, [projectName, worksiteName]);
   const rootWorkspaces = workspaces.filter((workspace) => workspace.canvasId === canvasBySurface[surface]);
-  const assemblyWorkspaceId = childWorkspaceId ?? (rootWorkspaces.length === 1 ? String(rootWorkspaces[0]!.id) : undefined);
+  const assemblyWorkspaceId = childWorkspaceId ?? (rootWorkspaces.length === 1 && rootWorkspaces[0] ? String(rootWorkspaces[0].id) : undefined);
   const worksiteTarget = useMemo<AssemblyTargetRefV1 | undefined>(() => surface === 'main' && childWorkspaceId === undefined
     ? { kind: 'main' } : assemblyWorkspaceId ? { kind: 'workspace', id: assemblyWorkspaceId } : undefined, [surface, childWorkspaceId, assemblyWorkspaceId]);
   const assemblyTitle = '装配 · ' + ({ main: '主画布', context: '上下文', workflow: '工作流' }[surface]);
@@ -163,7 +168,7 @@ export function LcosProjectShell({
 
   useEffect(() => {
     const candidates = workspaces.filter((workspace) => workspace.canvasId === canvasBySurface[activeSurface]);
-    const workspaceId = childWorkspaceId ?? (candidates.length === 1 ? String(candidates[0]!.id) : undefined);
+    const workspaceId = childWorkspaceId ?? (candidates.length === 1 && candidates[0] ? String(candidates[0].id) : undefined);
     setActiveWorkspaceId(workspaceId ?? null);
   }, [activeSurface, childWorkspaceId, setActiveWorkspaceId, workspaces, canvasBySurface]);
 
@@ -259,14 +264,15 @@ export function LcosProjectShell({
                 disabled={returning}
                 className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-3 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-60"
                 style={{ ...lcosGlassStyle, color: lcosTokens.color.text }}
-                title="返回来源现场"
-                aria-label={returning ? '返回中…' : '返回来源现场'}
+                title={returnLabel}
+                aria-label={returning ? '返回中…' : returnLabel}
               >
                 <ArrowLeft className="h-4 w-4" aria-hidden />
-                <span data-lcos-child-return-label>{returning ? '返回中…' : '返回来源现场'}</span>
+                <span data-lcos-child-return-label className="max-w-40 truncate">{returning ? '返回中…' : returnLabel}</span>
               </button>
             )}
-            <LcosProjectSystemMenu name={projectName ?? projectId.slice(0, 12)}
+            <LcosProjectSystemMenu name={projectName ?? '创意工作台'}
+              {...(worksiteName === undefined ? {} : { worksiteName })}
               {...(worksiteTarget === undefined ? {} : { target: worksiteTarget })} assemblyTitle={assemblyTitle} />
             <button
               type="button"

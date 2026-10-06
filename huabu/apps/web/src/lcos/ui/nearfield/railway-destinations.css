@@ -1,5 +1,28 @@
 /* Reuse the adopted 52px destination island; management is transient, not a sidebar. */
 .lcos-railway-host {position:fixed;z-index:40;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:auto;width:52px;}
+.lcos-railway-destination-sidebar {display:block;width:100%;color:var(--gen2-text);}
+.lcos-railway-destination-sidebar-list {position:relative;display:flex;flex-direction:column;gap:2px;}
+.lcos-railway-sidebar-rail {position:absolute;inset:0;pointer-events:none;}
+.lcos-railway-sidebar-rail-line {position:absolute;left:2px;width:1px;}
+.lcos-railway-sidebar-rail-corner {position:absolute;left:2px;}
+.lcos-railway-destination-sidebar-item {
+  position:relative;display:flex;width:100%;min-width:0;flex-direction:column;align-items:flex-start;gap:2px;
+  padding:6px 8px 6px 20px;border:0;border-radius:8px;background:transparent;color:color-mix(in srgb,var(--gen2-text) 58%,transparent);
+  cursor:pointer;font:inherit;text-align:left;transition:color 200ms ease;
+}
+.lcos-railway-destination-sidebar-item[data-active='true'],
+.lcos-railway-destination-sidebar-item:hover:not(:disabled) {color:var(--gen2-text);}
+.lcos-railway-destination-sidebar-item strong {font-weight:500;overflow-wrap:anywhere;}
+.lcos-railway-destination-sidebar-item small {display:block;color:var(--gen2-muted);font-size:11px;line-height:1.5;overflow-wrap:anywhere;}
+.lcos-railway-destination-sidebar-item:disabled {cursor:not-allowed;opacity:.55;}
+.lcos-railway-destination-sidebar-item[data-lcos-receive-state='receive'],
+.lcos-railway-destination-sidebar-item[data-lcos-receive-state='receive-eligible'] {box-shadow:inset 0 0 0 1px var(--lcos-pin-teal);}
+.lcos-railway-destination-sidebar-item[data-lcos-receive-state='receive-hot'],
+.lcos-railway-destination-sidebar-item[data-lcos-receive-state='committing'] {
+  background:color-mix(in srgb,var(--lcos-pin-teal) 18%,var(--lcos-hud-surface));
+  box-shadow:inset 0 0 0 2px var(--lcos-pin-teal),var(--lcos-rail-selected-shadow);
+}
+.lcos-railway-destination-sidebar-item[data-lcos-receive-state='ineligible'] {opacity:.42;}
 .lcos-railway-popover {box-sizing:border-box;overflow:auto;overscroll-behavior:contain;border-radius:16px;color:var(--gen2-text);font:400 12px/1.5 var(--lcos-hud-font, sans-serif);padding:14px;}
 .lcos-railway-popover header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
 .lcos-railway-popover header strong {font-size:14px;font-weight:600;}
@@ -28,4 +51,4 @@
 .lcos-railway-legacy-root {display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;}
 [data-lcos-railway-footer] {position:absolute;top:100%;margin-top:8px;left:0;max-width:min(220px,calc(100vw - 48px));width:max-content;font:400 11px/1.5 var(--lcos-hud-font,sans-serif);overflow-wrap:anywhere;}
 @media (max-width:480px) {.lcos-railway-popover {padding:12px;}.lcos-railway-row-actions {flex-direction:column;}.lcos-railway-popover .lcos-railway-row-target {padding:4px;}}
-@media (prefers-reduced-motion:reduce) {[data-lcos-family='railway'],[data-lcos-railway-item] {transition:none;}}
+@media (prefers-reduced-motion:reduce) {[data-lcos-family='railway'],[data-lcos-railway-item],.lcos-railway-destination-sidebar-item {transition:none;}}

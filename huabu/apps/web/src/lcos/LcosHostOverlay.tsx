@@ -26,6 +26,7 @@ import { composerHasVisibleWindowOwner } from './composer/composerPresentationOw
 import { composerInputKey } from './composer/composerInputJourney';
 import { LcosComposerHost } from './composer/LcosComposerHost';
 import { DropCommitRouter } from './drop/dropCommitRouter';
+import { bookmarkRailway } from './drop/railwayBookmark';
 import { planNativeCanvasLanding } from './drop/nativeCanvasDropGeometry';
 import { captureCollectionDropPlacement, planCollectionDropPlacement } from './drop/collectionDropPlacement';
 import { bindNativeAssemblyDropEvents } from './drop/nativeAssemblyDrop';
@@ -51,6 +52,7 @@ import type {
   DropComposerReferenceIntent,
   DropCollectionMembershipIntent,
   DropTargetRegistration,
+  DropRailwayBookmarkIntent,
 } from './drop/dropTypes';
 import type { AssemblyApplyResultV1 } from '@local-creative-os/contracts';
 
@@ -253,6 +255,9 @@ export const LcosHostOverlay: React.FC = () => {
     if (router === null) return;
     const owners = {
       projectId,
+      bookmarkRailway: (intent: DropRailwayBookmarkIntent, signal?: AbortSignal) => bookmarkRailway(
+        new CoreRailwayClient(session.http),intent,
+        () => useLcosShellStore.getState().projectId===projectId,signal),
       receivePortal: async (intent: DropAssemblyApplyIntent, operationId: string, signal?: AbortSignal) => {
         if (intent.railwayDestinationRef?.kind !== 'worksite' || !intent.railwayCanvasId || !dropCanvasId)
           throw new Error('入口目标或来源尚未确认，请重新打开入口');
@@ -367,7 +372,9 @@ export const LcosHostOverlay: React.FC = () => {
     dropStatus === 'tracking' ||
     dropStatus === 'dwell' ||
     dropStatus === 'preview';
-  const dropPreview = dropStatus === 'preview';
+  // The same feedback layer first outlines the resolver-approved live targets
+  // while a payload is in transit, then switches to the exact hovered target.
+  const dropPreview = dropActive;
 
   const visible = visibleOverlays({
     dragging: isNodeDragging || dropActive,

@@ -6,6 +6,12 @@
 .lcos-drop-caption strong{font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
 .lcos-drop-caption small{font-size:10px;line-height:1.45;color:var(--gen2-muted)}
 .lcos-drop-receptor{position:absolute;pointer-events:none;z-index:65;border:1px solid color-mix(in srgb,var(--gen2-accent) 65%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--gen2-accent) 8%,transparent),0 0 22px color-mix(in srgb,var(--gen2-accent) 14%,transparent);animation:lcos-drop-approach 180ms ease-out}
+.lcos-drop-receptor[data-state="candidate"]{border:1px dashed color-mix(in srgb,var(--gen2-accent) 78%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gen2-accent) 10%,transparent),0 0 0 3px color-mix(in srgb,var(--gen2-accent) 7%,transparent);animation:none}
+.lcos-drop-receptor[data-state="receptive"]{border-color:color-mix(in srgb,var(--gen2-accent) 85%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gen2-accent) 14%,transparent),0 0 0 4px color-mix(in srgb,var(--gen2-accent) 10%,transparent),0 0 22px color-mix(in srgb,var(--gen2-accent) 16%,transparent)}
+.lcos-drop-receptor[data-state="rejected"]{border-color:var(--lcos-status-danger);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcos-status-danger) 14%,transparent),0 0 0 4px color-mix(in srgb,var(--lcos-status-danger) 10%,transparent)}
+.lcos-drop-receptor-label{position:absolute;left:7px;top:6px;max-width:min(220px,calc(100% - 14px));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 7px;border:1px solid color-mix(in srgb,var(--gen2-accent) 36%,transparent);border-radius:999px;background:color-mix(in srgb,var(--gen2-surface) 92%,transparent);color:var(--gen2-text);font-size:10px;line-height:1.25;box-shadow:0 2px 8px #1627301c}
+.lcos-drop-receptor[data-state="rejected"] .lcos-drop-receptor-label{border-color:color-mix(in srgb,var(--lcos-status-danger) 52%,transparent);color:var(--lcos-status-danger)}
+.lcos-drop-guidance{position:fixed;left:16px;top:16px;transform:none;max-width:min(300px,calc(100vw - 32px))}
 @keyframes lcos-drop-approach{from{opacity:0;scale:.94}to{opacity:1;scale:1}}
 @media(prefers-reduced-motion:reduce){.lcos-drop-receptor{animation:none}.lcos-drop-proxy{transform:none}}
 

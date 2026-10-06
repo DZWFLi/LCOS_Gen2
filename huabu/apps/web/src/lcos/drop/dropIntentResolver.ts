@@ -1,11 +1,12 @@
 import { draftReferenceForGesture, draftReferenceUnavailableReason } from '../composer/referenceSnapshot';
 import { draftReferenceKey } from '../referenceBridge';
-import type { AssemblySourceRefV1 } from '@local-creative-os/contracts';
+import { railwayStableKeyV1, type AssemblySourceRefV1, type RailwayCanonicalRefV1 } from '@local-creative-os/contracts';
 import type { DropPayload } from '@local-creative-os/web-gen2';
 
 import type {
   DropEntityRef,
   DropResolution,
+  DropTargetCandidate,
   DropTargetRegistration,
 } from './dropTypes';
 
@@ -26,9 +27,48 @@ function sourceRefForObject(
     case 'scene':
     case 'collection':
       return { kind: payload.entityType, id: payload.entityId };
+    case 'workspace':
+      return { kind: 'scene', id: payload.entityId };
     default:
       return undefined;
   }
+}
+
+function railwayBookmarkRef(projectId: string, kind: string, id: string): RailwayCanonicalRefV1 | undefined {
+  if (!projectId.trim() || !id.trim()) return undefined;
+  if (kind === 'scene' || kind === 'workspace') return { kind: 'worksite', projectId, worksiteId: id };
+  if (kind === 'context' || kind === 'workflow' || kind === 'scope')
+    return { kind: 'spatial', projectId, entityType: 'scope', entityId: id };
+  if (kind === 'collection') return { kind: 'spatial', projectId, entityType: 'collection', entityId: id };
+  return undefined;
+}
+
+function railwayBookmarkRefForAssembly(
+  payload: Extract<DropPayload, { readonly kind: 'assembly' }>,
+  projectId: string,
+): RailwayCanonicalRefV1 | undefined {
+  const expectedEntityType = payload.sourceRef.kind === 'scene' ? 'workspace'
+    : payload.sourceRef.kind === 'context' || payload.sourceRef.kind === 'workflow' ? 'scope'
+      : payload.sourceRef.kind === 'collection' ? 'collection' : undefined;
+  if (!expectedEntityType || (payload.entityRef && (payload.entityRef.type !== expectedEntityType || payload.entityRef.id !== payload.sourceRef.id))) return undefined;
+  return railwayBookmarkRef(projectId, payload.sourceRef.kind, payload.sourceRef.id);
+}
+
+function resolveRailwayBookmark(payload: DropPayload, target: DropTargetCandidate): DropResolution {
+  const semantic = target.semantic;
+  if (semantic.kind !== 'railway-bookmark') return ineligible(target, '目标尚未确认Railway收藏写入');
+  const projectId = semantic.projectId;
+  let refs: readonly (RailwayCanonicalRefV1 | undefined)[];
+  if (payload.kind === 'assembly') refs = [railwayBookmarkRefForAssembly(payload, projectId)];
+  else if (payload.kind === 'object') refs = [railwayBookmarkRef(projectId, payload.entityType, payload.entityId)];
+  else if (payload.kind === 'objects') refs = payload.objects.map((object) => railwayBookmarkRef(projectId, object.entityType, object.entityId));
+  else return ineligible(target, 'Railway只保存聚合空间引用；材料、笔记、文件和文本不会加入导航');
+
+  if (refs.length === 0 || refs.some((ref) => ref === undefined))
+    return ineligible(target, '整组未保存：Railway只接受Scene、Context、Workflow或Collection聚合引用');
+  const unique = [...new Map((refs as readonly RailwayCanonicalRefV1[]).map((ref) => [railwayStableKeyV1(ref), ref])).values()];
+  if (!unique.length) return ineligible(target, '没有可加入Railway的聚合引用');
+  return { status: 'ready', intent: { kind: 'railway-bookmark', targetId: target.targetId, projectId, refs: unique } };
 }
 
 function entityRefForPayload(payload: DropPayload): DropEntityRef | undefined {
@@ -67,14 +107,14 @@ function assemblySourceRefForPayload(
 }
 
 function ineligible(
-  target: DropTargetRegistration,
+  target: DropTargetCandidate,
   reason: string,
 ): DropResolution {
   return { status: 'ineligible', targetId: target.targetId, reason };
 }
 
 /** Resolve every selected source against the same receiver before admitting any write. */
-function resolveObjects(payload: Extract<DropPayload, { kind: 'objects' }>, target: DropTargetRegistration): DropResolution {
+function resolveObjects(payload: Extract<DropPayload, { kind: 'objects' }>, target: DropTargetCandidate): DropResolution {
   if (payload.objects.length === 0) return ineligible(target, '所选对象尚无可验证的项目身份，不能投递');
   const resolutions = payload.objects.map((object) => resolveDropIntent({ kind: 'object', ...object }, target));
   const rejected = resolutions.find((item) => item.status === 'ineligible');
@@ -103,15 +143,15 @@ function resolveObjects(payload: Extract<DropPayload, { kind: 'objects' }>, targ
  * The single resolver used by both preview and commit. Callers must retain the
  * returned intent and pass that same object to the commit router.
  */
+export function resolveDropIntent(payload: DropPayload, target: DropTargetRegistration): DropResolution;
+export function resolveDropIntent(payload: DropPayload, target: DropTargetCandidate): DropResolution;
 export function resolveDropIntent(
   payload: DropPayload,
-  target: DropTargetRegistration,
+  target: DropTargetCandidate,
 ): DropResolution {
+  if (!target.enabled) return ineligible(target, target.ineligibleReason ?? '此目标当前不可用');
+  if (target.semantic.kind === 'railway-bookmark') return resolveRailwayBookmark(payload, target);
   if (payload.kind === 'objects') return resolveObjects(payload, target);
-
-  if (!target.enabled) {
-    return ineligible(target, target.ineligibleReason ?? '此目标当前不可用');
-  }
 
   if (target.semantic.kind === 'drop-exclusion') {
     return ineligible(target, target.semantic.reason);
@@ -198,6 +238,25 @@ export function resolveDropIntent(
   const sourceRef = assemblySourceRefForPayload(payload);
   if (sourceRef === undefined) {
     return ineligible(target, '该来源没有可写入 Core 的实体引用');
+  }
+
+  if (target.semantic.kind === 'spatial-membership') {
+    const targetRef = target.semantic.targetRef;
+    if (sourceRef.kind === 'scene' && (targetRef.kind === 'workspace' || targetRef.kind === 'scene'))
+      return ineligible(target, '工作现场不能加入另一个工作现场；请投到主画布、Context、Workflow或Collection。');
+    if ((sourceRef.kind === 'context' && targetRef.kind === 'context'
+      || sourceRef.kind === 'workflow' && targetRef.kind === 'workflow') && sourceRef.id === targetRef.id)
+      return ineligible(target, '不能把聚合对象加入自身');
+    return { status: 'ready', intent: { kind: 'assembly-apply', targetId: target.targetId,
+      targetRef, sourceRefs: [sourceRef] } };
+  }
+
+  // Core v0.15 explicitly does not admit an aggregate Scene into another
+  // Scene working set. Reject the exact Canvas target before claiming a ready
+  // preview; Main/Context/Workflow surface and Conversation remain supported.
+  if (target.semantic.kind === 'canvas' && sourceRef.kind === 'scene'
+    && (target.semantic.targetRef.kind === 'workspace' || target.semantic.targetRef.kind === 'scene')) {
+    return ineligible(target, '一个现场不能直接加入另一个现场；请拖到 Main、Context、Workflow 根或会话。');
   }
 
   if (target.semantic.kind === 'canvas') {

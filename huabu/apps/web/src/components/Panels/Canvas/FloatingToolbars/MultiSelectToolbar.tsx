@@ -56,11 +56,19 @@ export interface MultiSelectToolbarProps {
   readonly deleteDisabledReason?: string;
   readonly moveDisabledReason?: string;
   readonly selectionAction?: ReactNode;
+  /** Keep direct canvas resizing while omitting numeric geometry from host menus. */
+  readonly hideGeometrySize?: boolean;
+  /** Hide a style editor when the host body does not consume the native node field. */
+  readonly showFontSize?: boolean;
+  /** Hide native accent styling when any selected host owns its own surface. */
+  readonly showAccentColor?: boolean;
+  /** Omit host actions whose existing disabled reason says they cannot act on this selection. */
+  readonly hideDisabledActions?: boolean;
   /** LCOS uses the same geometry/format commands with its host presentation. */
   readonly presentation?: 'huabu' | 'lcos';
 }
 
-export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, selectionAction, presentation = 'huabu', suppressed = false, contextMenuRequest = 0, onAlign, onSpread, onTidy, onDistribute }: MultiSelectToolbarProps = {}) => {
+export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, selectionAction, hideGeometrySize = false, showFontSize = true, showAccentColor = true, hideDisabledActions = false, presentation = 'huabu', suppressed = false, contextMenuRequest = 0, onAlign, onSpread, onTidy, onDistribute }: MultiSelectToolbarProps = {}) => {
   const { t } = useTranslation();
   const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => { if (contextMenuRequest) setDetailsOpen(true); }, [contextMenuRequest]);
@@ -173,6 +181,16 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
     };
   }, [selectedNodes]);
 
+  const hasGeometrySizeControl = !hideGeometrySize && !hasManagedSizeSelection;
+  const hasFontSizeControl = showFontSize && textFlowSelection !== null;
+  const hasAccentColorControl = showAccentColor && !hasPortalSelection;
+  const hasMoveControl = !hasNonMovableSelection;
+  const hasDeleteControl = isNotMouse || presentation === 'lcos';
+  const showMoveControl = hasMoveControl && (!hideDisabledActions || moveDisabledReason === undefined);
+  const showDeleteControl = hasDeleteControl && (!hideDisabledActions || deleteDisabledReason === undefined);
+  const hasVisibleDetailControls = hasGeometrySizeControl || hasFontSizeControl || hasAccentColorControl
+    || showMoveControl || showDeleteControl;
+
   // Note auto-fit toggle: only exposed when *every* selected node is a
   // note AND they all share the same auto/fixed state. Mixed states
   // would make a single toggle ambiguous, so we hide it instead.
@@ -219,10 +237,11 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
   }, [selectedNodes, nodes]);
 
   const detailControls = <>
-      <FloatingToolbar.Divider />
+      {(hasGeometrySizeControl || hasFontSizeControl || hasAccentColorControl || showMoveControl || showDeleteControl)
+        && <FloatingToolbar.Divider />}
 
       {/* Size editor: set width / height of every selected node. */}
-      {!hasManagedSizeSelection && (
+      {hasGeometrySizeControl && (
         <FloatingToolbar.SizePicker
           width={commonSize.width}
           height={textFlowSelection ? null : commonSize.height}
@@ -274,7 +293,7 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
         />
       )}
 
-      {textFlowSelection && (
+      {hasFontSizeControl && textFlowSelection && (
         <FloatingToolbar.NumberInput
           label="Font"
           ariaLabel="Font size"
@@ -298,10 +317,10 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
         />
       )}
 
-      <FloatingToolbar.Divider />
+      {(hasAccentColorControl || showMoveControl || showDeleteControl) && <FloatingToolbar.Divider />}
 
       {/* Accent color for selected nodes and the edges between them. */}
-      {!hasPortalSelection && (
+      {hasAccentColorControl && (
         <FloatingToolbar.ColorPicker
           colors={accentPickerOptions}
           value={commonAccent}
@@ -338,7 +357,7 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
         />
       )}
 
-      {!hasNonMovableSelection && (
+      {showMoveControl && (
         <>
           <FloatingToolbar.Divider />
           <FloatingToolbar.ActionButton
@@ -352,7 +371,7 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
       )}
 
       {/* Non-mouse only: mouse users have keyboard Delete / Backspace. */}
-      {(isNotMouse || presentation==='lcos') && (
+      {showDeleteControl && (
         <>
           <FloatingToolbar.Divider />
           <FloatingToolbar.ActionButton
@@ -389,7 +408,7 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
 
       {selectionAction}
       {presentation === 'lcos' ? (
-        <FloatingToolbar.Popover label="所选对象的更多操作" trigger={<MoreHorizontal size={17} />}
+        hasVisibleDetailControls && <FloatingToolbar.Popover label="所选对象的更多操作" trigger={<MoreHorizontal size={17} />}
           triggerData={{ 'data-lcos-selection-more': true }}
           open={detailsOpen} onOpenChange={setDetailsOpen} placement="bottom-end"
           triggerClassName="lcos-selection-more" className="lcos-selection-details">

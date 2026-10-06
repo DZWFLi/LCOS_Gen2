@@ -46,7 +46,16 @@ export function useHudObstacleRects(selector?: string, excluded?: RefObject<HTML
       if (affectsPeer) synchronizePeers();
     });
     membership?.observe(document.body, { childList: true, subtree: true });
-    return () => { resize?.disconnect(); mutation?.disconnect(); membership?.disconnect(); };
+    // Responsive HUDs can move while keeping the same dimensions. ResizeObserver
+    // does not report position-only changes, so re-read their screen rectangles
+    // when either viewport changes; the Stage remains the safe-rect owner.
+    window.addEventListener('resize', measure);
+    window.visualViewport?.addEventListener('resize', measure);
+    return () => {
+      resize?.disconnect(); mutation?.disconnect(); membership?.disconnect();
+      window.removeEventListener('resize', measure);
+      window.visualViewport?.removeEventListener('resize', measure);
+    };
   }, [selector, excluded]);
   return peerRects;
 }

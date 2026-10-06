@@ -166,9 +166,6 @@ export function ConversationContinuationControls({
             <span><Layers size={12} aria-hidden />{mode.context}</span>
           </div>
         </fieldset>
-        <div className="lcos-continuation-workdir" aria-label="工作目录与继承模式独立">
-          <span>工作目录</span><strong>当前目录</strong><span>隔离目录尚未确认可用</span>
-        </div>
         {action === 'selected_context' && <div className="lcos-continuation-references" data-lcos-continuation-reference-preview>
           <small>{request === undefined ? '待确认引用' : '本次提交 · 只读快照'}</small>
           <ComposerReferenceStrip items={request?.items ?? draftItems} />

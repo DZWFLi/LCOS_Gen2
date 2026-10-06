@@ -25,6 +25,7 @@ import { ToastContainer, toast } from './components/Common/Toast';
 import { GlobalModals } from './components/Shell/GlobalModals';
 import { NativeMenuBridge } from './components/Shell/NativeMenuBridge';
 import { WindowChrome } from './components/Shell/WindowChrome';
+import { WorkspaceGate } from './components/WorkspaceGate';
 import { useDisableBrowserZoom } from './hooks/useDisableBrowserZoom';
 import { useInputModeListener } from './hooks/useInputMode';
 import { lcosProjectRoutes } from './lcos/app/LcosAppRoutes';
@@ -220,10 +221,21 @@ function RootLayout() {
 function WorkspaceGuardLayout() {
   const initialising = useContext(InitialisingContext);
   const isReady = useWorkspaceStore((s) => s.isReady);
+  const isSyncing = useWorkspaceStore((s) => s.isSyncing);
+  const error = useWorkspaceStore((s) => s.error);
+  const init = useWorkspaceStore((s) => s.init);
 
-  if (initialising) return <WorkspaceLoadingScreen />;
-  if (!isReady) return <Navigate to="/setup" replace />;
-  return <Outlet />;
+  return (
+    <WorkspaceGate
+      initialising={initialising}
+      isSyncing={isSyncing}
+      isReady={isReady}
+      error={error}
+      onRetry={() => { void init(); }}
+    >
+      <Outlet />
+    </WorkspaceGate>
+  );
 }
 
 /**
@@ -234,7 +246,23 @@ function WorkspaceGuardLayout() {
  */
 function SetupRoute() {
   const initialising = useContext(InitialisingContext);
-  return initialising ? <WorkspaceLoadingScreen /> : <WorkspaceSetupPage />;
+  const isReady = useWorkspaceStore((s) => s.isReady);
+  const isSyncing = useWorkspaceStore((s) => s.isSyncing);
+  const error = useWorkspaceStore((s) => s.error);
+  const init = useWorkspaceStore((s) => s.init);
+
+  return (
+    <WorkspaceGate
+      initialising={initialising}
+      isSyncing={isSyncing}
+      isReady={isReady}
+      error={error}
+      onRetry={() => { void init(); }}
+      mode="setup"
+    >
+      <WorkspaceSetupPage />
+    </WorkspaceGate>
+  );
 }
 
 function WorkspaceLanding() {

@@ -8,8 +8,8 @@ import { useEffect, useState } from 'react';
 import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 import { useCanvasAttentionStore } from '@/store/canvasAttentionStore';
 
-
 import { WorkflowCardPool } from './WorkflowCardPool';
+import { useLcosDropStore } from '../../lcosDropState';
 import { useAvoidingHudPosition } from '../../navigation/useAvoidingHudPosition';
 import { useHudViewport } from '../../navigation/useHudViewport';
 import { LcosWorksiteStage } from '../../shell/LcosWorksiteStage';
@@ -41,16 +41,21 @@ export interface WorkflowHandOverlayProps {
  * TaskCard 进入能力只委托给既有 child-worksite navigation owner。
  */
 export function WorkflowHandOverlay({ projectId, workspaces, sourceSurface, sourceWasChild, open, onClose }: WorkflowHandOverlayProps): React.JSX.Element | null {
-  useCloseOnEscape(open, onClose);
+  const nativeAssemblyDropActive = useLcosDropStore((drop) => {
+    const state = drop.state;
+    const pending = state.status === 'tracking' || state.status === 'dwell' || state.status === 'preview';
+    return pending && 'payload' in state && state.payload.kind === 'assembly';
+  });
+  useCloseOnEscape(open && !nativeAssemblyDropActive, onClose);
   useEffect(() => { if (open) useCanvasAttentionStore.getState().setCanvasEngaged(false); }, [open]);
   return (
-    <WorkflowHandView key={projectId} open={open} onClose={onClose} header={<>
+    <WorkflowHandView key={projectId} open={open} onClose={onClose} nativeAssemblyDropActive={nativeAssemblyDropActive} header={<>
       <span>工作流</span>
       <button type="button" aria-label="收回手牌" onClick={onClose} className="lcos-workflow-hand-close">
         <X className="h-[22px] w-[22px]" aria-hidden />
       </button>
     </>}>
-      <WorkflowCardPool projectId={projectId} workspaces={workspaces} sourceSurface={sourceSurface} sourceWasChild={sourceWasChild} onEnterWorksite={onClose} />
+      <WorkflowCardPool projectId={projectId} workspaces={workspaces} sourceSurface={sourceSurface} sourceWasChild={sourceWasChild} onLeaveHand={onClose} />
     </WorkflowHandView>
   );
 }

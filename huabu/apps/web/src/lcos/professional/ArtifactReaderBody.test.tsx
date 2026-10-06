@@ -265,9 +265,45 @@ describe('ArtifactReaderBody real content', () => {
     expect(textFor).toHaveBeenCalledWith('project-1', 'file-current', expect.any(AbortSignal));
     expect(container.querySelector('[data-lcos-reader-content="text"]')?.textContent).toContain('Current body');
     expect(container.textContent).toContain('文本文档 · 项目材料');
-    expect(container.textContent).toContain('版本 revision · 当前版本');
+    const revisionBadge = container.querySelector<HTMLElement>('[data-lcos-reader-revision-badge]');
+    expect(revisionBadge?.textContent).toContain('当前版本');
+    expect(revisionBadge?.textContent).not.toContain('revision-');
+    expect(revisionBadge?.title).toContain('revision-current');
     expect(container.textContent).not.toContain('受管 Artifact');
     expect(container.querySelector('[title*="revision-current"]')?.getAttribute('title')).toContain('Core 状态：current');
+  });
+
+  it('distinguishes same-timestamp revision choices using real metadata and stable ID tails', async () => {
+    const artifactId = 'artifact-version-labels';
+    const oldA = 'revision-historical-alpha-1234';
+    const oldB = 'revision-historical-beta-5678';
+    const current = 'revision-current-9012';
+    const createdAt = '2026-01-01T00:00:00Z';
+    const revisions = [
+      { id: oldA, artifactId, fileRecordId: 'file-old-a', contentHash: 'hash-a', source: 'import', status: 'superseded', createdAt },
+      { id: oldB, artifactId, fileRecordId: 'file-old-b', contentHash: 'hash-b', source: 'import', status: 'superseded', createdAt },
+      { id: current, artifactId, fileRecordId: 'file-current', contentHash: 'hash-current', source: 'import', status: 'current', createdAt: '2026-01-02T00:00:00Z' },
+    ];
+    detailFor.mockResolvedValue({ ...detail(artifactId, current), revisions });
+    revisionsFor.mockResolvedValue(revisions);
+    textFor.mockImplementation((_projectId: string, fileRecordId: string) => Promise.resolve(`body:${fileRecordId}`));
+
+    const { container } = await render(artifactId);
+    const choices = [...container.querySelectorAll<HTMLButtonElement>('[data-lcos-reader-revision]')];
+    expect(choices).toHaveLength(3);
+    expect(choices[0]?.textContent).not.toBe(choices[1]?.textContent);
+    expect(choices[0]?.textContent).toContain('历史');
+    expect(choices[2]?.textContent).toContain('当前');
+    expect(choices[0]?.textContent).not.toContain('revision-');
+    expect(choices[0]?.getAttribute('data-lcos-reader-revision')).toBe(oldA);
+    expect(choices[0]?.title).toContain(oldA);
+    expect(container.querySelector('[data-lcos-reader-revision-badge]')?.textContent).toContain('当前版本');
+
+    click(container, `[data-lcos-reader-revision="${oldA}"]`);
+    await act(async () => { await Promise.resolve(); });
+    expect(textFor).toHaveBeenCalledWith('project-1', 'file-old-a', expect.any(AbortSignal));
+    expect(container.querySelector('[data-lcos-reader-readonly]')?.textContent).toContain('历史版本（只读）');
+    expect(container.querySelector('[data-lcos-reader-readonly] span')?.getAttribute('title')).toContain(oldA);
   });
 
   it('reads the exact revision carried by the Reader target instead of substituting current', async () => {
@@ -294,7 +330,8 @@ describe('ArtifactReaderBody real content', () => {
     const { container } = await render('artifact-missing-revision', { revisionId: 'revision-gone' });
     expect(textFor).not.toHaveBeenCalled();
     expect(container.querySelector('[data-lcos-reader-content="error"]')?.textContent).toContain('未切换到当前版本');
-    expect(container.textContent).toContain('revision');
+    expect(container.querySelector('[data-lcos-reader-revision-badge]')?.textContent).toContain('目标版本不可读');
+    expect(container.querySelector<HTMLElement>('[data-lcos-reader-revision-badge]')?.title).toContain('revision-gone');
   });
 
   it('exposes stale source state while keeping the requested revision readable', async () => {
@@ -398,6 +435,8 @@ describe('ArtifactReaderBody R4 residual', () => {
     expect(panel).not.toBeNull();
     expect(panel?.textContent).toContain('仅元数据可比');
     expect(panel?.textContent).toContain('有变化');
+    expect(panel?.getAttribute('title')).toContain('revision-old');
+    expect(panel?.textContent).not.toContain('revision-old');
     expect(container.querySelectorAll('[data-lcos-reader-compare-line]')).toHaveLength(0);
   });
 

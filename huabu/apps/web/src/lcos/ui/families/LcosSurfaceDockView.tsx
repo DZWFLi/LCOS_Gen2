@@ -1,7 +1,8 @@
 // Figma 5386:256。selected/busy/disabled 均由现有 container 提供。
 // 本组件不拥有 Surface identity、导航、相机或 safeRect。
 import { FigmaShellGlyph } from '../FigmaShellGlyph';
-import { LcosIconButton } from '../primitives/LcosIconButton';
+import { lcosTokens } from '../lcosTokens';
+import { GooeyNav } from '../vendor/rareui/gooey-nav';
 
 import type { FigmaShellGlyphName } from '../FigmaShellGlyph';
 import type { CSSProperties, ReactNode } from 'react';
@@ -21,20 +22,20 @@ export interface LcosSurfaceDockViewProps<Key extends string> {
   readonly className?: string;
   readonly style?: CSSProperties;
   readonly feedback?: ReactNode;
+  readonly compact?: boolean;
 }
 export function LcosSurfaceDockView<Key extends string>({ items, onSelect,
-  className, style, feedback }: LcosSurfaceDockViewProps<Key>): React.JSX.Element {
-  return <div data-lcos-surface-dock data-lcos-family="surface-dock" className={className} style={style}>
-    <div data-lcos-dock-items>
-      {items.map((item) => <LcosIconButton key={item.key} type="button" disabled={item.disabled}
-        data-lcos-surface={item.key} data-lcos-surface-active={item.selected ? 'true' : 'false'}
-        aria-label={item.label} title={item.title ?? item.label} aria-pressed={item.selected}
-        aria-busy={item.busy} onClick={() => onSelect(item.key)}>
-        <span data-lcos-dock-tile>
-          <FigmaShellGlyph name={item.busy ? 'loading' : item.glyph} size={21} />
-        </span>
-      </LcosIconButton>)}
-    </div>
+  className, style, feedback, compact = false }: LcosSurfaceDockViewProps<Key>): React.JSX.Element {
+  return <div data-lcos-surface-dock data-lcos-family="surface-dock"
+    data-lcos-dock-compact={compact ? 'true' : undefined} className={className} style={style}>
+    <GooeyNav aria-label="工作现场" data-lcos-dock-items size="sm"
+      value={items.findIndex((item) => item.selected)}
+      activeColor={lcosTokens.color.pinViolet} activeLabelColor={lcosTokens.color.textOnInverse}
+      separation={compact ? 16 : 8} radius={12} iconOnly={compact}
+      items={items.map((item) => ({ label: item.label, surfaceKey: item.key,
+        icon: <FigmaShellGlyph name={item.busy ? 'loading' : item.glyph} size={21} />,
+        disabled: item.disabled, busy: item.busy, title: item.title ?? item.label }))}
+      onChange={(index) => { const item = items[index]; if (item && !item.disabled) onSelect(item.key); }} />
     {feedback}
   </div>;
 }

@@ -65,7 +65,7 @@ describe('LcosHostOverlay (A07)', () => {
     expect(el?.textContent).toContain('材料');
   });
 
-  it('drop in transit suppresses the drop preview (single canopy, no Christmas tree)', () => {
+  it('drop in transit keeps the target-hint layer mounted without exposing the selection Composer', () => {
     // Existing reference draft is not an open request: dragging keeps the
     // selection-local Composer hidden until an explicit target intent arrives.
     useLcosReferenceStore.getState().registerNodeEntity('node-9', {
@@ -76,13 +76,17 @@ describe('LcosHostOverlay (A07)', () => {
     useLcosDropStore.setState({
       state: {
         status: 'tracking',
-        payload: { kind: 'object', entityType: 'artifact', entityId: 'a1' },
+        payload: { kind: 'text', value: '仅为测试' },
       } as SemanticDropState,
+    });
+    useLcosDropStore.getState().registerTarget({
+      targetId: 'capture:main', kind: 'external-import', label: '资料收集区', priority: 30, enabled: true,
+      rect: { left: 24, top: 36, width: 180, height: 96 }, semantic: { kind: 'external-import', owner: 'capture' },
     });
     const container = render(<LcosHostOverlay />);
     expect(container.querySelector('[data-lcos-composer]')).toBeNull();
-    // Not in preview yet either.
-    expect(document.body.querySelector('[data-lcos-drop-preview]')).toBeNull();
+    expect(document.body.querySelector('[data-lcos-drop-preview]')?.textContent).toContain('拖到高亮位置');
+    expect(document.body.querySelector('[data-lcos-drop-receptor]')?.getAttribute('data-state')).toBe('candidate');
   });
 
   it('有草稿但没有明确目标时不产出 composer', () => {

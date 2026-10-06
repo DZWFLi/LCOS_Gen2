@@ -37,9 +37,11 @@
   align-items: center;
   gap: 9px;
   min-width: 0;
-  min-height: 28px;
+  min-height: 34px;
   padding-right: 30px;
 }
+.lcos-composer-heading-copy { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.lcos-composer-context-label { color: var(--gen2-muted); font-size: 10px; line-height: 12px; }
 .lcos-composer-title,
 .lcos-composer-receiver {
   min-width: 0;
@@ -52,6 +54,7 @@
   line-height: 18px;
   color: var(--lcos-composer-header-ink);
 }
+.lcos-composer-title { font-size: 12px; line-height: 18px; }
 .lcos-composer-receiver {
   border: 0;
   padding: 0;
@@ -90,10 +93,19 @@
   min-width: 0;
   max-width: 100%;
   min-height: 24px;
-  margin-top: 8px;
+  margin-top: 4px;
   overflow-x: auto;
   scrollbar-width: thin;
   overscroll-behavior-x: contain;
+}
+.lcos-composer-reference-heading {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 8px; color: var(--lcos-color-text-secondary); font-size: 10px; line-height: 14px;
+}
+.lcos-composer-reference-count { color: var(--gen2-muted); font-variant-numeric: tabular-nums; }
+.lcos-composer-reference-empty {
+  display: flex; align-items: center; min-width: 0; min-height: 24px; margin-top: 4px;
+  color: var(--gen2-muted); font-size: 11px; line-height: 16px;
 }
 .lcos-composer-reference {
   display: inline-flex;
@@ -122,7 +134,7 @@
   flex-direction: column;
   min-width: 0;
   padding: 12px;
-  margin-top: 16px;
+  margin-top: 12px;
   gap: 16px;
   border-radius: var(--lcos-radius-medium);
   background: var(--lcos-surface-base);
@@ -183,7 +195,9 @@
 .lcos-composer-view[data-presentation='inline'] .lcos-composer-heading { min-height: 48px; }
 .lcos-composer-view[data-presentation='inline'] .lcos-composer-close { top: 2px; right: -6px; }
 .lcos-composer-view[data-presentation='inline'] .lcos-composer-identity { width: 28px; height: 28px; flex-basis: 28px; }
-.lcos-composer-view[data-presentation='inline'] .lcos-composer-references { margin-top: 12px; min-height: 28px; }
+.lcos-composer-view[data-presentation='inline'] .lcos-composer-reference-heading { margin-top: 12px; }
+.lcos-composer-view[data-presentation='inline'] .lcos-composer-references { margin-top: 4px; min-height: 28px; }
+.lcos-composer-view[data-presentation='inline'] .lcos-composer-reference-empty { min-height: 28px; }
 .lcos-composer-view[data-presentation='inline'] .lcos-composer-editor { margin-top: 12px; }
 
 /* Arc uses the existing world-to-screen popover and point templates. */
@@ -208,6 +222,23 @@
 [data-lcos-arc-panel] button:focus-visible,
 [data-lcos-arc-panel] input:focus-visible { outline: 2px solid var(--lcos-pin-violet); outline-offset: 1px; }
 [data-lcos-arc-panel] button:hover:not(:disabled) { background-color: var(--gen2-raised); }
+.lcos-action-arc-menu-anchor { position: absolute; display: block; pointer-events: auto; }
+.lcos-action-arc-menu-anchor > div { position: absolute; inset: 0; }
+.lcos-action-arc-menu {
+  width: 232px;
+  max-width: min(252px, 72vw);
+  max-height: min(300px, 55vh);
+  overflow-y: auto !important;
+  padding: 5px !important;
+  border: 1px solid color-mix(in srgb, var(--lcos-color-border-subtle) 72%, transparent) !important;
+  border-radius: 14px !important;
+  background: color-mix(in srgb, var(--lcos-surface-base) 64%, transparent) !important;
+  color: var(--lcos-text-primary);
+  box-shadow: 0 8px 24px rgba(31, 46, 61, .12) !important;
+  backdrop-filter: blur(18px) saturate(1.28);
+  -webkit-backdrop-filter: blur(18px) saturate(1.28);
+}
+.lcos-action-arc-menu-item { min-height: 36px; border-radius: 8px !important; }
 
 @media (pointer: coarse) {
   .lcos-composer-tools { min-height: 44px; }

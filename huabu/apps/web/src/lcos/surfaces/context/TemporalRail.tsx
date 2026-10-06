@@ -25,7 +25,7 @@ export interface TemporalRailProps {
   readonly canvasId?: string;
 }
 
-export function TemporalRail({ projectId, workspaceId, canvasId }: TemporalRailProps): React.JSX.Element {
+export function TemporalRail({ projectId, workspaceId, canvasId }: TemporalRailProps): React.JSX.Element | null {
   const [index, setIndex] = useState<TemporalIndexV1 | null>(null);
   const [state, setState] = useState<'loading' | 'empty' | 'ready' | 'error'>('loading');
   const [reason, setReason] = useState<string>();
@@ -146,6 +146,8 @@ export function TemporalRail({ projectId, workspaceId, canvasId }: TemporalRailP
       : bindingCanvasId !== canvasId ? '当前现场的对象绑定尚未就绪'
         : `${items.length} 组时间记录的目标尚未投影到当前现场`
     : undefined;
+
+  if (state === 'empty') return null;
 
   return <TemporalRailView
     items={items}

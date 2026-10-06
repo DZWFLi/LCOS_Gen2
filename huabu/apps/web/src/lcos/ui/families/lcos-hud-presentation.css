@@ -517,38 +517,34 @@
 [data-lcos-project-identity]:hover { background: var(--gen2-raised); }
 [data-lcos-shell-project-cluster] { max-width: calc(100vw - 48px); }
 
-/* Dock: 178x58; visible tiles x=13/65/117,y=12,size33; 44px independent hit targets. */
+/* Rare UI GooeyNav replaces the dock tiles; original safeRect host still measures the dock. */
 [data-lcos-family='surface-dock'] {
-  width: 178px;
+  width: max-content;
   height: 58px;
-  padding: 6.5px 22.5px 7.5px 7.5px;
+  padding: 7px;
   border-radius: 20px;
 }
-[data-lcos-dock-items] { display: flex; align-items: center; gap: 8px; }
+[data-lcos-family='surface-dock'][data-lcos-dock-compact='true'] {
+  width: 178px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-lcos-dock-items] { display: block; }
 [data-lcos-family='surface-dock'] [data-lcos-surface] {
   appearance: none;
-  display: grid;
-  place-items: center;
-  width: 44px;
+  display: flex;
+  align-items: center;
+  min-width: 44px;
   height: 44px;
   flex: none;
-  padding: 0;
+  padding: 8px 12px;
   border: 0;
   border-radius: 12px;
   background: transparent;
   cursor: pointer;
 }
-[data-lcos-dock-tile] {
-  display: grid;
-  place-items: center;
-  width: 33px;
-  height: 33px;
-  border-radius: 9px;
-  transition: background-color 120ms ease, opacity 120ms ease;
-}
-[data-lcos-surface-active='true'] [data-lcos-dock-tile] { background: var(--lcos-hud-surface); }
-[data-lcos-surface]:hover:not(:disabled) [data-lcos-dock-tile] { background: var(--gen2-raised); }
-[data-lcos-surface]:disabled [data-lcos-dock-tile] { opacity: 0.45; }
+[data-lcos-surface]:disabled { opacity: 0.45; }
 [data-lcos-surface]:disabled { cursor: not-allowed; }
 [data-lcos-surface]:focus-visible { outline: 2px solid var(--lcos-pin-violet); outline-offset: -2px; }
 

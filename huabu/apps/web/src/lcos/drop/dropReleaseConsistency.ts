@@ -3,6 +3,8 @@ import type { DropIntent, DropResolution } from './dropTypes';
 
 function sameReceiver(before: DropIntent, after: DropIntent): boolean {
   if (before.kind !== after.kind || before.targetId !== after.targetId) return false;
+  if (before.kind === 'railway-bookmark' && after.kind === 'railway-bookmark')
+    return before.projectId===after.projectId && JSON.stringify(before.refs)===JSON.stringify(after.refs);
   if (before.kind === 'assembly-apply' && after.kind === 'assembly-apply') {
     if (before.railwayReceive !== after.railwayReceive || before.portalReceive !== after.portalReceive) return false;
     if ((before.railwayReceive || before.portalReceive) && (JSON.stringify(before.railwayDestinationRef) !== JSON.stringify(after.railwayDestinationRef)

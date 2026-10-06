@@ -1,8 +1,7 @@
-// Core Project typed HTTP boundary — only the routes LCOS Gen2 actually uses.
-// listProjects + getProjectGraph. Does NOT fake create/delete/graph mutation
-// (those are not part of the current Core->Huabu G0 loop).
+// Core Project typed HTTP boundary. Mutations go through the existing Core
+// graph route and its baseVersion CAS; this client keeps no local graph truth.
 
-import type { ProjectGraphSnapshot } from '@local-creative-os/contracts';
+import type { MutationBatch, MutationResult, ProjectGraphSnapshot } from '@local-creative-os/contracts';
 import type { Workspace } from '@local-creative-os/domain';
 import { HttpClient } from './client.js';
 import { coreRequest } from './coreTypes.js';
@@ -64,6 +63,16 @@ export class CoreProjectClient {
       this.http,
       'GET',
       `/projects/${encodeURIComponent(projectId)}/graph`,
+    );
+  }
+
+  /** POST /projects/:projectId/graph — canonical MutationBatch with baseVersion CAS. */
+  applyGraphMutations(projectId: string, batch: MutationBatch): Promise<MutationResult> {
+    return coreRequest<MutationResult>(
+      this.http,
+      'POST',
+      `/projects/${encodeURIComponent(projectId)}/graph`,
+      { body: batch },
     );
   }
 

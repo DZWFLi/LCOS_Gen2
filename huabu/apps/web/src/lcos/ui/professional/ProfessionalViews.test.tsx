@@ -27,6 +27,8 @@ afterEach(async () => {
     await act(async () => root.unmount());
     host.remove();
   }
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('Reader production presentation', () => {
@@ -126,14 +128,53 @@ describe('Controlled reading groups', () => {
 });
 
 describe('Assembly Source Bay presentation', () => {
-  it('retains child order without introducing a second masonry layout engine', async () => {
-    const host = await mount(<AssemblyMasonryView><div data-item="first" /><div data-item="second" /></AssemblyMasonryView>);
-    expect([...host.querySelectorAll('[data-item]')].map((el) => el.getAttribute('data-item'))).toEqual(['first', 'second']);
+  it('retains item keys while overscanning native drag sources', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(480);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(480);
+    const itemKeys = ['first', 'second', ...Array.from({ length: 14 }, (_, index) => `material-${index}`)];
+    const host = await mount(<div className="lcos-assembly-scroll">
+      <AssemblyMasonryView>{itemKeys.map((key) => <div key={key} data-item={key} />)}</AssemblyMasonryView>
+    </div>);
+    const readKeys = (): string[] => [...host.querySelectorAll<HTMLElement>('[data-item]')].flatMap((el) => {
+      const key = el.getAttribute('data-item');
+      return key === null ? [] : [key];
+    });
+    const beforeDrag = readKeys();
+    expect(beforeDrag.length).toBeLessThan(itemKeys.length);
+    expect(beforeDrag.every((key) => itemKeys.includes(key))).toBe(true);
+    const dragSource = host.querySelector('[data-item="first"]');
+    expect(dragSource).not.toBeNull();
+    const originalCellKey = dragSource?.closest<HTMLElement>('[data-assembly-cell]')?.dataset.assemblyCell;
+    await act(async () => dragSource?.dispatchEvent(new Event('dragstart', { bubbles: true })));
+    expect(readKeys()).toHaveLength(itemKeys.length);
+    expect(new Set(readKeys())).toEqual(new Set(itemKeys));
+    expect(host.querySelector('[data-item="first"]')?.closest<HTMLElement>('[data-assembly-cell]')?.dataset.assemblyCell).toBe(originalCellKey);
+
+    const mountedEntry = mounted.find((entry) => entry.host === host);
+    if (mountedEntry === undefined) throw new Error('Masonry test root was not mounted');
+    const appendedKeys = [...itemKeys, 'sixth'];
+    await act(async () => mountedEntry.root.render(<div className="lcos-assembly-scroll">
+      <AssemblyMasonryView>{appendedKeys.map((key) => <div key={key} data-item={key} />)}</AssemblyMasonryView>
+    </div>));
+    expect(host.querySelector('[data-item="first"]')?.closest<HTMLElement>('[data-assembly-cell]')?.dataset.assemblyCell).toBe(originalCellKey);
+    expect(readKeys()).toHaveLength(appendedKeys.length);
+    expect(new Set(readKeys())).toEqual(new Set(appendedKeys));
+
+    const filteredKeys = appendedKeys.filter((key) => key !== 'second');
+    await act(async () => mountedEntry.root.render(<div className="lcos-assembly-scroll">
+      <AssemblyMasonryView>{filteredKeys.map((key) => <div key={key} data-item={key} />)}</AssemblyMasonryView>
+    </div>));
+    expect(new Set(readKeys())).toEqual(new Set(filteredKeys));
   });
   it('does not substitute a fake photograph for unavailable preview bytes', async () => {
     const host = await mount(<AssemblyMaterialView title="材料" familyLabel="图像" fallbackGlyph={<span>图</span>} />);
     expect(host.querySelector('img')).toBeNull();
-    expect(host.textContent).toContain('暂无真实预览');
+    expect(host.textContent).toContain('尚无缩略预览');
   });
   it('renders only a real supplied excerpt and escapes it', async () => {
     const host = await mount(<AssemblyMaterialView title="文档" familyLabel="文本" fallbackGlyph={null} excerpt="<b>原文</b>" />);
@@ -141,8 +182,19 @@ describe('Assembly Source Bay presentation', () => {
     expect(host.querySelector('b')).toBeNull();
   });
   it('keeps the image out of native image drag so the existing item drag remains the entry', async () => {
+    const canvasContext = {
+      fillRect: vi.fn(),
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => ({ data: new Uint8ClampedArray(128 * 128 * 4) })),
+      globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(canvasContext);
     const host = await mount(<AssemblyMaterialView title="原图" familyLabel="图像" fallbackGlyph={null} previewUrl="blob:read-model" />);
-    expect(host.querySelector('img')?.getAttribute('draggable')).toBe('false');
+    expect(host.querySelector('[data-preview-available="true"]')).not.toBeNull();
+    const image = host.querySelector<HTMLImageElement>('img');
+    if (image !== null) expect(image.getAttribute('draggable')).toBe('false');
+    expect(host.querySelector('img[draggable="true"]')).toBeNull();
+    expect(host.querySelector('canvas')?.getAttribute('draggable')).not.toBe('true');
   });
   it('dispatches the existing key without changing selected state by itself', async () => {
     const select = vi.fn();

@@ -1,5 +1,7 @@
 import type { DropResolution } from '../drop/dropTypes';
 import type { SemanticDropState } from '@local-creative-os/web-gen2';
+import { resolveDropIntent } from '../drop/dropIntentResolver';
+import type { DropTargetCandidate } from '../drop/dropTypes';
 
 export type RailwayReceivePresentation =
   | 'rest'
@@ -14,6 +16,8 @@ export interface RailwayReceivePresentationInput {
   readonly enabled: boolean;
   readonly dropState: SemanticDropState;
   readonly resolution: DropResolution | null;
+  /** Exact semantic candidate for this rendered receiver, from the live registry projection. */
+  readonly candidate?: DropTargetCandidate;
 }
 
 /**
@@ -36,9 +40,13 @@ export function railwayReceivePresentation(
       : undefined;
 
   if (activeTargetId !== input.targetId) {
-    return input.dropState.status === 'tracking' || input.dropState.status === 'dwell'
-      ? 'receive'
-      : 'receive-eligible';
+    const candidateResolution = 'payload' in input.dropState && input.candidate?.targetId === input.targetId
+      ? resolveDropIntent(input.dropState.payload, input.candidate)
+      : undefined;
+    // Missing candidate data must never paint a receiver as eligible. This
+    // keeps non-active destinations honest while the source is still moving.
+    if (candidateResolution?.status !== 'ready') return 'ineligible';
+    return input.dropState.status === 'tracking' || input.dropState.status === 'dwell' ? 'receive' : 'receive-eligible';
   }
   if (input.resolution?.status === 'ineligible') return 'ineligible';
   if (input.dropState.status === 'committing') return 'committing';

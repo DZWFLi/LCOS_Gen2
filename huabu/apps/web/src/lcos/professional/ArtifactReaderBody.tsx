@@ -1,4 +1,3 @@
-import { composerInputKey, restoredComposerCaret } from '../composer/composerInputJourney';
 // ArtifactReaderBody — 阅读器（R4 Reader direct manipulation residual）。
 //
 // 真实 Artifact read：getArtifactDetail + revisions；正文按 kind 诚实降级
@@ -19,12 +18,13 @@ import { Archive, ArchiveRestore, FileImage, FileText } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { createLcosCoreSession } from '../app/lcosCoreClient';
+import { composerInputKey, restoredComposerCaret } from '../composer/composerInputJourney';
 import { useLcosHostStore } from '../host/lcosHostState';
 import { useLcosReferenceStore } from '../lcosReferenceState';
+import { attachReaderScrollRestore } from './readerScrollRestore';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosTokens } from '../ui/lcosTokens';
-import { attachReaderScrollRestore } from './readerScrollRestore';
 import { ReaderContentView, readerArtifactKindLabel } from '../ui/professional/ReaderContentView';
 
 import type { LcosReaderPositionV1 } from '../shell/lcosShellStore';
@@ -65,6 +65,52 @@ function revisionStatusLabel(status: string): string {
     case 'superseded': return '已被替代';
     default: return '状态未知';
   }
+}
+
+type ReaderRevisionLabelMetadata = {
+  readonly id: string | number;
+  readonly status: string;
+  readonly createdAt?: string;
+};
+
+function revisionCreatedAtLabel(createdAt?: string): string | undefined {
+  if (!createdAt) return undefined;
+  const timestamp = Date.parse(createdAt);
+  if (!Number.isFinite(timestamp)) return undefined;
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(timestamp);
+}
+
+function revisionIdTailLabel(revisionId: string, revisions: readonly ReaderRevisionLabelMetadata[]): string {
+  if (!revisionId) return '未标注版本';
+  const peerIds = revisions.map((candidate) => String(candidate.id)).filter((id) => id !== revisionId);
+  let suffixLength = Math.min(8, revisionId.length);
+  while (suffixLength < revisionId.length
+    && peerIds.some((peerId) => peerId.slice(-suffixLength) === revisionId.slice(-suffixLength))) {
+    suffixLength = Math.min(revisionId.length, suffixLength + 4);
+  }
+  return `…${revisionId.slice(-suffixLength)}`;
+}
+
+function revisionDisplayKey(revision: ReaderRevisionLabelMetadata, revisions: readonly ReaderRevisionLabelMetadata[]): string {
+  const revisionId = String(revision.id);
+  const createdAt = revisionCreatedAtLabel(revision.createdAt);
+  if (createdAt === undefined) return revisionIdTailLabel(revisionId, revisions);
+  const sameTimestamp = revisions.some((candidate) => String(candidate.id) !== revisionId
+    && revisionCreatedAtLabel(candidate.createdAt) === createdAt);
+  return sameTimestamp ? `${createdAt} · ${revisionIdTailLabel(revisionId, revisions)}` : createdAt;
+}
+
+function revisionDisplayLabel(revisionId: string, revisions: readonly ReaderRevisionLabelMetadata[]): string {
+  const revision = revisions.find((candidate) => String(candidate.id) === revisionId);
+  if (revision === undefined) return revisionIdTailLabel(revisionId, revisions);
+  return `${revisionDisplayKey(revision, revisions)} · ${revisionStatusLabel(revision.status)}`;
+}
+
+function revisionTooltip(revision: ReaderRevisionLabelMetadata): string {
+  return `版本标识：${String(revision.id)}；创建时间：${revision.createdAt ?? '未提供'}；Core 状态：${revision.status}`;
 }
 
 /**
@@ -201,7 +247,7 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
         if (cancelled || controller.signal.aborted) return;
         const revision = revisions.find((candidate) => String(candidate.id) === String(revisionIdToLoad));
         if (revision === undefined || String(revision.artifactId) !== String(artifactId)) {
-          setContentError(`目标版本 ${String(revisionIdToLoad).slice(0, 8)} 已缺失或不可读；未切换到当前版本。`);
+          setContentError(`目标版本 ${revisionIdTailLabel(String(revisionIdToLoad), revisions)} 已缺失或不可读；未切换到当前版本。`);
           setLoadedRevisionId(String(revisionIdToLoad));
           return;
         }
@@ -418,7 +464,15 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
   const kind = detail.artifact.kind;
   const fileName = detail.artifact.title;
   const currentRevisionId = detail.currentRevisionId === undefined ? undefined : String(detail.currentRevisionId);
+  const isCurrentRevision = currentRevisionId !== undefined && loadedRevisionId === currentRevisionId;
   const isHistorical = loadedRevisionId !== undefined && currentRevisionId !== undefined && loadedRevisionId !== currentRevisionId;
+  const revisionStateLabel = revision === undefined ? loadedRevisionId === undefined ? '暂无版本' : '目标版本不可读'
+    : revision.status === 'draft' ? '草稿'
+      : isHistorical ? '历史版本（只读）'
+        : isCurrentRevision ? '当前版本' : revisionStatusLabel(revision.status);
+  const revisionKeyLabel = revision === undefined
+    ? loadedRevisionId === undefined ? undefined : revisionIdTailLabel(String(loadedRevisionId), detail.revisions)
+    : revisionDisplayKey(revision, detail.revisions);
   const archived = detail.artifact.archivedAt !== undefined;
 
   const toggleArchive = (): void => {
@@ -468,8 +522,8 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
             {readerArtifactKindLabel(String(kind))} · {detail.artifact.managed === true ? '项目材料' : '外部引用'}
           </p>
         </div>
-        <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px]" title={revision ? `版本标识：${revision.id}；Core 状态：${revision.status}` : '当前材料没有可读取的版本'} style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}>
-          {revision ? `版本 ${revision.id.slice(0, 8)} · ${revisionStatusLabel(revision.status)}` : '暂无版本'}
+        <span data-lcos-reader-revision-badge className="shrink-0 rounded-full px-2 py-0.5 text-[10px]" title={revision ? revisionTooltip(revision) : loadedRevisionId === undefined ? '当前材料没有可读取的版本' : `目标版本标识：${String(loadedRevisionId)}；未出现在可读版本列表`} style={{ background: lcosTokens.color.raised, color: lcosTokens.color.muted }}>
+          {revisionKeyLabel ? `${revisionStateLabel} · ${revisionKeyLabel}` : '暂无版本'}
         </span>
       </div>
 
@@ -498,7 +552,9 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
       {/* R4：historical 只读语义 + 一键回到当前版本 */}
       {isHistorical && (
         <div data-lcos-reader-readonly className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs" style={{ background: 'rgba(194,146,78,0.10)', color: lcosTokens.color.muted }}>
-          <span>历史版本（只读）· {String(loadedRevisionId).slice(0, 8)}</span>
+          <span title={revision ? revisionTooltip(revision) : `版本标识：${String(loadedRevisionId)}`}>
+            历史版本（只读）· {revisionKeyLabel ?? revisionIdTailLabel(String(loadedRevisionId), detail.revisions)}
+          </span>
           <button
             type="button"
             data-lcos-reader-back-to-current
@@ -527,6 +583,7 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
             const id = String(r.id);
             const active = id === loadedRevisionId;
             const isCurrent = currentRevisionId !== undefined && id === currentRevisionId;
+            const choiceStateLabel = r.status === 'draft' ? '草稿' : isCurrent ? '当前' : '历史';
             return (
               <button
                 key={id}
@@ -535,15 +592,14 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
                 data-lcos-reader-revision-role={isCurrent ? 'current' : 'historical'}
                 aria-current={active ? 'true' : undefined}
                 onClick={() => setSelectedRevisionId(id)}
-                title={isCurrent ? '当前版本' : '历史版本（只读）'}
+                title={revisionTooltip(r)}
                 className="rounded-full px-2 py-0.5 text-[10px]"
                 style={{
                   background: active ? lcosTokens.color.inverse : lcosTokens.color.raised,
                   color: active ? lcosTokens.color.textOnInverse : lcosTokens.color.muted,
                 }}
               >
-                {id.slice(0, 8)}
-                {isCurrent ? ' · 当前' : ' · 历史'}
+                {revisionDisplayKey(r, detail.revisions)} · {choiceStateLabel}
               </button>
             );
           })}
@@ -600,9 +656,9 @@ export function ArtifactReaderBody({ projectId, artifactId, revisionId, onReturn
         </div>
       )}
       {compare !== null && (
-        <div data-lcos-reader-compare className="flex flex-col gap-1 rounded-xl p-3" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
+        <div data-lcos-reader-compare title={`版本标识：${compare.base.revisionId} → ${compare.head.revisionId}`} className="flex flex-col gap-1 rounded-xl p-3" style={{ background: lcosTokens.color.surface, border: `1px solid ${lcosTokens.color.borderSubtle}` }}>
           <div className="text-[11px]" style={{ color: lcosTokens.color.muted }}>
-            {compare.base.revisionId.slice(0, 8)} → {compare.head.revisionId.slice(0, 8)} · {compare.changed ? '有变化' : '内容一致'}
+            {revisionDisplayLabel(compare.base.revisionId, detail.revisions)} → {revisionDisplayLabel(compare.head.revisionId, detail.revisions)} · {compare.changed ? '有变化' : '内容一致'}
             {compare.contentAvailable ? '' : ' · 仅元数据可比（正文不可读）'}
           </div>
           {(compare.diff ?? []).map((line, index) => (

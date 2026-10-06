@@ -1,7 +1,7 @@
 @import '../primitives/oreo-controls.css';
 
 /* C01/C02 5346:1416 / 5346:1666 + N03 5347:1037.
-   Existing Source Bay, CSS masonry, Oreo controls, Context/Workflow faces and GEN1 viewers.
+   Existing Source Bay, Masonic variable-height layout, Oreo controls, Context/Workflow faces and GEN1 viewers.
    Lovart is a layout/interaction reference; no proprietary source or sample content is shipped. */
 .lcos-assembly-body {
   container: lcos-assembly / size;
@@ -53,9 +53,10 @@
 .lcos-assembly-result-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 32px; min-block-size:44px; flex:0 0 auto; color:var(--gen2-muted); font-size:11px; }
 .lcos-assembly-result-meta .lcos-btn { color:var(--gen2-muted); }
 .lcos-assembly-scroll { flex:1; min-block-size:0; min-inline-size:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding:6px 24px 12px 32px; }
-.lcos-assembly-masonry { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--assembly-item-width,248px)),1fr)); column-gap:24px; grid-auto-rows:1px; align-items:start; inline-size:100%; }
-.lcos-assembly-cell { min-inline-size:0; grid-row-end:span 300; }
-.lcos-assembly-cell > [data-assembly-cell-content] { display:flow-root; min-inline-size:0; }
+.lcos-assembly-masonry-viewport { min-block-size:0; min-inline-size:0; inline-size:100%; }
+.lcos-assembly-masonry { position:relative; min-block-size:0; min-inline-size:0; inline-size:100%; }
+.lcos-assembly-masonry > [role='listitem'] { min-inline-size:0; }
+.lcos-assembly-cell-content { display:flow-root; min-inline-size:0; inline-size:100%; }
 .lcos-assembly-setting { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-block-start:16px; font-size:12px; }
 .lcos-assembly-setting select { max-width:65%; min-height:36px; border:1px solid var(--gen2-border); border-radius:8px; padding:4px 8px; background:var(--gen2-surface); color:var(--gen2-text); font:inherit; }
 .lcos-assembly-setting input[type='range'] { width:62%; min-width:0; accent-color:var(--gen2-accent); }
@@ -84,6 +85,7 @@
 .lcos-assembly-material-body.is-file { min-height:124px; }
 .lcos-assembly-preview-image { display:block; width:100%; height:auto; }
 .lcos-assembly-material-body[style] .lcos-assembly-preview-image,.lcos-assembly-material-body:is(.is-video,.is-document) .lcos-assembly-preview-image { height:100%; object-fit:cover; }
+.lcos-assembly-grid-reveal { background:var(--gen2-raised); }
 .lcos-assembly-preview-excerpt { max-height:234px; overflow:hidden; margin:0; padding:20px; font-size:14px; line-height:23px; overflow-wrap:anywhere; }
 .lcos-assembly-preview-excerpt .lcos-gen1-reader-document { padding:0; }
 .lcos-assembly-preview-excerpt .lcos-gen1-reader-document :is(p,h1,h2,h3) { margin-block:0 8px; font:inherit; white-space:pre-wrap; }
@@ -102,6 +104,8 @@
 .lcos-assembly-body .lcos-assembly-more { position:absolute; top:8px; right:8px; padding:0; width:44px; height:44px; border-radius:12px; background:color-mix(in srgb,var(--gen2-surface) 94%,transparent); opacity:0; z-index:3; }
 .lcos-assembly-more > span { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; }
 .lcos-assembly-item:hover .lcos-assembly-more,.lcos-assembly-item:focus-within .lcos-assembly-more,.lcos-assembly-item[data-visual-active='true'] .lcos-assembly-more { opacity:1; }
+.lcos-assembly-primary-action { grid-area:3 / 1; min-inline-size:0; padding:0 2px 6px; }
+.lcos-assembly-primary-action .lcos-btn { inline-size:100%; justify-content:center; }
 /* C02 5346:1877 floats over the material edge; idle items reserve no command row. */
 .lcos-assembly-item-actions { grid-area:1 / 1; align-self:end; position:relative; margin:6px; z-index:2; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:4px; min-height:44px; padding:4px; border:.5px solid var(--gen2-border); border-radius:12px; background:color-mix(in srgb,var(--gen2-surface) 92%,transparent); backdrop-filter:blur(12px); box-shadow:0 4px 16px color-mix(in srgb,var(--gen2-text) 10%,transparent); opacity:0; visibility:hidden; transition:opacity 150ms ease; }
 .lcos-assembly-item:hover .lcos-assembly-item-actions,.lcos-assembly-item:focus-within .lcos-assembly-item-actions,.lcos-assembly-item[data-visual-active='true'] .lcos-assembly-item-actions { opacity:1; visibility:visible; }
@@ -109,6 +113,7 @@
 .lcos-assembly-item-actions .lcos-oreo-face { padding-inline:8px; }
 /* Real media/retry controls must remain directly reachable beneath their content. */
 .lcos-assembly-item:has(.lcos-assembly-item-object :is(button,audio,video)) .lcos-assembly-item-actions { grid-area:3 / 1; margin:0; box-shadow:none; }
+.lcos-assembly-item:has(.lcos-assembly-item-object :is(button,audio,video)) .lcos-assembly-primary-action { grid-area:4 / 1; }
 .lcos-assembly-item-actions [data-lcos-assembly-drop] { --lcos-control-font-size:14px; }
 .lcos-assembly-body .lcos-oreo-label { display:inline-flex; align-items:center; gap:4px; }
 .lcos-assembly-filter [aria-pressed='true'] { --oreo-fill:var(--gen2-text); --oreo-ink:var(--gen2-surface); }
@@ -175,7 +180,6 @@
  .lcos-assembly-filter-popover { right:16px; width:calc(100% - 32px); }
  .lcos-assembly-result-meta { padding-inline:16px; }
  .lcos-assembly-scroll { padding-inline:16px; }
- .lcos-assembly-masonry { column-gap:16px; }
  .lcos-assembly-item { display:grid; width:100%; margin-inline:auto; }
  .lcos-assembly-item[data-object-only='true'] { width:min(290px,100%); }
  .lcos-assembly-browse-hint { padding-inline:16px; }
@@ -202,6 +206,7 @@
  .lcos-assembly-body .lcos-assembly-more { justify-self:end; }
  .lcos-assembly-item-caption { align-self:center; padding-inline:48px; }
  .lcos-assembly-item-actions { grid-area:3 / 1; margin:0; box-shadow:none; }
+ .lcos-assembly-item:has([data-lcos-assembly-primary-action]):not(:has(.lcos-assembly-item-object :is(button,audio,video))) .lcos-assembly-item-actions { grid-area:4 / 1; }
 }
 @media (prefers-reduced-motion:reduce) {
  .lcos-assembly-body *, .lcos-assembly-body *::before { animation:none !important; transition:none !important; }

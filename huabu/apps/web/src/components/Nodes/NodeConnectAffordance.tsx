@@ -445,10 +445,12 @@ function HotPortOverlay({
   nodeId,
   position,
   size,
+  allowConnectedNodeCreation,
 }: {
   nodeId: string;
   position: Position;
   size: number;
+  allowConnectedNodeCreation: boolean;
 }) {
   const node = useInternalNode(nodeId);
   const domNode = useStore((s) => s.domNode);
@@ -478,11 +480,11 @@ function HotPortOverlay({
         top: cy * zoom + ty - size / 2,
       }}
     >
-      <Plus
+      {allowConnectedNodeCreation && <Plus
         className="text-fg-inverse"
         strokeWidth={3.5}
         style={{ width: size * 0.6, height: size * 0.6 }}
-      />
+      />}
     </div>,
     domNode,
   );
@@ -558,6 +560,8 @@ interface NodeConnectionHandlesProps {
    * drop placeholder and inviting a connection the gesture cannot start.
    */
   dragging: boolean;
+  /** Hosted material keeps connection handles without native Note/Question quick creation. */
+  allowConnectedNodeCreation?: boolean;
 }
 
 export function shouldExposeConnectionPorts({
@@ -587,6 +591,7 @@ export const NodeConnectionHandles = memo(
     selected,
     isNotMouse,
     dragging,
+    allowConnectedNodeCreation = true,
   }: NodeConnectionHandlesProps) => {
     const { t } = useTranslation();
     const node = useInternalNode(nodeId);
@@ -704,12 +709,13 @@ export const NodeConnectionHandles = memo(
             nodeId={nodeId}
             position={hotPosition}
             size={hotHandleSize}
+            allowConnectedNodeCreation={allowConnectedNodeCreation}
           />
         )}
         {HANDLE_DEFS.map((h) => {
           const side = sideFromHandleId(h.id);
           const keyboardReachable =
-            selected && h.type === 'source' && side !== null;
+            allowConnectedNodeCreation && selected && h.type === 'source' && side !== null;
           // Two flavours of "handle position" are consumed by React Flow:
           //   - `getHandlePosition(..., center=false)` returns the bbox's
           //     *outer edge* on the relevant axis (e.g. `bbox.y` for
@@ -860,7 +866,7 @@ export const NodeConnectionHandles = memo(
             // React Flow paints handles with `cursor: crosshair`, which only
             // describes half of what this control does. Clicking it creates a
             // node, so the pointer cursor matches the `+` the user sees.
-            cursor: 'pointer',
+            cursor: allowConnectedNodeCreation ? 'pointer' : 'crosshair',
           };
           // The aimed-at port is painted entirely by `HotPortOverlay`, in a
           // HUD layer above the selection outline. The in-flow circle stands
@@ -968,7 +974,7 @@ export const NodeConnectionHandles = memo(
                 without knowing the dot's current size. The offset clears
                 the grown dot.
               */}
-              {isReachable ? (
+              {isReachable && allowConnectedNodeCreation ? (
                 <Tooltip
                   content={t('node.createConnectedNode')}
                   wrapperClassName="absolute inset-0"

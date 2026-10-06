@@ -30,9 +30,13 @@ describe('LcosSpatialNavigator', () => {
 
   async function render(
     overrides: Partial<CanvasSpatialNavigatorControls> = {},
-  ): Promise<{ element: HTMLElement; controls: ReturnType<typeof callbacks> }> {
+  ): Promise<{
+    element: HTMLElement;
+    controls: ReturnType<typeof callbacks>;
+    rerender: (updates: Partial<CanvasSpatialNavigatorControls>) => Promise<void>;
+  }> {
     const controls = callbacks();
-    const props: CanvasSpatialNavigatorControls = {
+    let props: CanvasSpatialNavigatorControls = {
       zoom: 0.72,
       minimapEnabled: true,
       gridEnabled: true,
@@ -48,11 +52,15 @@ describe('LcosSpatialNavigator', () => {
     await act(async () => root?.render(<LcosSpatialNavigator {...props} />));
     const element = host.querySelector<HTMLElement>('[data-lcos-spatial-navigator]');
     if (!element) throw new Error('spatial navigator missing');
-    return { element, controls };
+    const rerender = async (updates: Partial<CanvasSpatialNavigatorControls>): Promise<void> => {
+      props = { ...props, ...updates };
+      await act(async () => root?.render(<LcosSpatialNavigator {...props} />));
+    };
+    return { element, controls, rerender };
   }
 
-  it('uses the Figma collapsed state before revealing the current-canvas instruments', async () => {
-    const { element } = await render();
+  it('requests and renders the real current-canvas map when the launcher opens with its persisted preference off', async () => {
+    const { element, controls, rerender } = await render({ minimapEnabled: false, miniMap: null });
     expect(element.dataset.lcosExpanded).toBe('false');
     expect(element.querySelector('[data-test-minimap]')).toBeNull();
 
@@ -61,8 +69,21 @@ describe('LcosSpatialNavigator', () => {
     });
 
     expect(element.dataset.lcosExpanded).toBe('true');
+    expect(controls.toggleMinimap).toHaveBeenCalledOnce();
+    await rerender({ minimapEnabled: true, miniMap: <div data-test-minimap>map</div> });
     expect(element.querySelector('[data-test-minimap]')?.textContent).toBe('map');
     expect(element.querySelector('[data-lcos-spatial-navigator-zoom]')?.textContent).toBe('72%');
+  });
+
+  it('does not toggle an already-enabled map when opening and closing the navigator', async () => {
+    const { element, controls } = await render({ minimapEnabled: true });
+    await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="打开空间导航"]')?.click());
+    expect(element.querySelector('[data-test-minimap]')?.textContent).toBe('map');
+    expect(controls.toggleMinimap).not.toHaveBeenCalled();
+
+    await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="收起空间导航"]')?.click());
+    expect(element.dataset.lcosExpanded).toBe('false');
+    expect(controls.toggleMinimap).not.toHaveBeenCalled();
   });
 
   it('dispatches every Huabu-owned action once and reflects lock/grid/minimap state', async () => {
@@ -98,7 +119,7 @@ describe('LcosSpatialNavigator', () => {
     expect(controls.toggleEdges).toHaveBeenCalledTimes(1);
   });
 
-  it('offers the existing minimap preference when the map is hidden', async () => {
+  it('keeps the expanded map toggle available after the launcher enabled it', async () => {
     const { element, controls } = await render({
       minimapEnabled: false,
       miniMap: null,
@@ -110,13 +131,18 @@ describe('LcosSpatialNavigator', () => {
     await act(async () => {
       element.querySelector<HTMLButtonElement>('[data-lcos-spatial-navigator-empty-map]')?.click();
     });
-    expect(controls.toggleMinimap).toHaveBeenCalledTimes(1);
+    expect(controls.toggleMinimap).toHaveBeenCalledTimes(2);
+    expect(element.querySelector('[data-lcos-spatial-navigator-empty-map]')).not.toBeNull();
   });
   it('Escape collapses this entry without cascading to the canvas or toggling the minimap owner', async () => {
     const { element, controls } = await render();
-    await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="打开空间导航"]')!.click());
+    const openButton = element.querySelector<HTMLButtonElement>('[aria-label="打开空间导航"]');
+    if (!openButton) throw new Error('navigator launcher missing');
+    await act(async () => openButton.click());
     const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-    await act(async () => element.querySelector('button')!.dispatchEvent(event));
+    const control = element.querySelector('button');
+    if (!control) throw new Error('expanded navigator control missing');
+    await act(async () => control.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(true);
     expect(element.dataset.lcosExpanded).toBe('false');
     expect(controls.toggleMinimap).not.toHaveBeenCalled();

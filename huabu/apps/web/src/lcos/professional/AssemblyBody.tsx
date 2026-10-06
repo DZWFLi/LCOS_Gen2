@@ -1,8 +1,3 @@
-import type { LcosNodeEntityRef } from '../lcosReferenceState';
-import { draftReferenceUnavailableReason } from '../composer/referenceSnapshot';
-import { composerInputKey } from '../composer/composerInputJourney';
-import { sameDraftReference } from '../referenceBridge';
-import { assemblyDraftReferenceOf } from './assemblySourceRef';
 // AssemblyBody — 项目共享仓库 / Source Bay（Figma Assembly 瀑布流；四路 canonical source）。
 //
 // R4 Assembly（C1-3）：
@@ -22,30 +17,34 @@ import {
   isCoreAbortError,
 } from '@local-creative-os/web-gen2';
 import { Archive, BookOpen, FileAudio, FileImage, FileText, FolderOpen, MessageCircle, PlusCircle, Send, Video } from 'lucide-react';
-import { CanonicalCollectionView } from '../nodes/CanonicalCollectionView';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSubmenu } from '@/components/Common/DropdownMenu';
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape';
 
-import { ASSEMBLY_DRAG_MIME } from '../drop/nativeAssemblyDrop';
 import { createLcosCoreSession } from '../app/lcosCoreClient';
-import { LcosComposerHost } from '../composer/LcosComposerHost';
+import { composerInputKey } from '../composer/composerInputJourney';
 import { useLcosDropStore } from '../lcosDropState';
 import { acquireDrop } from '../lcosRecognizers';
 import { useLcosReferenceStore } from '../lcosReferenceState';
-import { AssemblyArtifactMedia, AssemblyCaptureMedia, AssemblyResourceMedia } from './AssemblySourceMedia';
-import { assemblySourceRefOf } from './assemblySourceRef';
 import { reviewAssemblyApply } from './assemblyApplyReview';
 import { readAssemblyArtifactMedia } from './assemblyArtifactMedia';
+import { AssemblyArtifactMedia, AssemblyCaptureMedia, AssemblyResourceMedia } from './AssemblySourceMedia';
+import { assemblySourceRefOf } from './assemblySourceRef';
+import { assemblyDraftReferenceOf } from './assemblySourceRef';
+import { LcosComposerHost } from '../composer/LcosComposerHost';
+import { draftReferenceUnavailableReason } from '../composer/referenceSnapshot';
 import { dropSourceKey } from '../drop/dropAssemblyReceipt';
-import { ASSEMBLY_ITEM_WIDTH, clampAssemblyItemWidth, captureAssemblyBrowseAnchor, restoreAssemblyBrowseAnchor } from '../ui/professional/assemblyBrowseGeometry';
-import type { AssemblyBrowseAnchor } from '../ui/professional/assemblyBrowseGeometry';
+import { ASSEMBLY_DRAG_MIME } from '../drop/nativeAssemblyDrop';
 import { beginChildWorksiteNavigation } from '../navigation/childWorksiteNavigation';
 import { childSurfaceForItem, workspaceTargetsForItem } from '../navigation/workspaceTargets';
+import { CanonicalCollectionView } from '../nodes/CanonicalCollectionView';
+import { sameDraftReference } from '../referenceBridge';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { LcosButton } from '../ui/primitives/LcosButton';
+import { ASSEMBLY_ITEM_WIDTH, clampAssemblyItemWidth, captureAssemblyBrowseAnchor, restoreAssemblyBrowseAnchor } from '../ui/professional/assemblyBrowseGeometry';
 import { AssemblyItemView } from '../ui/professional/AssemblyItemView';
 import { AssemblyMasonryView } from '../ui/professional/AssemblyMasonryView';
 import { AssemblyMaterialView } from '../ui/professional/AssemblyMaterialView';
@@ -56,7 +55,9 @@ import { AssemblyReceiptView } from '../ui/professional/AssemblyReceiptView';
 import { AssemblySourceTabsView } from '../ui/professional/AssemblySourceTabsView';
 import { AssemblyToolbarView } from '../ui/professional/AssemblyToolbarView';
 
+import type { LcosNodeEntityRef } from '../lcosReferenceState';
 import type { LcosComposerTarget } from '../shell/lcosShellStore';
+import type { AssemblyBrowseAnchor } from '../ui/professional/assemblyBrowseGeometry';
 import type { AssemblyMaterialFilter } from '../ui/professional/assemblyPresentation';
 import type {
   AssemblyApplyRequestV1,
@@ -346,10 +347,12 @@ export function AssemblyBody({
   projectId,
   targetRef,
   composerOriginKey,
+  onReturnComposer,
 }: {
   readonly projectId: string;
   readonly targetRef: AssemblyTargetRefV1;
   readonly composerOriginKey?: string;
+  readonly onReturnComposer?: () => void;
 }): React.JSX.Element {
   const session = useMemo(() => createLcosCoreSession(), []);
   const navigate = useNavigate();
@@ -361,6 +364,11 @@ export function AssemblyBody({
   const composerTarget = useLcosShellStore((s) => s.composerTarget);
   const collectingReferences = composerOriginKey !== undefined;
   const sameInput = collectingReferences && composerInputKey(composerTarget) === composerOriginKey;
+  useCloseOnEscape(collectingReferences, () => {
+    if (composerOriginKey === undefined || !sameInput) return;
+    if (onReturnComposer) onReturnComposer();
+    else useLcosShellStore.getState().resumeComposer(composerOriginKey);
+  });
   const [referenceNotice, setReferenceNotice] = useState<string | undefined>(undefined);
   const closeComposer = useLcosShellStore((s) => s.closeComposer);
   const referencedRefs = useLcosReferenceStore((s) => s.draft.orderedEntityRefs);
@@ -542,7 +550,7 @@ export function AssemblyBody({
       if (!isCurrentContext()) { return; }
       applyPending.current = null; setApplyingKey(null);
     });
-  }, [controller, projectId, session, targetRef]);
+  }, [collectingReferences, controller, projectId, session, targetRef]);
   const applySource = useCallback((sourceRef: AssemblySourceRefV1, refreshTab?: AssemblySourceTabV1): void => {
     applySources([sourceRef], refreshTab);
   }, [applySources]);
@@ -793,7 +801,11 @@ export function AssemblyBody({
     {collectingReferences ? <div className="lcos-assembly-input-header">
       <div><strong>补充本次引用</strong><p>{sameInput ? `用于「${composerTarget?.title ?? '当前输入'}」 · 尚未发送` : '原输入已改变，未切换材料的接收目标'}</p></div>
       <LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-resume-input disabled={!sameInput}
-        onClick={() => useLcosShellStore.getState().resumeComposer(composerOriginKey!)}>返回输入</LcosButton>
+        onClick={() => {
+          if (composerOriginKey === undefined || !sameInput) return;
+          if (onReturnComposer) onReturnComposer();
+          else useLcosShellStore.getState().resumeComposer(composerOriginKey);
+        }}>返回输入</LcosButton>
     </div> : null}
     <div className="lcos-assembly-journey-layout">
     {collectingReferences && assemblyOwnsComposer && composerTarget ? <aside className="lcos-assembly-input-pane" data-lcos-assembly-composer>
@@ -847,7 +859,7 @@ export function AssemblyBody({
         {status === 'loaded' && count === 0 ? <div className="lcos-assembly-empty"><LcosSurfaceFeedback presentation="empty"
           message={filter !== 'all' || query || (tab === 'project' && bay?.warehouseSearch) ? '没有匹配材料，换个条件再试。' : EMPTY_TAB_TEXT[tab]} /></div> : null}
         {tab === 'skills' ? <p data-lcos-assembly-skill-admission="read-only" className="lcos-assembly-inline-notice">技能目录只读，可阅读与预览；当前不提供投放或自动执行。</p> : null}
-        {count > 0 ? <AssemblyMasonryView label={`${TAB_LABEL[tab]}材料`} itemWidth={itemWidth}>
+        {count > 0 ? <AssemblyMasonryView label={`${TAB_LABEL[tab]}材料`} itemWidth={itemWidth} isVisible={preview === undefined}>
           {tab === 'project' ? projectVisible.map((item) => {
             const source = assemblySourceRefOf(item);
             const sourceKey = source ? `${source.kind}:${source.id}` : '';
@@ -868,9 +880,15 @@ export function AssemblyBody({
               selected={selectedIds.includes(sourceKey)} {...(source ? { onSelect: () => toggleSelected(source) } : {})} referenced={referenced}
               hideCaption={shape === 'context' || shape === 'workflow'} identity={<span data-lcos-assembly-kind={item.kind}>{materialFamily(item)}</span>}
               subtitle={item.usedHere ? '已在此处' : item.usageCount > 0 ? `${item.usageCount} 处使用` : item.provenance?.origin === 'run-return' ? '来自运行结果' : undefined}
-              actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-add disabled={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) !== undefined || (collectingReferences && !sameInput)} onClick={() => addToComposer(item)} title={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) ?? "加入当前草稿，不会自动执行"}><PlusCircle size={16} aria-hidden />草稿</LcosButton>
-                {renderOpenAction(item)}{!source ? <span>{item.kind === 'collection' ? '可查看成员；整体取用尚未接通' : '取用身份尚未就绪'}</span> : null}{!collectingReferences && <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={!source || applyingKey !== null}
-                  onClick={() => { if (source) applySource(source); }}><Send size={16} aria-hidden />放入{targetLabel(targetRef)}</LcosButton>}</>}>
+              primaryAction={collectingReferences
+                ? <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-add disabled={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) !== undefined || !sameInput}
+                  onClick={() => addToComposer(item)} title={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) ?? '加入本次引用'}><PlusCircle size={16} aria-hidden />加入引用</LcosButton>
+                : source === undefined ? undefined : <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null}
+                  onClick={() => applySource(source)}><Send size={16} aria-hidden />放入{targetLabel(targetRef)}</LcosButton>}
+              actions={<>{renderOpenAction(item)}{!collectingReferences ? <LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-add
+                disabled={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) !== undefined}
+                onClick={() => addToComposer(item)} title={draftReferenceUnavailableReason(draftReference, composerTarget?.intent) ?? '加入当前草稿，不会自动执行'}><PlusCircle size={16} aria-hidden />草稿</LcosButton> : null}
+                {!source ? <span>{item.kind === 'collection' ? '可查看成员；整体取用尚未接通' : '取用身份尚未就绪'}</span> : null}</>}>
               {item.kind === 'collection' && item.entityRef.type === 'collection'
                 ? <CanonicalCollectionView projectId={projectId} collectionId={item.entityRef.id} title={item.title ?? '集合'} rendition="装配" />
                 : item.kind === 'artifact' && !mediaProps.previewUrl && (shape === 'image' || shape === 'text')
@@ -886,10 +904,12 @@ export function AssemblyBody({
               draggable onDragStart={(event) => beginAssemblyDrag(event, item.id, source)} onDragEnd={finishAssemblyDrag}
               selected={selectedIds.includes(`capture:${item.id}`)} onSelect={() => toggleSelected(source)}
               identity={assemblyDate(item.capturedAt)} subtitle={item.resolvedProjectId ? '已保留项目产物' : '待整理'}
+              primaryAction={!collectingReferences ? <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null}
+                onClick={() => applySource(source, 'capture')}>放入{targetLabel(targetRef)}</LcosButton> : undefined}
               actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-preview-open={`capture:${item.id}`} onClick={() => previewCapture(item)}>预览</LcosButton>
                 {item.resolvedArtifactId && item.resolvedProjectId === projectId ? <LcosButton appearance="oreo" variant="ghost" onClick={() => { if (item.resolvedArtifactId) useLcosShellStore.getState().openReader(title, item.resolvedArtifactId,
                   composerOriginKey ? { composerOriginKey } : undefined); }}>阅读已有产物</LcosButton> : null}
-                {!collectingReferences && <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null} onClick={() => applySource(source, 'capture')}>放入{targetLabel(targetRef)}</LcosButton>}</>}>
+                </>}>
               {shape === 'image' || shape === 'text' ? <AssemblyCaptureMedia client={session.captureSpace} captureId={item.id} {...mediaProps} /> : <AssemblyMaterialView {...mediaProps} />}
             </AssemblyItemView>;
           }) : null}
@@ -898,8 +918,9 @@ export function AssemblyBody({
             return <AssemblyItemView key={item.resourceId} title={item.title} data-lcos-assembly-resource-item={item.resourceId} onPreview={() => previewResource(item.resourceId, item.title)}
               draggable onDragStart={(event) => beginAssemblyDrag(event, item.resourceId, source)} onDragEnd={finishAssemblyDrag}
               selected={selectedIds.includes(`resource:${item.resourceId}`)} onSelect={() => toggleSelected(source)} identity="外部来源"
-              actions={<><LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-preview-open={`resource:${item.resourceId}`} onClick={() => previewResource(item.resourceId, item.title)}>预览来源</LcosButton>
-                {!collectingReferences && <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null} onClick={() => applySource(source)}>放入{targetLabel(targetRef)}</LcosButton>}</>}>
+              primaryAction={!collectingReferences ? <LcosButton appearance="oreo" variant="secondary" data-lcos-assembly-drop disabled={applyingKey !== null}
+                onClick={() => applySource(source)}>放入{targetLabel(targetRef)}</LcosButton> : undefined}
+              actions={<LcosButton appearance="oreo" variant="ghost" data-lcos-assembly-preview-open={`resource:${item.resourceId}`} onClick={() => previewResource(item.resourceId, item.title)}>预览来源</LcosButton>}>
               <AssemblyResourceMedia client={session.resources} projectId={projectId} resourceId={item.resourceId} title={item.title} shape="link" familyLabel="来源描述" fallbackGlyph={<FolderOpen size={24} aria-hidden />} />
             </AssemblyItemView>;
           }) : null}

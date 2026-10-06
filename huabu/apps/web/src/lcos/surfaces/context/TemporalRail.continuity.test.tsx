@@ -106,8 +106,7 @@ describe('TemporalRail current-canvas continuity', () => {
     await act(async () => item().click());
     expect(host.textContent).toContain('已定位 1/2');
     await act(async () => root.render(<TemporalRail projectId="project" />));
-    expect(host.querySelector('[data-lcos-temporal-rail]')?.getAttribute('data-temporal-state')).toBe('empty');
-    expect(host.textContent).toContain('请选择 Context 子现场');
+    expect(host.querySelector('[data-lcos-temporal-rail]')).toBeNull();
     expect(host.textContent).not.toContain('已定位');
     expect(host.querySelector('[data-temporal-item]')).toBeNull();
   });

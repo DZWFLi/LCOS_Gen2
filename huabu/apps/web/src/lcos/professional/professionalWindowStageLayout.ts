@@ -4,12 +4,14 @@ import {
   type ProfessionalRegionLayoutV1,
   type ProfessionalRegionPlacementV1,
 } from '@local-creative-os/web-gen2';
+
 import { isFiniteProfessionalRect } from './professionalGestureGeometry';
 
 /** Figma 5388:27475 Reader and 5346:1416 Assembly; geometry is presentation only. */
 export const PROFESSIONAL_STAGE_MIN_WIDTH = 360;
 export const PROFESSIONAL_STAGE_MIN_HEIGHT = 280;
-const CANVAS_PICK_RESERVE = 160;
+// Main cluster edge (24 + 204 identity + 8 gap + 44 Assembly = 280) plus the existing 16px region gap.
+const CANVAS_PICK_RESERVE = 296;
 const REGION_GAP = 16;
 
 export interface ProfessionalStageRegionInputV1 {
@@ -106,9 +108,11 @@ export function deriveProfessionalStageRegionPlacementsV1(input: {
 
 /** Narrow mode changes presentation, never stored topology or user geometry. */
 export function needsCompactProfessionalStageV1(viewport: ProfessionalRectV1, regions: readonly ProfessionalStageRegionInputV1[]): boolean {
+  if (regions.length === 0) return false;
+  const docked = regions.filter((region) => region.layout === 'docked-right');
+  if (docked.length > 0 && viewport.width < CANVAS_PICK_RESERVE + PROFESSIONAL_STAGE_MIN_WIDTH) return true;
   if (regions.length < 2) return false;
   if (viewport.width < 900) return true;
-  const docked = regions.filter((region) => region.layout === 'docked-right');
   if (docked.length * PROFESSIONAL_STAGE_MIN_HEIGHT > viewport.height) return true;
   const floatingCount = regions.length - docked.length;
   if (floatingCount === 0) return false;

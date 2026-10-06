@@ -1,9 +1,11 @@
 import { FileText, Folder, Image, Music, Video, MessageSquare, PanelsTopLeft, Play } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CollectionMemberPreview as Member, CoreArtifactClient } from '@local-creative-os/web-gen2';
+
+import { collectionPreviewLoadable, readCollectionPreviewMedia, COLLECTION_PREVIEW_LABELS } from './collectionPreviewMedia';
 import { LcosButton } from '../ui/primitives/LcosButton';
 import { PreviewMedia } from '../ui/spatial/PreviewMedia';
-import { collectionPreviewLoadable, readCollectionPreviewMedia, COLLECTION_PREVIEW_LABELS } from './collectionPreviewMedia';
+
+import type { CollectionMemberPreview as Member, CoreArtifactClient } from '@local-creative-os/web-gen2';
 
 export interface CollectionMemberPreviewProps {
   readonly projectId: string;
@@ -12,9 +14,15 @@ export interface CollectionMemberPreviewProps {
   readonly enabled?: boolean;
   readonly presentation?: 'card' | 'gen1-sheet';
   readonly sheetIndex?: number;
+  readonly onRead?: () => void;
 }
 
-function MemberPreview({ projectId, member, client, enabled = true, presentation = 'card', sheetIndex = 0 }: CollectionMemberPreviewProps): React.JSX.Element {
+export function isReadableCollectionArtifact(member: Member): boolean {
+  return member.type === 'artifact' && member.availability === 'available'
+    && member.id.trim().length > 0 && member.label.trim().length > 0;
+}
+
+function MemberPreview({ projectId, member, client, enabled = true, presentation = 'card', sheetIndex = 0, onRead }: CollectionMemberPreviewProps): React.JSX.Element {
   const host = useRef<HTMLElement | null>(null);
   const setHost = useCallback((element: HTMLElement | null) => { host.current = element; }, []);
   const [visible, setVisible] = useState(false);
@@ -49,6 +57,7 @@ function MemberPreview({ projectId, member, client, enabled = true, presentation
   const reason = member.availability === 'missing' ? '来源缺失'
     : member.availability === 'stale' ? '来源已变化' : member.availability === 'unreadable' ? '暂不可预览'
       : media.error ? '预览读取失败' : loading ? '正在读取' : member.archived ? '已归档' : COLLECTION_PREVIEW_LABELS[member.kind];
+  const canRead = onRead !== undefined && isReadableCollectionArtifact(member);
   if (presentation === 'gen1-sheet') return <span ref={setHost}
     className={`lcos-collection-stack-sheet stack-sheet-${Math.min(2, Math.max(0, sheetIndex))}`}
     data-stack-kind={kind} data-lcos-member-preview={`${type}:${id}`} data-member-revision={revisionId}
@@ -59,6 +68,13 @@ function MemberPreview({ projectId, member, client, enabled = true, presentation
       : <><i/><b>{member.label.slice(0, 18)}</b></>}
     {media.error ? <button type="button" className="lcos-collection-sheet-retry" aria-label={`重读预览 ${member.label}`}
       onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setAttempt((value) => value + 1); }}>重读</button> : null}
+    {canRead ? <LcosButton appearance="oreo" variant="ghost" size="sm" className="absolute bottom-1 right-1 z-10 pointer-events-auto"
+      data-lcos-collection-member-read={`${member.type}:${member.id}`}
+      aria-label={`阅读 ${member.label}`} title={`在阅读器打开 ${member.label}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
+      onClick={(event) => { event.stopPropagation(); onRead?.(); }}>阅读</LcosButton> : null}
   </span>;
   return <div ref={setHost} className="lcos-collection-member-preview" data-lcos-member-preview={`${member.type}:${member.id}`}
     data-member-revision={revisionId} data-preview-kind={kind} data-preview-state={media.error ? 'error' : loading ? 'loading' : availability}

@@ -1,6 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { composerInputKey } from '../composer/composerInputJourney';
 
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -22,6 +23,13 @@ const mocks = vi.hoisted(() => ({
   addReference: vi.fn(),
   navigate: vi.fn(),
   beginChildNavigation: vi.fn(),
+  composerTarget: null as {
+    nodeId: string;
+    title: string;
+    anchor: { x: number; y: number; width: number; height: number };
+    intent: 'delegate';
+    workspaceId: string;
+  } | null,
 }));
 
 // R4：AssemblyBody 现在消费 web-gen2 的 AssemblySourceBayController / assemblyCardView，
@@ -61,15 +69,20 @@ vi.mock('../shell/lcosShellStore', () => {
     openWindow: mocks.openWindow,
     openComposer: mocks.openComposer,
     closeComposer: mocks.closeComposer,
-    composerOpen: false as const,
-    composerTarget: null,
+    composerOpen: false as boolean,
+    composerTarget: null as typeof mocks.composerTarget,
     activeSurface: 'main' as const,
     activeWorkspaceId: null,
     beginChildNavigation: mocks.beginChildNavigation,
   };
+  const currentShellState = () => ({
+    ...shellState,
+    composerOpen: mocks.composerTarget !== null,
+    composerTarget: mocks.composerTarget,
+  });
   const useLcosShellStore = Object.assign(
-    (select: (state: typeof shellState) => unknown) => select(shellState),
-    { getState: () => shellState },
+    (select: (state: typeof shellState) => unknown) => select(currentShellState()),
+    { getState: currentShellState },
   );
   return { useLcosShellStore };
 });
@@ -189,6 +202,7 @@ beforeEach(() => {
   mocks.addReference.mockReset();
   mocks.navigate.mockReset();
   mocks.beginChildNavigation.mockReset();
+  mocks.composerTarget = null;
 });
 
 afterEach(async () => {
@@ -196,10 +210,12 @@ afterEach(async () => {
   host.remove();
 });
 
-async function render(projectId: string): Promise<void> {
+const mainTargetRef = { kind: 'main' } as const;
+async function render(projectId: string, composerOriginKey?: string): Promise<void> {
   await act(async () => {
     root.render(
-      <AssemblyBody projectId={projectId} targetRef={{ kind: 'main' }} />,
+      <AssemblyBody projectId={projectId} targetRef={mainTargetRef}
+        {...(composerOriginKey === undefined ? {} : { composerOriginKey })} />,
     );
   });
 }
@@ -469,6 +485,42 @@ it('submits selected source identities once and retains only incomplete selectio
   expect(host.querySelector<HTMLInputElement>('input[aria-label="选择 材料 B"]')?.checked).toBe(true);
   expect(host.textContent).toContain('1 项落地');
   expect(host.textContent).not.toContain('全部成功');
+});
+
+it('keeps the failed-apply retry guard current after Assembly enters Composer reference picking', async () => {
+  mocks.warehouse.mockResolvedValue({ schemaVersion: 1, projectId: 'project-a', totalApprox: 1, items: [
+    { schemaVersion: 1, entityRef: { id: 'context-a', type: 'context' }, kind: 'context', title: '上下文 A', usageCount: 0 },
+  ] });
+  mocks.workspaces.mockResolvedValue([]);
+  mocks.apply.mockResolvedValue({
+    schemaVersion: 1,
+    projectId: 'project-a',
+    allApplied: false,
+    results: [{ sourceRef: { kind: 'context', id: 'context-a' }, status: 'failed', channel: 'error', message: '未落地' }],
+  });
+  await render('project-a');
+  await act(async () => mocks.warehouse.mock.results[0]?.value);
+  expect(host.textContent).toContain('上下文 A');
+
+  const drop = host.querySelector<HTMLButtonElement>('[data-lcos-assembly-drop]');
+  if (!drop) throw new Error('Assembly apply action missing');
+  await act(async () => { drop.click(); await Promise.resolve(); });
+  expect(mocks.apply).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[data-lcos-assembly-retry-failed]')).not.toBeNull();
+
+  const target = {
+    nodeId: 'main-node', title: '施工纪律', anchor: { x: 20, y: 30, width: 140, height: 44 },
+    intent: 'delegate' as const, workspaceId: 'workspace-main',
+  };
+  const originKey = composerInputKey(target);
+  if (originKey === undefined) throw new Error('Composer input key is missing');
+  mocks.composerTarget = target;
+  await render('project-a', originKey);
+
+  const retry = host.querySelector<HTMLButtonElement>('[data-lcos-assembly-retry-failed]');
+  if (!retry) throw new Error('Retry control missing after entering Composer reference picking');
+  await act(async () => retry.click());
+  expect(mocks.apply).toHaveBeenCalledTimes(1);
 });
 
 it('does not call an unconfirmed transport failure a failed write or retry it automatically', async () => {

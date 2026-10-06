@@ -4,6 +4,7 @@ import { ContextCollectionFace } from '../context/ContextCollectionFace';
 import { LcosButton } from '../primitives/LcosButton';
 import { WorkflowTaskCardFace } from '../workflow/WorkflowTaskCardFace';
 import { Gen1TextDocument } from './donor/Gen1TextDocument';
+import { GridReveal } from './rareui/RareGridReveal';
 import './professional-assembly.css';
 
 import type { AssemblyMaterialShape } from './assemblyPresentation';
@@ -32,6 +33,7 @@ export function AssemblyMaterialView({ title, familyLabel, previewUrl, secondary
   const [attempt, setAttempt] = useState(0);
   const hasPreview = Boolean(previewUrl) && failedUrl !== previewUrl;
   const ratio = typeof aspectRatio === 'number' && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : shape === 'image' ? 1.5 : undefined;
+  const revealAspect = ratio ?? (shape === 'video' ? 16 / 10 : shape === 'document' ? 3 / 4 : 1.5);
   return <div data-lcos-assembly-material data-shape={shape} aria-label={`${title} · ${familyLabel}`}
     data-preview-available={hasPreview} className="lcos-assembly-material-view">
     {shape === 'context' ? <div className="lcos-context-collection lcos-assembly-context" data-rendition="装配" data-organization={organization}>
@@ -43,8 +45,8 @@ export function AssemblyMaterialView({ title, familyLabel, previewUrl, secondary
       <WorkflowTaskCardFace title={title} summary={familyLabel} state={referenced ? '草稿中' : '静息'}
         {...(previewUrl ? { previewUrl } : {})} {...(onUse ? { onUse } : {})} />
     </div> : <div className={`lcos-assembly-material-body is-${shape}`} style={ratio ? { aspectRatio: ratio } : undefined}>
-      {hasPreview ? <img key={`${previewUrl}:${attempt}`} src={previewUrl} alt={title} draggable={false} decoding="async"
-        onError={() => setFailedUrl(previewUrl ?? null)} className="lcos-assembly-preview-image" />
+      {hasPreview ? <GridReveal key={`${previewUrl}:${attempt}`} src={previewUrl} alt={title} aspect={revealAspect} progress={1}
+        onError={() => setFailedUrl(previewUrl ?? null)} className="lcos-assembly-grid-reveal" />
         : excerpt !== undefined ? <div className="lcos-assembly-preview-excerpt">{excerpt === '' ? <span className="lcos-assembly-empty-text">空文本</span> : <Gen1TextDocument text={excerpt} />}</div>
           : <div className="lcos-assembly-preview-unavailable">
             <span aria-hidden="true" className="lcos-assembly-material-glyph">{fallbackGlyph}</span>

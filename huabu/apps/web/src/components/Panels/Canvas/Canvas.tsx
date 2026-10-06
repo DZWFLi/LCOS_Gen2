@@ -707,6 +707,43 @@ export const Canvas: React.FC<CanvasProps> = ({
     [],
   );
 
+  // A05 (audit-reworked, P0-4): Core-first connect with explicit three-way
+  // outcome — never fall back to a native edge when Core refused.
+  //   ok: Core Relation projected as edge -> done
+  //   native: at least one endpoint has no Core binding (native-only node) ->
+  //          stock Huabu connect is the correct owner
+  //   rejected: Core refused / capability unsupported -> fail-close, NO edge
+  const handleNodeConnect = useCallback(
+    async (connection: Parameters<typeof onConnect>[0]) => {
+      const intent = hostExtension?.connectIntent;
+      if (intent && connection.source && connection.target) {
+        const outcome = await intent.onConnectNodes(
+          connection.source,
+          connection.target,
+          canvasId ?? '',
+        );
+        if (outcome.kind === 'ok') return; // semantic edge projected by host
+        if (outcome.kind === 'rejected') {
+          // fail-close: no native edge, no second truth. Surface why.
+          console.warn(`[lcos] connect rejected: ${outcome.reason}`);
+          return;
+        }
+        // outcome.kind === 'native' -> fall through to the stock connect.
+      }
+      onConnect(connection);
+    },
+    [hostExtension?.connectIntent, canvasId, onConnect],
+  );
+  const allowConnectedNodeCreation = useCallback((nodeId: string): boolean => {
+    if (chromeMode !== 'lcos') return true;
+    const source = useCanvasStore.getState().nodes.find((node) => node.id === nodeId);
+    return source === undefined || hostExtension?.resolveNodeBody?.resolveHostPresentation?.({
+      nodeId: source.id,
+      nodeType: source.type ?? '',
+      data: source.data,
+    }) === undefined;
+  }, [chromeMode, hostExtension?.resolveNodeBody]);
+
   // Every connect gesture that React Flow did not resolve itself lands
   // here, and the release point decides what it meant:
   //
@@ -754,7 +791,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         closestNodeElement(target)?.getAttribute('data-id') ?? null;
 
       if (targetNodeId && targetNodeId !== sourceNodeId) {
-        onConnect({
+        void handleNodeConnect({
           source: sourceNodeId,
           target: targetNodeId,
           sourceHandle: null,
@@ -762,6 +799,8 @@ export const Canvas: React.FC<CanvasProps> = ({
         });
         return;
       }
+
+      if (!allowConnectedNodeCreation(sourceNodeId)) return;
 
       const instance = rfInstanceRef.current;
       if (!instance) return;
@@ -776,36 +815,9 @@ export const Canvas: React.FC<CanvasProps> = ({
         kind: targetNodeId === sourceNodeId ? 'side' : 'point',
       });
     },
-    [onConnect, setConnectPicker],
+    [handleNodeConnect, allowConnectedNodeCreation, setConnectPicker],
   );
 
-  // A05 (audit-reworked, P0-4): Core-first connect with explicit three-way
-  // outcome — never fall back to a native edge when Core refused.
-  //   ok: Core Relation projected as edge -> done
-  //   native: at least one endpoint has no Core binding (native-only node) ->
-  //          stock Huabu connect is the correct owner
-  //   rejected: Core refused / capability unsupported -> fail-close, NO edge
-  const handleNodeConnect = useCallback(
-    async (connection: Parameters<typeof onConnect>[0]) => {
-      const intent = hostExtension?.connectIntent;
-      if (intent && connection.source && connection.target) {
-        const outcome = await intent.onConnectNodes(
-          connection.source,
-          connection.target,
-          canvasId ?? '',
-        );
-        if (outcome.kind === 'ok') return; // semantic edge projected by host
-        if (outcome.kind === 'rejected') {
-          // fail-close: no native edge, no second truth. Surface why.
-          console.warn(`[lcos] connect rejected: ${outcome.reason}`);
-          return;
-        }
-        // outcome.kind === 'native' -> fall through to the stock connect.
-      }
-      onConnect(connection);
-    },
-    [hostExtension?.connectIntent, canvasId, onConnect],
-  );
   const handleConnectedKindPick = useCallback(
     (nodeKind: ConnectedNodeKind) => {
       // Read-then-act rather than acting inside a `setState` updater:
@@ -814,6 +826,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       const pending = useConnectPortStore.getState().pending;
       if (!pending) return;
       setConnectPicker(null);
+      if (!allowConnectedNodeCreation(pending.sourceId)) return;
       createConnectedNode(
         pending.sourceId,
         pending.kind === 'side'
@@ -822,7 +835,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         nodeKind,
       );
     },
-    [createConnectedNode, setConnectPicker],
+    [createConnectedNode, setConnectPicker, allowConnectedNodeCreation],
   );
 
   const dismissConnectPicker = useCallback(

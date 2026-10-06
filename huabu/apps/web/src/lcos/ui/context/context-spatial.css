@@ -154,12 +154,19 @@
 
 .lcos-atlas-light-curtain-inner > :not(.lcos-atlas-grid):not(.lcos-atlas-light-curtain-head) { pointer-events:auto; }
 
-/* A native sibling hit surface, not a clickable div enclosing nested buttons.
-   Image retry / destination menu remain independent real controls above it. */
+/* A native hit surface stays separate from Atlas actions and preview retry controls. */
 .lcos-context-collection-hit { position:absolute; left:12px; top:16px; width:224px; height:200px; padding:0; border:0; border-radius:18px; background:transparent; cursor:pointer; }
 .lcos-context-collection-hit:focus-visible { outline:none; }
-.lcos-context-collection:has(> .lcos-context-collection-hit) > :not(.lcos-context-collection-hit):not(.lcos-context-collection-action) { pointer-events:none; }
-.lcos-context-collection:has(> .lcos-context-collection-hit) .lcos-preview-media-message > button { pointer-events:auto; }
+.lcos-context-collection:has(.lcos-context-collection-hit) > :not(.lcos-context-collection-action):not(.lcos-context-collection-hit) { pointer-events:none; }
+.lcos-context-collection:has(.lcos-context-collection-hit) .lcos-context-collection-hit,
+.lcos-context-collection:has(.lcos-context-collection-hit) .lcos-preview-media-message > button { pointer-events:auto; }
+
+/* Rare UI Folder Component (MIT + Commons Clause + Attribution), adapted for Atlas. */
+.lcos-atlas-folder { position:absolute; inset:0; pointer-events:none; }
+.lcos-rare-folder-card { position:relative; width:164px; height:214px; }
+.lcos-rare-folder-card > svg { display:block; }
+.lcos-rare-folder-card-content { position:absolute; inset:1px; overflow:hidden; border-radius:19px; pointer-events:none; }
+.lcos-context-collection:has(.lcos-context-collection-hit) .lcos-preview-media-message > button { position:relative; z-index:1; pointer-events:auto; }
 
 /* Page 13 folder face owns its material; the R1 family must not add a second card. */
 .lcos-context-collection[data-lcos-family='collection-surface'] {

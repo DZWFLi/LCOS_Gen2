@@ -28,6 +28,13 @@ export const NodeBodyResolverContext = createContext<
   CanvasNodeBodySeam | undefined
 >(undefined);
 
+/** The native node wrapper owns its accent surface only for the native fallback or a card host. */
+export function isNativeAccentSurfaceEnabled(
+  presentation: CanvasNodeHostPresentation | undefined,
+): boolean {
+  return presentation === undefined || presentation.surface === 'card';
+}
+
 /**
  * Resolve the replacement body for a native node, subscribing to the host
  * app's binding-change notifications so a late binding swaps the body in

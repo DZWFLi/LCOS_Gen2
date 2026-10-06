@@ -12,9 +12,10 @@ export interface WorkflowHandViewProps {
   readonly onClose: () => void;
   readonly header: ReactNode;
   readonly children: ReactNode;
+  readonly nativeAssemblyDropActive?: boolean;
 }
 
-function HandLayer({ header, children, onClose }: Omit<WorkflowHandViewProps, 'open'>): React.JSX.Element {
+function HandLayer({ header, children, onClose, nativeAssemblyDropActive = false }: Omit<WorkflowHandViewProps, 'open'>): React.JSX.Element {
   const present = useIsPresent();
   const reduced = Boolean(useReducedMotion());
   const layer = useLayerReturnFocus(present);
@@ -24,6 +25,7 @@ function HandLayer({ header, children, onClose }: Omit<WorkflowHandViewProps, 'o
       data-lcos-workflow-hand
       data-presentation-present={present ? 'true' : 'false'}
       className="lcos-workflow-hand-stage"
+      data-native-assembly-drop={nativeAssemblyDropActive ? 'true' : undefined}
       role="region"
       aria-label="工作流手牌"
       aria-hidden={!present || undefined}
@@ -34,7 +36,7 @@ function HandLayer({ header, children, onClose }: Omit<WorkflowHandViewProps, 'o
       transition={reduced ? { duration: 0 } : PRESENTATION_EXIT}
     >
       <LightCurtainBackdrop kind="hand" />
-      <LightCurtainDismissPlane label="收回工作流手牌" disabled={!present} onClose={onClose} />
+      <LightCurtainDismissPlane label="收回工作流手牌" disabled={!present || nativeAssemblyDropActive} onClose={onClose} />
       <div className="lcos-workflow-hand-shell">
         <div className="lcos-workflow-hand-head">{header}</div>
         {children}
@@ -44,10 +46,10 @@ function HandLayer({ header, children, onClose }: Omit<WorkflowHandViewProps, 'o
 }
 
 /** GEN1 ObjectOrbit presence pattern: boundary survives the open=false render. */
-export function WorkflowHandView({ open, header, children, onClose }: WorkflowHandViewProps): React.JSX.Element {
+export function WorkflowHandView({ open, header, children, onClose, nativeAssemblyDropActive = false }: WorkflowHandViewProps): React.JSX.Element {
   return (
     <AnimatePresence initial={false} mode="sync">
-      {open ? <HandLayer key="workflow-hand" header={header} onClose={onClose}>{children}</HandLayer> : null}
+      {open ? <HandLayer key="workflow-hand" header={header} onClose={onClose} nativeAssemblyDropActive={nativeAssemblyDropActive}>{children}</HandLayer> : null}
     </AnimatePresence>
   );
 }

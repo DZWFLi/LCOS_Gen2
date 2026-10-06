@@ -41,6 +41,8 @@ export function LcosComposerView(props: LcosComposerViewProps): JSX.Element {
 
   const busy = props.state === 'resolving'
     || props.state === 'sending' || props.state === 'reconciling';
+  const emptyReferenceLabel = props.attachAction !== undefined && !props.attachAction.disabled
+    ? '拖入材料，或点击 + 添加' : '拖入材料以添加';
   return (
     <div
       className="lcos-composer-view"
@@ -55,17 +57,20 @@ export function LcosComposerView(props: LcosComposerViewProps): JSX.Element {
         {props.identity !== undefined && (
           <span className="lcos-composer-identity" aria-hidden="true">{props.identity}</span>
         )}
-        {props.receiverAction ? (
-          <LcosIconButton
-            type="button"
-            className="lcos-composer-receiver"
-            disabled={props.receiverAction.disabled}
-            title={props.receiverAction.disabledReason ?? props.receiverAction.label}
-            onClick={props.receiverAction.onClick}
-          >
-            {props.title}
-          </LcosIconButton>
-        ) : <span className="lcos-composer-title" title={props.title}>{props.title}</span>}
+        <div className="lcos-composer-heading-copy">
+          <span className="lcos-composer-context-label" data-lcos-composer-context-label>{props.contextLabel}</span>
+          {props.receiverAction ? (
+            <LcosIconButton
+              type="button"
+              className="lcos-composer-receiver"
+              disabled={props.receiverAction.disabled}
+              title={props.receiverAction.disabledReason ?? props.receiverAction.label}
+              onClick={props.receiverAction.onClick}
+            >
+              {props.title}
+            </LcosIconButton>
+          ) : <span className="lcos-composer-title" title={props.title}>{props.title}</span>}
+        </div>
         <LcosIconButton
           type="button"
           className="lcos-composer-close"
@@ -79,58 +84,62 @@ export function LcosComposerView(props: LcosComposerViewProps): JSX.Element {
 
       <div ref={props.referenceSurfaceRef} className="lcos-composer-reference-surface"
         data-lcos-composer-reference-surface data-drop-active={props.referenceDropActive || undefined}>
-      <ComposerReferenceStrip items={props.references} />
-
-      <div className="lcos-composer-editor">
-        <textarea
-          ref={setEditorRef}
-          data-lcos-composer-input
-          value={props.text}
-          onChange={props.onTextChange}
-          onSelect={props.onSelect}
-          onKeyDown={props.onKeyDown}
-          readOnly={props.readOnly}
-          rows={3}
-          placeholder={props.placeholder ?? '想一起完成什么？'}
-          aria-label="Composer 输入"
-        />
-        <div className="lcos-composer-tools">
-          <div className="lcos-composer-tools-start">
-            {props.attachAction && (
-              <LcosIconButton type="button" appearance="oreo" variant="secondary" className="lcos-composer-tool-hit"
-                disabled={props.attachAction.disabled}
-                title={props.attachAction.disabledReason ?? props.attachAction.label}
-                aria-label={props.attachAction.label}
-                aria-pressed={props.attachAction.pressed}
-                onClick={props.attachAction.onClick}>
-                {props.attachAction.icon ?? <LcosNearfieldGlyph name="attach" />}
-              </LcosIconButton>
-            )}
-            {props.referencePicker}
-            {props.referencePicker === undefined && props.referencePickAction && (
-              <LcosIconButton type="button" appearance="oreo" variant="secondary" className="lcos-composer-tool-hit"
-                disabled={props.referencePickAction.disabled}
-                title={props.referencePickAction.disabledReason ?? props.referencePickAction.label}
-                aria-label={props.referencePickAction.label}
-                onClick={props.referencePickAction.onClick}>
-                <LcosNearfieldGlyph name="at" />
-              </LcosIconButton>
-            )}
-          </div>
-          <LcosIconButton
-            type="button"
-            appearance="oreo"
-            variant="primary"
-            className="lcos-composer-tool-hit lcos-composer-submit"
-            disabled={!props.canSubmit}
-            aria-label="提交"
-            title={props.submitTitle}
-            onClick={props.onSubmit}
-          >
-            <LcosNearfieldGlyph name="send" />
-          </LcosIconButton>
+        <div className="lcos-composer-reference-heading" data-lcos-composer-reference-heading>
+          <span>本次引用</span>
+          {props.references.length > 0 && <span className="lcos-composer-reference-count">{props.references.length}</span>}
         </div>
-      </div>
+        <ComposerReferenceStrip items={props.references} emptyLabel={emptyReferenceLabel} />
+
+        <div className="lcos-composer-editor">
+          <textarea
+            ref={setEditorRef}
+            data-lcos-composer-input
+            value={props.text}
+            onChange={props.onTextChange}
+            onSelect={props.onSelect}
+            onKeyDown={props.onKeyDown}
+            readOnly={props.readOnly}
+            rows={3}
+            placeholder={props.placeholder ?? '想一起完成什么？'}
+            aria-label="Composer 输入"
+          />
+          <div className="lcos-composer-tools">
+            <div className="lcos-composer-tools-start">
+              {props.attachAction && (
+                <LcosIconButton type="button" appearance="oreo" variant="secondary" className="lcos-composer-tool-hit"
+                  disabled={props.attachAction.disabled}
+                  title={props.attachAction.disabledReason ?? props.attachAction.label}
+                  aria-label={props.attachAction.label}
+                  aria-pressed={props.attachAction.pressed}
+                  onClick={props.attachAction.onClick}>
+                  {props.attachAction.icon ?? <LcosNearfieldGlyph name="attach" />}
+                </LcosIconButton>
+              )}
+              {props.referencePicker}
+              {props.referencePicker === undefined && props.referencePickAction && (
+                <LcosIconButton type="button" appearance="oreo" variant="secondary" className="lcos-composer-tool-hit"
+                  disabled={props.referencePickAction.disabled}
+                  title={props.referencePickAction.disabledReason ?? props.referencePickAction.label}
+                  aria-label={props.referencePickAction.label}
+                  onClick={props.referencePickAction.onClick}>
+                  <LcosNearfieldGlyph name="at" />
+                </LcosIconButton>
+              )}
+            </div>
+            <LcosIconButton
+              type="button"
+              appearance="oreo"
+              variant="primary"
+              className="lcos-composer-tool-hit lcos-composer-submit"
+              disabled={!props.canSubmit}
+              aria-label="提交"
+              title={props.submitTitle}
+              onClick={props.onSubmit}
+            >
+              <LcosNearfieldGlyph name="send" />
+            </LcosIconButton>
+          </div>
+        </div>
       </div>
       {props.continuationControls !== undefined && <div className="lcos-composer-options">{props.continuationControls}</div>}
       {(props.feedback !== null && props.feedback !== undefined ||

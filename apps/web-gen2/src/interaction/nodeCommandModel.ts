@@ -199,11 +199,14 @@ export function buildLcosNodeCommands(input: LcosNodeCommandInput): readonly Lco
     : input.nodeType === undefined ? undefined : ARC_SURFACES[input.nodeType];
   // 纵深防御：Arc 本身也按类型闸门，这里再挡一层 —— 未覆盖类型继续挂旧壳。
   if (!hostSurface) return [];
-  // A Conversation is hosted in a note-shaped kernel node, but it is not a note
-  // document. These handlers modify native note content/style or open the old
-  // note preview, none of which owns the Glyth / Conversation body.
-  const surface = bound && input.entityType === 'conversation'
-    ? { ...hostSurface, typeToggle: false, autoHeight: false, accent: false, openLarge: false }
+  // Bound entities reuse kernel geometry, not the native note document owner.
+  // Native conversion flattens Markdown and strips note provenance; the old
+  // large preview opens that native document instead of the canonical Reader.
+  // NoteNode also suspends its native height measurement for BodyOverride.
+  // Keep their actual Core open command and direct canvas geometry controls.
+  const surface = bound
+    ? { ...hostSurface, typeToggle: false, openLarge: false, autoHeight: false,
+      ...(input.entityType === 'conversation' ? { accent: false } : {}) }
     : hostSurface;
 
   const commands: LcosNodeCommand[] = [];

@@ -51,3 +51,16 @@ it('retains the content ref when the parent changes its menu', () => {
   act(() => root?.render(<Popover position={{x:20,y:20}} contentRef={capture}><span>Two</span><span>Three</span></Popover>));
   expect(capture).not.toHaveBeenCalled(); expect(element?.textContent).toBe('TwoThree');
 });
+
+it('keeps a handled Escape with its current owner and dismisses on the next unhandled Escape', () => {
+  container = document.createElement('div'); document.body.appendChild(container);
+  root = createRoot(container);
+  const dismiss = vi.fn();
+  act(() => root?.render(<Popover position={{ x: 20, y: 20 }} onDismiss={dismiss}><span>Menu</span></Popover>));
+  const consumed = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  consumed.preventDefault();
+  act(() => window.dispatchEvent(consumed));
+  expect(dismiss).not.toHaveBeenCalled();
+  act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  expect(dismiss).toHaveBeenCalledTimes(1);
+});

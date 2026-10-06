@@ -20,18 +20,19 @@ export function useRailwayDestinations(projectId: string, client: CoreRailwayCli
     if (value.projectId !== projectId || value.order.projectId !== projectId) throw new Error('目的地响应属于另一个项目。');
     current.current = value; usable.current = true; setSnapshot(value); setStatus('ready');
   }, [projectId]);
-  const reload = useCallback(async () => {
-    if (writing.current) { refreshPending.current = true; return; }
+  const reload = useCallback(async (): Promise<RailwaySnapshotV1 | undefined> => {
+    if (writing.current) { refreshPending.current = true; return undefined; }
     const serial = ++epoch.current;
     reading.current?.abort(); const controller = new AbortController(); reading.current = controller;
     try {
       const value = await client.snapshot(projectId, controller.signal);
-      if (alive.current && serial === epoch.current) { const recovering = !usable.current; adopt(value); if (recovering) setNotice(undefined); }
+      if (alive.current && serial === epoch.current) { const recovering = !usable.current; adopt(value); if (recovering) setNotice(undefined); return value; }
     } catch (error) {
       if (alive.current && serial === epoch.current && !controller.signal.aborted) {
         usable.current = false; setStatus('error'); setNotice('导航读取失败，保留上次结果；重试后再更新。');
       }
     }
+    return undefined;
   }, [adopt, client, projectId]);
   useEffect(() => {
     alive.current = true; void reload();

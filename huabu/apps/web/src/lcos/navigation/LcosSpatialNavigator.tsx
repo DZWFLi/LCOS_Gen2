@@ -9,10 +9,10 @@ import {
   Plus,
   Unlock,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
 import { useAvoidingHudPosition } from './useAvoidingHudPosition';
 import { useHudViewport } from './useHudViewport';
-
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSpatialNavigatorView } from '../ui/families/LcosSpatialNavigatorView';
 
@@ -25,14 +25,28 @@ export function LcosSpatialNavigator(
   const requestCamera = useLcosShellStore((state) => state.requestCamera);
   const edgesVisible = controls.edgesVisible;
   const viewport = useHudViewport();
+  const toggleExpanded = (): void => {
+    if (!expanded && !controls.minimapEnabled) controls.toggleMinimap();
+    setExpanded((value) => !value);
+  };
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || !(event.target instanceof Element)
+        || !event.target.closest('[data-lcos-spatial-navigator-host]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExpanded(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [expanded]);
   const placement = useAvoidingHudPosition({ x: 24, y: viewport.height - 24, width: expanded ? 232 : 52,
     height: expanded ? 308 : 48 }, { y: 'end' }, '[data-lcos-surface-dock]');
 
   return (
-    <div ref={placement.ref} data-lcos-spatial-navigator-host className="pointer-events-auto fixed z-40" style={{ left: placement.rect.x, top: placement.rect.y }}
-      onKeyDown={(event) => { if (event.key === 'Escape' && expanded) {
-        event.preventDefault(); event.stopPropagation(); setExpanded(false);
-      } }}>
+    <div ref={placement.ref} data-lcos-spatial-navigator-host className="pointer-events-auto fixed z-40"
+      style={{ left: placement.rect.x, top: placement.rect.y }}>
     <LcosSpatialNavigatorView
       style={{ position: 'relative', left: 0, bottom: 'auto' }}
       zoom={controls.zoom}
@@ -42,7 +56,7 @@ export function LcosSpatialNavigator(
       interactivityLocked={controls.interactivityLocked}
       miniMap={controls.miniMap}
       expanded={expanded}
-      onToggleExpanded={() => setExpanded((value) => !value)}
+      onToggleExpanded={toggleExpanded}
       onZoomOut={() => requestCamera('zoom-out')}
       onResetZoom={() => requestCamera('reset')}
       onZoomIn={() => requestCamera('zoom-in')}

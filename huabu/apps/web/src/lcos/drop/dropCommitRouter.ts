@@ -1,4 +1,4 @@
-import type { AssemblyApplyResultV1, RailwayReceiveOutcomeV1 } from '@local-creative-os/contracts';
+import { railwayStableKeyV1, type AssemblyApplyResultV1, type RailwayReceiveOutcomeV1, type RailwaySnapshotV1 } from '@local-creative-os/contracts';
 import type { CoreCollectionMembershipReceipt } from '@local-creative-os/web-gen2';
 import { assemblyDropReceipt } from './dropAssemblyReceipt';
 import type {
@@ -9,9 +9,11 @@ import type {
   DropIntent,
   DropCollectionMembershipIntent,
   DropAssemblyApplyIntent,
+  DropRailwayBookmarkIntent,
 } from './dropTypes';
 
 export interface DropCommitOwners {
+  readonly bookmarkRailway?: (intent: DropRailwayBookmarkIntent, signal?: AbortSignal) => Promise<RailwaySnapshotV1>;
   /** Project captured by the real host, independently of any response envelope. */
   readonly projectId?: string;
   readonly receivePortal?: (intent: DropAssemblyApplyIntent, operationId: string, signal?: AbortSignal) => Promise<RailwayReceiveOutcomeV1>;
@@ -94,6 +96,16 @@ export class DropCommitRouter {
   ): Promise<DropCommitReceipt> {
     try {
       if (signal?.aborted) return failed(transactionId,intent,'投递已取消，未发送');
+      if (intent.kind === 'railway-bookmark') {
+        if (!owners.bookmarkRailway || !owners.projectId || owners.projectId !== intent.projectId)
+          return failed(transactionId,intent,'当前项目空间尚未就绪，未固定到 Rail');
+        const canonicalReceipt = await owners.bookmarkRailway(intent,signal);
+        const keys = new Set(canonicalReceipt.order.orderedRefs.map(railwayStableKeyV1));
+        if (canonicalReceipt.projectId !== intent.projectId || canonicalReceipt.order.projectId !== intent.projectId
+          || !intent.refs.length || intent.refs.some(ref=>!keys.has(railwayStableKeyV1(ref))))
+          return failed(transactionId,intent,'Rail 回执未确认这些空间，请核对后再操作');
+        return {status:'success',transactionId,targetId:intent.targetId,message:'空间已固定到 Rail，原内容保留',canonicalReceipt};
+      }
       if (intent.kind === 'assembly-apply' && (intent.railwayReceive || intent.portalReceive)) {
         const operationId = `${intent.portalReceive ? 'portal-receive' : 'railway-receive'}:${transactionId}`;
         const receive = intent.portalReceive ? owners.receivePortal : owners.receiveRailway;

@@ -3,12 +3,15 @@
 // 4 目的地 hug 178（8+36×4+6×3+8），与 Figma 两个变体尺寸都能对上，故不写死高度。
 // 目的地数量是唯一变体轴；hover 预览 / Enter 进入 / 拖动重排由 container 负责。
 
+import { useEffect, useRef } from 'react';
+import { GripVertical } from 'lucide-react';
+
 import { FigmaShellGlyph } from '../FigmaShellGlyph';
 import { LcosIconButton } from '../primitives/LcosIconButton';
 
 import type { RailwayReceivePresentation } from '../../navigation/railwayReceivePresentation';
 import type { FigmaShellGlyphName } from '../FigmaShellGlyph';
-import type { ComponentType, DragEvent, ReactNode } from 'react';
+import type { ComponentType, DragEvent, PointerEvent, ReactNode } from 'react';
 
 export interface LcosRailwayViewItem {
   readonly key: string;
@@ -17,6 +20,8 @@ export interface LcosRailwayViewItem {
   /** 仅视觉替换。未映射时保留 container 已提供的真实图标。 */
   readonly glyph?: FigmaShellGlyphName;
   readonly selected?: boolean;
+  readonly thumbnail?: ReactNode;
+  readonly onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   readonly disabled?: boolean;
   /** Container-owned ref used to publish live receive geometry. */
   readonly onElement?: (element: HTMLButtonElement | null) => void;
@@ -73,6 +78,24 @@ export function LcosRailwayView({
   receiver,
   footer,
 }: LcosRailwayViewProps): React.JSX.Element {
+  const overflowTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const overflowWasOpen = useRef(overflowOpen);
+  const overflowFocusWasInside = useRef(false);
+  const restoringOverflowFocus = useRef(false);
+  useEffect(() => {
+    const wasOpen = overflowWasOpen.current;
+    overflowWasOpen.current = overflowOpen;
+    if (wasOpen && !overflowOpen && overflowFocusWasInside.current) {
+      overflowFocusWasInside.current = false;
+      if (overflowTriggerRef.current && document.activeElement !== overflowTriggerRef.current) {
+        restoringOverflowFocus.current = true;
+        overflowTriggerRef.current.focus({ preventScroll: true });
+        restoringOverflowFocus.current = false;
+      }
+    } else if (!overflowOpen) {
+      overflowFocusWasInside.current = false;
+    }
+  }, [overflowOpen]);
   const railwayHeight =
     items.length === 0 ? 0 : 16 + items.length * 36 + (items.length - 1) * 6;
   return (
@@ -102,6 +125,7 @@ export function LcosRailwayView({
               data-lcos-railway-reorder-position={item.reorderDropTarget ? item.reorderDropPosition : undefined}
               onMouseEnter={item.onPeekEnter}
               onMouseLeave={item.onPeekLeave}
+              onPointerDown={item.onPointerDown}
               onBlur={(event) => {
                 const next = event.relatedTarget;
                 if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
@@ -117,6 +141,7 @@ export function LcosRailwayView({
                 data-lcos-railway-reorder-target={item.reorderDropTarget ? 'true' : undefined}
                 data-lcos-receive-state={item.receivePresentation}
                 data-lcos-variant={variant}
+                disabled={item.disabled}
                 aria-current={item.selected ? 'page' : undefined}
                 aria-disabled={item.disabled || undefined}
                 title={item.label}
@@ -132,6 +157,13 @@ export function LcosRailwayView({
                 {item.glyph === undefined ? <Icon className="h-[21px] w-[21px]" />
                   : <FigmaShellGlyph name={item.glyph} size={21} />}
               </LcosIconButton>
+              {item.thumbnail && <div aria-hidden inert style={{position:'absolute',inset:2,overflow:'hidden',borderRadius:8,pointerEvents:'none'}}>{item.thumbnail}</div>}
+              {item.onPointerDown && !item.disabled && <button type="button" data-semantic-drop-handle
+                aria-label={`拖出 ${item.label}`} title="拖出整个空间 · 也可右键拖动或按住 Alt 拖动"
+                onClick={event=>{event.preventDefault();event.stopPropagation();}}
+                style={{position:'absolute',right:-10,top:10,width:16,height:20,cursor:'grab',border:0,background:'transparent',color:'inherit'}}>
+                <GripVertical size={13}/>
+              </button>}
               {item.peekOpen && item.peek}
               {item.moreOpen && item.more}
             </div>
@@ -139,14 +171,31 @@ export function LcosRailwayView({
         })}
       </div>
       {overflowCount > 0 && (
-        <div data-lcos-railway-overflow-shell onMouseEnter={onOverflowEnter} onMouseLeave={onOverflowLeave}>
+        <div data-lcos-railway-overflow-shell onMouseEnter={onOverflowEnter} onMouseLeave={onOverflowLeave}
+          onFocusCapture={() => { overflowFocusWasInside.current = true; }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || !overflowOpen) return;
+            event.preventDefault();
+            event.stopPropagation();
+            overflowFocusWasInside.current = true;
+            onOverflowLeave?.();
+          }}>
           <button
             type="button"
+            ref={overflowTriggerRef}
             data-lcos-railway-overflow-trigger
             aria-label={`显示其余 ${overflowCount} 个目的地`}
             aria-expanded={overflowOpen}
-            onFocus={onOverflowEnter}
-            onBlur={(event) => { const next=event.relatedTarget; if (!(next instanceof Node) || !event.currentTarget.parentElement?.contains(next)) onOverflowLeave?.(); }}
+            onFocus={() => {
+              if (restoringOverflowFocus.current) { restoringOverflowFocus.current = false; return; }
+              onOverflowEnter?.();
+            }}
+            onBlur={(event) => {
+              const shell = event.currentTarget.parentElement;
+              const next = event.relatedTarget;
+              if ((next instanceof Node && shell?.contains(next)) || shell?.matches(':hover')) return;
+              onOverflowLeave?.();
+            }}
             onClick={onOverflowToggle}
           >
             +{overflowCount}

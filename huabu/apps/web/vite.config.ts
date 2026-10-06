@@ -99,6 +99,9 @@ export default defineConfig(({ mode }) => {
   const appVersion = desktopPkg.version ?? '0.0.0';
 
   return {
+    // This recovery checkout shares node_modules with the reference checkout.
+    // Keep optimized modules local so another dev server cannot invalidate them.
+    cacheDir: path.resolve(here, '../../../output/vite-cache'),
     plugins: [react(), accessGatePlugin(authUser, authPass)],
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),

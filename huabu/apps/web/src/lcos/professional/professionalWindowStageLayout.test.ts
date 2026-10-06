@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   deriveProfessionalStageRegionPlacementsV1,
+  maximumProfessionalDockWidth,
   needsCompactProfessionalStageV1,
+  professionalDockWidth,
   PROFESSIONAL_STAGE_MIN_HEIGHT,
   PROFESSIONAL_STAGE_MIN_WIDTH,
 } from './professionalWindowStageLayout';
@@ -32,7 +34,20 @@ describe('deriveProfessionalStageRegionPlacementsV1', () => {
     expect(b.rect.width).toBeGreaterThanOrEqual(PROFESSIONAL_STAGE_MIN_WIDTH);
     expect(a.rect.height).toBeGreaterThanOrEqual(PROFESSIONAL_STAGE_MIN_HEIGHT);
     expect(overlaps(a.rect, b.rect)).toBe(false);
-    expect(Math.min(a.rect.x, b.rect.x)).toBeGreaterThanOrEqual(160);
+    expect(Math.min(a.rect.x, b.rect.x)).toBeGreaterThanOrEqual(296);
+  });
+
+  it('limits a right dock at the measured Main project-cluster edge', () => {
+    const viewport = { x: 0, y: 0, width: 1280, height: 800 };
+    expect(maximumProfessionalDockWidth(viewport)).toBe(984);
+    expect(professionalDockWidth(viewport, 1800)).toBe(984);
+    expect(professionalDockWidth(viewport, 420)).toBe(420);
+
+    const [dock] = deriveProfessionalStageRegionPlacementsV1({
+      viewport,
+      regions: [{ regionId: 'dock', layout: 'docked-right', preferredWidth: 1800 }],
+    });
+    expect(dock?.rect).toEqual({ x: 296, y: 0, width: 984, height: 800 });
   });
 
   it('reserves a right dock before placing floating regions', () => {
@@ -54,7 +69,12 @@ describe('deriveProfessionalStageRegionPlacementsV1', () => {
 
 it('uses existing-window tab presentation when the viewport cannot contain the minimum regions', () => {
   const regions = Array.from({ length: 6 }, (_, index) => ({ regionId: `${index}`, layout: 'floating' as const, preferredWidth: 640 }));
+  const singleDock = [{ regionId: 'assembly', layout: 'docked-right' as const, preferredWidth: 420 }];
+  const singleReader = [{ regionId: 'reader', layout: 'floating' as const, preferredWidth: 1120 }];
   expect(needsCompactProfessionalStageV1({ x: 0, y: 0, width: 1440, height: 900 }, regions.slice(0, 2))).toBe(false);
   expect(needsCompactProfessionalStageV1({ x: 0, y: 0, width: 600, height: 700 }, regions.slice(0, 2))).toBe(true);
   expect(needsCompactProfessionalStageV1({ x: 0, y: 0, width: 1440, height: 500 }, regions)).toBe(true);
+  expect(needsCompactProfessionalStageV1({ x: 0, y: 0, width: 600, height: 751 }, singleDock)).toBe(true);
+  expect(needsCompactProfessionalStageV1({ x: 0, y: 0, width: 656, height: 751 }, singleDock)).toBe(false);
+  expect(needsCompactProfessionalStageV1({ x: 0, y: 0, width: 600, height: 751 }, singleReader)).toBe(false);
 });

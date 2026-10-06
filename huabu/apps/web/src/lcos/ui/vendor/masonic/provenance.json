@@ -1,0 +1,136 @@
+{
+  "source": "jaredLunde/masonic",
+  "version": "4.1.0",
+  "method": "esbuild bundles original distribution and dependencies; no algorithm rewritten",
+  "external": [
+    "react"
+  ],
+  "packages": [
+    {
+      "name": "@essentials/memoize-one",
+      "version": "1.1.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@essentials/memoize-one/1.1.0",
+      "licenses": [
+        "LICENSES/essentials--memoize-one--LICENSE"
+      ]
+    },
+    {
+      "name": "@essentials/one-key-map",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@essentials/one-key-map/1.2.0",
+      "licenses": [
+        "LICENSES/essentials--one-key-map--LICENSE"
+      ]
+    },
+    {
+      "name": "@essentials/raf",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@essentials/raf/1.2.0",
+      "licenses": [
+        "LICENSES/essentials--raf--LICENSE"
+      ]
+    },
+    {
+      "name": "@essentials/request-timeout",
+      "version": "1.3.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@essentials/request-timeout/1.3.0",
+      "licenses": [
+        "LICENSES/essentials--request-timeout--LICENSE"
+      ]
+    },
+    {
+      "name": "@react-hook/debounce",
+      "version": "3.0.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@react-hook/debounce/3.0.0",
+      "licenses": [
+        "LICENSES/react-hook--debounce--LICENSE"
+      ]
+    },
+    {
+      "name": "@react-hook/event",
+      "version": "1.2.6",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@react-hook/event/1.2.6",
+      "licenses": [
+        "LICENSES/react-hook--event--LICENSE"
+      ]
+    },
+    {
+      "name": "@react-hook/latest",
+      "version": "1.0.3",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@react-hook/latest/1.0.3",
+      "licenses": [
+        "LICENSES/react-hook--latest--LICENSE"
+      ]
+    },
+    {
+      "name": "@react-hook/passive-layout-effect",
+      "version": "1.2.1",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@react-hook/passive-layout-effect/1.2.1",
+      "licenses": [
+        "LICENSES/react-hook--passive-layout-effect--LICENSE"
+      ]
+    },
+    {
+      "name": "@react-hook/throttle",
+      "version": "2.2.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@react-hook/throttle/2.2.0",
+      "licenses": [
+        "LICENSES/react-hook--throttle--LICENSE"
+      ]
+    },
+    {
+      "name": "@react-hook/window-scroll",
+      "version": "1.3.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@react-hook/window-scroll/1.3.0",
+      "licenses": [
+        "LICENSES/react-hook--window-scroll--LICENSE"
+      ]
+    },
+    {
+      "name": "@react-hook/window-size",
+      "version": "3.1.1",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@react-hook/window-size/3.1.1",
+      "licenses": [
+        "LICENSES/react-hook--window-size--LICENSE"
+      ]
+    },
+    {
+      "name": "masonic",
+      "version": "4.1.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/masonic/4.1.0",
+      "licenses": [
+        "LICENSES/masonic--LICENSE"
+      ]
+    },
+    {
+      "name": "raf-schd",
+      "version": "4.0.3",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/raf-schd/4.0.3",
+      "licenses": [
+        "LICENSES/raf-schd--LICENSE"
+      ]
+    },
+    {
+      "name": "trie-memoize",
+      "version": "1.2.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/trie-memoize/1.2.0",
+      "licenses": [
+        "LICENSES/trie-memoize--LICENSE"
+      ]
+    }
+  ]
+}

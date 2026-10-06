@@ -1,5 +1,5 @@
 import { createRoot, type Root } from 'react-dom/client';
-import { act } from 'react-dom/test-utils';
+import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useLcosDensity } from '@/lcos/nodes/useLcosDensity';
@@ -35,15 +35,17 @@ vi.mock('@xyflow/react', () => ({
   useStore: (selector: (state: unknown) => unknown) =>
     selector({
       domNode: null,
-      nodeLookup: new Map([
-        [
-          'node-1',
-          {
+      transform: [0, 0, runtime.zoom],
+      width: 1200,
+      height: 800,
+      nodeLookup: new Map(Array.from({ length: runtime.nodeCount }, (_, index) => [
+          `node-${index + 1}`,
+          { id: `node-${index + 1}`,
+            internals: { positionAbsolute: { x: 0, y: 0 } },
             style: { width: 400, height: 300 },
             measured: { width: 400, height: 300 },
           },
-        ],
-      ]),
+        ])),
     }),
 }));
 
