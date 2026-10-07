@@ -1,19 +1,21 @@
-.lcos-drop-feedback{position:absolute;z-index:70;pointer-events:none;display:flex;align-items:center;gap:10px;transform:translate(18px,16px);max-width:min(280px,calc(100vw - 32px))}
-.lcos-drop-proxy{width:64px;height:48px;flex:none;display:grid;place-items:center;overflow:hidden;transform:rotate(-7deg);color:var(--gen2-muted);border-radius:9px!important;box-shadow:0 9px 20px #16273026!important}
-.lcos-drop-proxy img{width:100%;height:100%;object-fit:cover}
-.lcos-drop-caption{display:flex;gap:7px;align-items:center;min-width:0;padding:9px 12px;border-radius:15px!important}
+.lcos-drop-feedback{position:absolute;z-index:70;pointer-events:none;display:flex;align-items:center;gap:10px;transform:none;width:min(280px,calc(100vw - 16px));transition:none}
+.lcos-drop-feedback[data-feedback-side="left"]{flex-direction:row-reverse}
+.lcos-drop-proxy{position:relative;width:64px;height:48px;flex:none;display:grid;place-items:center;overflow:visible;transform:rotate(-7deg);color:var(--gen2-muted);border-radius:9px!important;box-shadow:0 9px 20px #16273026!important}
+.lcos-drop-proxy img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.lcos-drop-proxy [data-lcos-drop-count]{position:absolute;right:-5px;top:-7px;min-width:18px;height:18px;padding:0 4px;display:grid;place-items:center;border-radius:999px;background:var(--gen2-text);color:var(--gen2-surface);font-size:10px;line-height:1;transform:rotate(7deg)}
+.lcos-drop-caption{display:flex;gap:7px;align-items:center;min-width:0;flex:1;padding:9px 12px;border-radius:15px!important}
 .lcos-drop-caption span{display:flex;flex-direction:column;gap:3px;min-width:0}
-.lcos-drop-caption strong{font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
-.lcos-drop-caption small{font-size:10px;line-height:1.45;color:var(--gen2-muted)}
-.lcos-drop-receptor{position:absolute;pointer-events:none;z-index:65;border:1px solid color-mix(in srgb,var(--gen2-accent) 65%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--gen2-accent) 8%,transparent),0 0 22px color-mix(in srgb,var(--gen2-accent) 14%,transparent);animation:lcos-drop-approach 180ms ease-out}
-.lcos-drop-receptor[data-state="candidate"]{border:1px dashed color-mix(in srgb,var(--gen2-accent) 78%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gen2-accent) 10%,transparent),0 0 0 3px color-mix(in srgb,var(--gen2-accent) 7%,transparent);animation:none}
+.lcos-drop-caption strong{font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.lcos-drop-caption small{font-size:10px;line-height:1.45;color:var(--gen2-muted);overflow-wrap:anywhere}
+.lcos-drop-receptor{position:absolute;pointer-events:none;z-index:65;border:1px solid color-mix(in srgb,var(--gen2-accent) 65%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--gen2-accent) 8%,transparent),0 0 22px color-mix(in srgb,var(--gen2-accent) 14%,transparent);animation:none}
+.lcos-drop-receptor[data-state="approaching"]{border:1px solid color-mix(in srgb,var(--gen2-accent) 35%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--gen2-accent) 6%,transparent);animation:none}
 .lcos-drop-receptor[data-state="receptive"]{border-color:color-mix(in srgb,var(--gen2-accent) 85%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gen2-accent) 14%,transparent),0 0 0 4px color-mix(in srgb,var(--gen2-accent) 10%,transparent),0 0 22px color-mix(in srgb,var(--gen2-accent) 16%,transparent)}
 .lcos-drop-receptor[data-state="rejected"]{border-color:var(--lcos-status-danger);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--lcos-status-danger) 14%,transparent),0 0 0 4px color-mix(in srgb,var(--lcos-status-danger) 10%,transparent)}
 .lcos-drop-receptor-label{position:absolute;left:7px;top:6px;max-width:min(220px,calc(100% - 14px));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 7px;border:1px solid color-mix(in srgb,var(--gen2-accent) 36%,transparent);border-radius:999px;background:color-mix(in srgb,var(--gen2-surface) 92%,transparent);color:var(--gen2-text);font-size:10px;line-height:1.25;box-shadow:0 2px 8px #1627301c}
 .lcos-drop-receptor[data-state="rejected"] .lcos-drop-receptor-label{border-color:color-mix(in srgb,var(--lcos-status-danger) 52%,transparent);color:var(--lcos-status-danger)}
 .lcos-drop-guidance{position:fixed;left:16px;top:16px;transform:none;max-width:min(300px,calc(100vw - 32px))}
 @keyframes lcos-drop-approach{from{opacity:0;scale:.94}to{opacity:1;scale:1}}
-@media(prefers-reduced-motion:reduce){.lcos-drop-receptor{animation:none}.lcos-drop-proxy{transform:none}}
+@media(prefers-reduced-motion:reduce){.lcos-drop-receptor{animation:none}.lcos-drop-proxy,.lcos-drop-proxy [data-lcos-drop-count]{transform:none}}
 
 
 .lcos-drop-receipt{position:absolute;z-index:70;pointer-events:auto;padding:8px 10px;max-height:280px;display:flex;flex-direction:column;font-size:12px;color:var(--gen2-text);border-radius:18px!important}
@@ -38,3 +40,25 @@
 .lcos-drop-receipt[data-presentation="compact"]{gap:0}
 .lcos-drop-receipt [data-lcos-drop-details]{align-self:flex-end}
 .lcos-drop-receipt li[data-outcome="未确认"] em{color:var(--gen2-muted)}
+
+/* GEN1 five-phase feedback transplanted onto the existing GEN2 state owner:
+ * preview = receptive, committing = accept/commit. Settle remains receipt-owned. */
+.lcos-drop-receptor[data-state="committing"] {
+  overflow:hidden;
+  border-color:color-mix(in srgb,var(--gen2-accent) 88%,transparent);
+  background:color-mix(in srgb,var(--gen2-accent) 5%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gen2-accent) 18%,transparent),0 0 0 4px color-mix(in srgb,var(--gen2-accent) 11%,transparent),0 0 26px color-mix(in srgb,var(--gen2-accent) 15%,transparent);
+}
+.lcos-drop-receptor[data-state="committing"]::after {
+  content:'';position:absolute;inset:-40% auto -40% -30%;width:28%;pointer-events:none;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--gen2-accent) 23%,white),transparent);
+  transform:skewX(-18deg);animation:lcos-drop-light-sweep 250ms cubic-bezier(.2,.85,.2,1) both;
+}
+.lcos-drop-feedback[data-presentation="committing"] .lcos-drop-proxy {
+  transform:rotate(-2deg) scale(.96);opacity:.72;transition:transform 180ms cubic-bezier(.22,1,.36,1),opacity 160ms ease;
+}
+.lcos-drop-feedback[data-presentation="committing"] .lcos-drop-caption {
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gen2-accent) 20%,transparent),var(--lcos-glass-shadow)!important;
+}
+@keyframes lcos-drop-light-sweep {from{left:-30%;opacity:0}20%{opacity:1}to{left:110%;opacity:0}}
+@media(prefers-reduced-motion:reduce){.lcos-drop-receptor[data-state="committing"]::after{animation:none;display:none}.lcos-drop-feedback[data-presentation="committing"] .lcos-drop-proxy{transition:none}}

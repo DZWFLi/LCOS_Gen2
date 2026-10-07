@@ -1,0 +1,85 @@
+/* GEN1/R1 spatial-navigation handfeel transplanted onto GEN2's existing Huabu camera owner.
+ * Donor: rail-source/04_NavigationHud_Locator_SpatialNavigator_Interactive_R1.html.
+ * Compact controls open first; map is a secondary reveal. */
+[data-lcos-family='spatial-navigator'] {
+  width: 232px;
+  min-height: 48px;
+  padding: 6px;
+  gap: 6px;
+  border-radius: 18px;
+  transform-origin: left bottom;
+  transition: width 160ms cubic-bezier(.22,1,.36,1), height 180ms cubic-bezier(.22,1,.36,1), background-color 120ms ease;
+}
+[data-lcos-family='spatial-navigator'][data-lcos-expanded='false'] {
+  width: 52px;
+  height: 48px;
+  min-height: 48px;
+  padding: 2px 4px;
+}
+[data-lcos-family='spatial-navigator'][data-lcos-expanded='true'][data-lcos-map-expanded='false'] {
+  height: 102px;
+}
+[data-lcos-family='spatial-navigator'][data-lcos-expanded='true'][data-lcos-map-expanded='true'] {
+  height: 236px;
+}
+[data-lcos-spatial-navigator-primary],
+[data-lcos-spatial-navigator-secondary] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+}
+[data-lcos-spatial-navigator-primary] { min-height: 42px; }
+[data-lcos-spatial-navigator-secondary] {
+  min-height: 38px;
+  border-top: 1px solid var(--lcos-color-border-subtle);
+  padding-top: 3px;
+}
+[data-lcos-family='spatial-navigator'][data-lcos-expanded='true'] [data-lcos-spatial-navigator-primary] button,
+[data-lcos-family='spatial-navigator'][data-lcos-expanded='true'] [data-lcos-spatial-navigator-secondary] button {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 10px;
+}
+[data-lcos-spatial-navigator-zoom] {
+  width: 50px !important;
+  min-width: 50px !important;
+  font-variant-numeric: tabular-nums;
+}
+[data-lcos-spatial-navigator-map] {
+  position: relative;
+  width: 220px;
+  height: 126px;
+  overflow: hidden;
+  border-radius: 13px;
+  background: color-mix(in srgb,var(--gen2-canvas) 92%,var(--gen2-surface));
+  box-shadow: inset 0 0 0 1px var(--lcos-color-border-subtle);
+  animation: lcos-spatial-map-reveal 160ms cubic-bezier(.22,1,.36,1) both;
+}
+.lcos-spatial-navigator__minimap.react-flow__panel {
+  position: relative;
+  inset: auto;
+  width: 220px;
+  height: 126px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+[data-lcos-spatial-navigator-empty-map] {
+  width: 100% !important;
+  height: 100% !important;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  color: var(--gen2-muted) !important;
+  font: 400 11px/18px var(--lcos-hud-font,sans-serif);
+}
+@keyframes lcos-spatial-map-reveal {
+  from { opacity: 0; transform: translateY(4px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-lcos-family='spatial-navigator'], [data-lcos-spatial-navigator-map] { transition: none; animation: none; }
+}

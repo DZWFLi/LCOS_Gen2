@@ -85,7 +85,7 @@ export function beginRailwayAssemblyDrop(
 ): boolean {
   const store = useLcosDropStore.getState();
   const payload = railwayAssemblyPayload(destination, projectId);
-  if (!payload || store.state.status === 'committing') {
+  if (!payload || (store.state.status !== 'idle' && store.state.status !== 'failed')) {
     event.preventDefault();
     return false;
   }
@@ -113,14 +113,18 @@ export function cancelRailwayAssemblyDrop(
   destination: RailwayDestinationV1,
   projectId: string,
 ): boolean {
-  const id = canonicalWorksiteId(destination, projectId);
-  if (!id) return false;
+  // Availability can change while dragging. The captured canonical identity,
+  // not whether the row is still enabled, decides which pending gesture to clear.
+  const payload = railwayAssemblyPayload({ ...destination, available: true }, projectId);
+  if (!payload) return false;
   const store = useLcosDropStore.getState();
   const state = store.state;
   if (!pending(state) || !('payload' in state) || state.payload.kind !== 'assembly'
-    || state.payload.itemId !== id || state.payload.sourceRef.kind !== 'scene'
-    || state.payload.sourceRef.id !== id
-    || state.payload.entityRef?.type !== 'workspace' || state.payload.entityRef.id !== id) return false;
+    || state.payload.itemId !== payload.itemId
+    || state.payload.sourceRef.kind !== payload.sourceRef.kind
+    || state.payload.sourceRef.id !== payload.sourceRef.id
+    || state.payload.entityRef?.type !== payload.entityRef?.type
+    || state.payload.entityRef?.id !== payload.entityRef?.id) return false;
   store.cancel();
   return true;
 }

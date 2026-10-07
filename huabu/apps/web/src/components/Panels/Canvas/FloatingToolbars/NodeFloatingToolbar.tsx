@@ -390,9 +390,9 @@ export const NodeFloatingToolbar = memo(
           </>
         )}
 
-        {!['spacePreview', 'canvasRef', 'frameRef', 'nodeRef'].includes(
-          type,
-        ) && (
+        {chromeMode !== 'lcos'
+          && !['spacePreview', 'canvasRef', 'frameRef', 'nodeRef'].includes(type)
+          && (
           <>
             <FloatingToolbar.Divider />
             <FloatingToolbar.ActionButton
@@ -402,7 +402,7 @@ export const NodeFloatingToolbar = memo(
               <MoveRight />
             </FloatingToolbar.ActionButton>
           </>
-        )}
+          )}
 
         {/* Non-mouse only: mouse users have keyboard Delete / Backspace. */}
         {isNotMouse && (

@@ -15,6 +15,7 @@ import { useAvoidingHudPosition } from './useAvoidingHudPosition';
 import { useHudViewport } from './useHudViewport';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { LcosSpatialNavigatorView } from '../ui/families/LcosSpatialNavigatorView';
+import '../ui/nearfield/spatial-navigator-gen1.css';
 
 import type { CanvasSpatialNavigatorControls } from '@/lcos-seam/types';
 
@@ -22,12 +23,18 @@ export function LcosSpatialNavigator(
   controls: CanvasSpatialNavigatorControls,
 ): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
   const requestCamera = useLcosShellStore((state) => state.requestCamera);
   const edgesVisible = controls.edgesVisible;
   const viewport = useHudViewport();
   const toggleExpanded = (): void => {
-    if (!expanded && !controls.minimapEnabled) controls.toggleMinimap();
+    if (expanded) setMapExpanded(false);
     setExpanded((value) => !value);
+  };
+  const toggleMap = (): void => {
+    const next = !mapExpanded;
+    if (next && !controls.minimapEnabled) controls.toggleMinimap();
+    setMapExpanded(next);
   };
   useEffect(() => {
     if (!expanded) return undefined;
@@ -36,13 +43,14 @@ export function LcosSpatialNavigator(
         || !event.target.closest('[data-lcos-spatial-navigator-host]')) return;
       event.preventDefault();
       event.stopPropagation();
-      setExpanded(false);
+      if (mapExpanded) setMapExpanded(false);
+      else setExpanded(false);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [expanded]);
+  }, [expanded, mapExpanded]);
   const placement = useAvoidingHudPosition({ x: 24, y: viewport.height - 24, width: expanded ? 232 : 52,
-    height: expanded ? 308 : 48 }, { y: 'end' }, '[data-lcos-surface-dock]');
+    height: expanded ? (mapExpanded ? 236 : 102) : 48 }, { y: 'end' }, '[data-lcos-surface-dock]');
 
   return (
     <div ref={placement.ref} data-lcos-spatial-navigator-host className="pointer-events-auto fixed z-40"
@@ -56,7 +64,9 @@ export function LcosSpatialNavigator(
       interactivityLocked={controls.interactivityLocked}
       miniMap={controls.miniMap}
       expanded={expanded}
+      mapExpanded={mapExpanded}
       onToggleExpanded={toggleExpanded}
+      onToggleMap={toggleMap}
       onZoomOut={() => requestCamera('zoom-out')}
       onResetZoom={() => requestCamera('reset')}
       onZoomIn={() => requestCamera('zoom-in')}

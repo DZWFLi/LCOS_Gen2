@@ -107,7 +107,7 @@ export function LcosRailwayView({
         data-lcos-variant-count={items.length}
         data-lcos-railway-canonical-total={canonicalTotal}
         role="navigation"
-        aria-label="现场目的地"
+        aria-label="项目空间书签"
         style={{
           height: railwayHeight,
           maxHeight: 'min(70vh, 556px)',
@@ -121,11 +121,12 @@ export function LcosRailwayView({
             <div
               key={item.key}
               data-lcos-railway-entry={item.key}
+              data-lcos-railway-active={item.selected || undefined}
               data-lcos-receive-state={item.receivePresentation}
               data-lcos-railway-reorder-position={item.reorderDropTarget ? item.reorderDropPosition : undefined}
               onMouseEnter={item.onPeekEnter}
               onMouseLeave={item.onPeekLeave}
-              onPointerDown={item.onPointerDown}
+              onPointerDown={item.disabled ? undefined : item.onPointerDown}
               onBlur={(event) => {
                 const next = event.relatedTarget;
                 if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
@@ -161,7 +162,7 @@ export function LcosRailwayView({
               {item.onPointerDown && !item.disabled && <button type="button" data-semantic-drop-handle
                 aria-label={`拖出 ${item.label}`} title="拖出整个空间 · 也可右键拖动或按住 Alt 拖动"
                 onClick={event=>{event.preventDefault();event.stopPropagation();}}
-                style={{position:'absolute',right:-10,top:10,width:16,height:20,cursor:'grab',border:0,background:'transparent',color:'inherit'}}>
+                className="lcos-railway-drag-handle">
                 <GripVertical size={13}/>
               </button>}
               {item.peekOpen && item.peek}
@@ -184,7 +185,7 @@ export function LcosRailwayView({
             type="button"
             ref={overflowTriggerRef}
             data-lcos-railway-overflow-trigger
-            aria-label={`显示其余 ${overflowCount} 个目的地`}
+            aria-label={`显示其余 ${overflowCount} 个空间`}
             aria-expanded={overflowOpen}
             onFocus={() => {
               if (restoringOverflowFocus.current) { restoringOverflowFocus.current = false; return; }

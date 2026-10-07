@@ -107,13 +107,32 @@ export function createRailwayPointerDropController(
   let session: PointerSession | undefined;
   let menuGuardInstalled = false;
   let menuGuardTimer: ReturnType<typeof setTimeout> | undefined;
+  let clickGuard: PointerSession | undefined;
+  let clickGuardTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearClickGuard = (): void => {
+    if (clickGuardTimer !== undefined) clearTimeout(clickGuardTimer);
+    clickGuardTimer = undefined;
+    clickGuard = undefined;
+  };
+  const guardClick = (raw: Event): void => {
+    const event = raw as MouseEvent;
+    const active = clickGuard;
+    // Keyboard activation and unrelated controls must remain usable.
+    if (!active || event.detail === 0) return;
+    const samePointer = 'pointerId' in event && event.pointerId === active.pointerId;
+    const fromSource = event.target instanceof Node && active.captureElement.contains(event.target);
+    if (!samePointer && !fromSource) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    clearClickGuard();
+  };
 
   const ownsPayload = (active: PointerSession): boolean => {
     const state = port.read().state;
     return 'payload' in state && state.payload === active.payload;
   };
-  const sameProject = (active: PointerSession): boolean => port.currentProjectId?.() === undefined
-    || port.currentProjectId?.() === null || port.currentProjectId?.() === active.projectId;
+  const sameProject = (active: PointerSession): boolean => !port.currentProjectId
+    || port.currentProjectId() === active.projectId;
   const releaseCapture = (active: PointerSession): void => {
     try {
       if (active.captureElement.hasPointerCapture(active.pointerId)) active.captureElement.releasePointerCapture(active.pointerId);
@@ -137,6 +156,9 @@ export function createRailwayPointerDropController(
     if (session !== active) return;
     session = undefined;
     releaseCapture(active);
+    if (clickGuard === active) {
+      clickGuardTimer = setTimeout(clearClickGuard, 300);
+    }
     if (menuGuardTimer !== undefined) clearTimeout(menuGuardTimer);
     if (deferMenuGuard && menuGuardInstalled) {
       // Chromium may dispatch contextmenu after pointerup for a right-drag.
@@ -148,7 +170,7 @@ export function createRailwayPointerDropController(
   const cancel = (active = session): void => {
     if (!active || session !== active) return;
     const state = port.read().state;
-    if (ownsPayload(active) && pending(state)) port.cancel();
+    if (active.moved && ownsPayload(active) && pending(state)) port.cancel();
     clearSession(active, active.trigger === 'secondary-pointer' && active.moved);
   };
   const consume = (event: { preventDefault(): void; stopPropagation(): void }): void => { event.preventDefault(); event.stopPropagation(); };
@@ -156,11 +178,20 @@ export function createRailwayPointerDropController(
     const event = raw as PointerEvent;
     const active = session;
     if (!active || event.pointerId !== active.pointerId) return;
-    if (!sameProject(active) || !ownsPayload(active)) { cancel(active); return; }
+    if (!sameProject(active) || (active.moved && !ownsPayload(active))) { cancel(active); return; }
     if (event.pointerType === 'mouse' && (event.buttons & active.buttonMask) === 0) { cancel(active); return; }
     const distance = Math.hypot(event.clientX - active.start.clientX, event.clientY - active.start.clientY);
-    if (!active.moved && distance <= 4) return;
-    active.moved = true;
+    if (!active.moved) {
+      if (distance <= 4) return;
+      const state = port.read().state;
+      if ((state.status !== 'idle' && state.status !== 'failed') || !port.begin(active.payload)) {
+        cancel(active); return;
+      }
+      active.moved = true;
+      // The Rail host (or document for a portalled panel) survives closing Peek/Manage.
+      try { active.captureElement.setPointerCapture(active.pointerId); } catch { /* global listeners remain the fallback */ }
+      if (active.trigger !== 'secondary-pointer') clickGuard = active;
+    }
     consume(event);
     if (active.trigger === 'secondary-pointer') installMenuGuard();
     if (!port.advance({ clientX: event.clientX, clientY: event.clientY })) cancel(active);
@@ -203,6 +234,9 @@ export function createRailwayPointerDropController(
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') cancel(session);
   };
 
+  const onNextPointerDown = (): void => { if (!session) clearClickGuard(); };
+  eventTarget?.addEventListener('pointerdown', onNextPointerDown, true);
+  eventTarget?.addEventListener('click', guardClick, true);
   eventTarget?.addEventListener('pointermove', onMove, true);
   eventTarget?.addEventListener('pointerup', onUp, true);
   eventTarget?.addEventListener('pointercancel', onCancel, true);
@@ -213,6 +247,7 @@ export function createRailwayPointerDropController(
 
   return {
     onPointerDown: (event, destination, projectId) => {
+      if (!session) clearClickGuard();
       const trigger = triggerFromPointer(event);
       if (!trigger) return false;
       const payload = 'ref' in destination
@@ -234,17 +269,20 @@ export function createRailwayPointerDropController(
         trigger,
         projectId,
         payload,
-        captureElement: event.currentTarget,
+        captureElement: event.currentTarget.closest<HTMLElement>('[data-lcos-railway]')
+          ?? event.currentTarget.ownerDocument.documentElement,
         start: { clientX: event.clientX, clientY: event.clientY },
         moved: false,
       };
-      if (!port.begin(payload)) return true;
+      // Arm only. A click/right-click must not close the current panel or
+      // expose the receive map before there is an actual drag.
       session = active;
-      try { active.captureElement.setPointerCapture(event.pointerId); } catch { /* global pointer listeners remain the fallback */ }
       return true;
     },
     dispose: () => {
       cancel(session);
+      eventTarget?.removeEventListener('pointerdown', onNextPointerDown, true);
+      eventTarget?.removeEventListener('click', guardClick, true);
       eventTarget?.removeEventListener('pointermove', onMove, true);
       eventTarget?.removeEventListener('pointerup', onUp, true);
       eventTarget?.removeEventListener('pointercancel', onCancel, true);
@@ -254,6 +292,7 @@ export function createRailwayPointerDropController(
       visibilityTarget?.removeEventListener('visibilitychange', onVisibilityChange);
       if (menuGuardTimer !== undefined) clearTimeout(menuGuardTimer);
       removeMenuGuard();
+      clearClickGuard();
     },
   };
 }

@@ -58,6 +58,8 @@ export interface LcosDropState {
   revokeNativeLanding(): void;
   /** Screen-space canvas bounds the dwell anchors are judged against. */
   bounds: DropBounds | null;
+  /** Latest screen-space sample from the existing transport; visual only, including no-hit movement. */
+  pointerScreenPoint: SurfacePoint | null;
   /** The resolver result rendered by the current preview; retained for commit. */
   resolution: DropResolution | null;
   /** One gesture's feedback only; never membership/session truth. */
@@ -87,6 +89,7 @@ export interface LcosDropState {
     destination?: DropDestination,
     resolution?: DropResolution,
     placementPoint?: SurfacePoint,
+    pointerScreenPoint?: SurfacePoint,
   ): void;
   /** Confirm a preview with the exact resolver snapshot used to render it. */
   commitAt(transactionId: string): void;
@@ -113,6 +116,7 @@ export const useLcosDropStore = create<LcosDropState>((set, get) => ({
   carrySourceNodeIds: [],
   nativeSource: null,
   bounds: null,
+  pointerScreenPoint: null,
   resolution: null,
   feedback: null,
 
@@ -123,11 +127,11 @@ export const useLcosDropStore = create<LcosDropState>((set, get) => ({
 
   begin: (payload, carrySourceNodeId, carrySourceNodeIds) => {
     if (get().state.status === 'committing') return;
-    set({ state: beginDrop(payload), resolution: null, feedback: null, carrySourceNodeId: carrySourceNodeId ?? null,
+    set({ state: beginDrop(payload), pointerScreenPoint: null, resolution: null, feedback: null, carrySourceNodeId: carrySourceNodeId ?? null,
       carrySourceNodeIds: carrySourceNodeIds ?? (carrySourceNodeId ? [carrySourceNodeId] : []), nativeSource: null });
   },
 
-  beginNative: (payload, nativeSource) => set({ state: beginDrop(payload), resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource }),
+  beginNative: (payload, nativeSource) => set({ state: beginDrop(payload), pointerScreenPoint: null, resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource }),
   commitNative: (nativeSource, transactionId) => {
     set({ nativeSource });
     get().commitAt(transactionId);
@@ -144,7 +148,7 @@ export const useLcosDropStore = create<LcosDropState>((set, get) => ({
 
   setBounds: (bounds) => set({ bounds }),
 
-  advance: (pointPx, overDestination, now, destination, resolution, placementPoint) => {
+  advance: (pointPx, overDestination, now, destination, resolution, placementPoint, pointerScreenPoint) => {
     const { state, bounds } = get();
     if (state.status === 'idle' || state.status === 'committing' || state.status === 'failed') {
       return;
@@ -184,7 +188,9 @@ export const useLcosDropStore = create<LcosDropState>((set, get) => ({
             : resolution.intent,
         }
       : next.status === 'preview' ? (resolution ?? null) : null;
-    set({ state: next, resolution: resolved });
+    set({ state: next, resolution: resolved, pointerScreenPoint:
+      pointerScreenPoint && Number.isFinite(pointerScreenPoint.x) && Number.isFinite(pointerScreenPoint.y)
+        ? { x: pointerScreenPoint.x, y: pointerScreenPoint.y } : null });
   },
 
   commitAt: (transactionId) => {
@@ -209,6 +215,7 @@ export const useLcosDropStore = create<LcosDropState>((set, get) => ({
     set({
       state: receipt.status === 'success' ? idleDrop() : failDrop(state, receipt.message ?? '投放未完成', Boolean(receipt.retrySourceRefs?.length)),
       feedback: { attempt: state, originalIntent, receipt },
+      pointerScreenPoint: null,
       carrySourceNodeId: null,
       carrySourceNodeIds: [],
       nativeSource: null,
@@ -244,18 +251,18 @@ export const useLcosDropStore = create<LcosDropState>((set, get) => ({
 
   dismissFeedback: () => {
     if (get().state.status === 'committing') return;
-    set({ state: idleDrop(), resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource: null });
+    set({ state: idleDrop(), pointerScreenPoint: null, resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource: null });
   },
 
   fail: (reason, recoverable) => {
     const { state } = get();
-    set({ state: failDrop(state, reason, recoverable) });
+    set({ state: failDrop(state, reason, recoverable), pointerScreenPoint: null });
   },
 
-  cancel: () => set({ state: idleDrop(), resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource: null }),
+  cancel: () => set({ state: idleDrop(), pointerScreenPoint: null, resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource: null }),
 
   reset: () => {
     liveTargetRegistry.clear();
-    set({ state: idleDrop(), bounds: null, resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource: null });
+    set({ state: idleDrop(), bounds: null, pointerScreenPoint: null, resolution: null, feedback: null, carrySourceNodeId: null, carrySourceNodeIds: [], nativeSource: null });
   },
 }));

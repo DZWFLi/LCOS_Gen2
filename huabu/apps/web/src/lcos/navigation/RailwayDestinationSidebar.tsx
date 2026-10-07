@@ -7,15 +7,18 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
+import { GripVertical } from 'lucide-react';
 
 import type { RailwayReceivePresentation } from './railwayReceivePresentation';
-import type { DragEvent } from 'react';
+import type { DragEvent, PointerEvent } from 'react';
 
 export interface RailwayDestinationSidebarItem {
   readonly key: string;
   readonly label: string;
   readonly description: string;
   readonly disabled?: boolean;
+  readonly onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
+  readonly onManage?: () => void;
   readonly receivePresentation?: RailwayReceivePresentation;
   readonly onElement?: (element: HTMLButtonElement | null) => void;
   /** Container-owned same-project destination reorder; Semantic Drop remains separate. */
@@ -116,13 +119,17 @@ export function RailwayDestinationSidebar({
 
     const measure = () => setCenters(items.map((item) => {
       const element = itemRefs.current.get(item.key);
-      return element ? element.offsetTop + element.offsetHeight / 2 : 0;
+      if (!element) return 0;
+      const rect = element.getBoundingClientRect();
+      return rect.top - list.getBoundingClientRect().top + list.scrollTop + rect.height / 2;
     }));
 
     const observer = new ResizeObserver(measure);
     observer.observe(list);
+    for (const element of itemRefs.current.values()) observer.observe(element);
+    measure();
     return () => observer.disconnect();
-  }, [items.length]);
+  }, [items]);
 
   const activeY = activeIndex < 0 ? null : (centers[activeIndex] ?? null);
   const hoverY = hoverIndex === null ? null : (centers[hoverIndex] ?? null);
@@ -147,7 +154,7 @@ export function RailwayDestinationSidebar({
     <nav
       data-lcos-railway-destination-sidebar
       data-slot="hook-sidebar"
-      aria-label="其余现场目的地"
+      aria-label="其余项目空间"
       aria-busy={busy || undefined}
       className="lcos-railway-destination-sidebar"
     >
@@ -173,8 +180,9 @@ export function RailwayDestinationSidebar({
           const disabled = busy || item.disabled === true;
           const descriptionId = `${descriptionIdPrefix}-${index}`;
           return (
+            <div key={item.key} className="lcos-railway-destination-row"
+              onPointerDown={disabled ? undefined : item.onPointerDown}>
             <button
-              key={item.key}
               ref={itemRef(item)}
               type="button"
               data-slot="hook-sidebar-item"
@@ -203,6 +211,9 @@ export function RailwayDestinationSidebar({
               onClick={() => {
                 if (!disabled) onSelect(item.key);
               }}
+              onContextMenu={(event) => {
+                if (!disabled && item.onManage) { event.preventDefault(); event.stopPropagation(); item.onManage(); }
+              }}
               onDragStart={item.onDragStart}
               onDragOver={item.onDragOver}
               onDrop={item.onDrop}
@@ -212,6 +223,13 @@ export function RailwayDestinationSidebar({
               <strong>{item.label}</strong>
               <small id={descriptionId} data-lcos-railway-overflow-state={item.receivePresentation}>{item.description}</small>
             </button>
+            {item.onPointerDown && !disabled && <button type="button" data-semantic-drop-handle
+              className="lcos-railway-drag-handle" aria-label={`拖出 ${item.label}`}
+              title="拖出整个空间 · 也可右键拖动或按住 Alt 拖动"
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+              <GripVertical size={13} />
+            </button>}
+            </div>
           );
         })}
       </div>

@@ -200,6 +200,7 @@ export function advanceDropAtScreenPoint(
     destination,
     resolution,
     placementPoint,
+    { x: point.clientX, y: point.clientY },
   );
 }
 

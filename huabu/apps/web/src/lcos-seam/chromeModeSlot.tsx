@@ -25,8 +25,10 @@ export function useCanvasChromeMode(): CanvasChromeMode {
  *   类型提示/转换 → LCOS Arc「转为文本」；
  *   强调色        → LCOS Arc「强调色」色板；
  *   尺寸 W/H      → LCOS Arc「尺寸」输入；
- *   打开大视图    → LCOS Arc「打开大视图」；
- *   Move Space    → LCOS Arc「移动到其它现场」；
+ *   打开大视图    → LCOS Arc「打开大视图」→ Professional Window `native-preview`，
+ *                    复用 Huabu 成熟原生预览内容，不复活旧 PreviewWorkspace 产品壳；
+ *   Move Space    → LCOS 明确退役 Huabu 的物理跨 Canvas 搬家；跨空间由
+ *                    Semantic Drop / Rail / Portal 与 canonical owner 承担；
  *   note 高度模式 → LCOS Arc「自动高度/固定高度」；
  *   删除          → LCOS Arc「删除节点」（Core 投影给真实 reason）。
  *

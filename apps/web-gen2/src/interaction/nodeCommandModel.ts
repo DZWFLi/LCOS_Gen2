@@ -258,11 +258,8 @@ export function buildLcosNodeCommands(input: LcosNodeCommandInput): readonly Lco
 
   // 空间
   if (surface.openLarge) commands.push({ id: 'open-large', label: '打开大视图', group: '空间' });
-  if (surface.move) commands.push({ id: 'move-space', label: '移动到其它现场', group: '空间',
-    // Huabu moves physical nodes only; it does not relocate the Core binding.
-    // Keep native moves intact, but never claim a projected object's move works.
-    ...(bound ? { disabledReason: '当前对象还不能跨现场移动' } : {}),
-  });
+  // Cross-space manipulation is a spatial gesture in LCOS. Huabu's physical
+  // MoveSelectionModal remains available only in Huabu chrome/dev mode.
   // fit = 相机呈现命令，owner = LCOS shell `requestCamera('fit')`，任何表内类型都给。
   commands.push({ id: 'fit', label: '适合画面', group: '空间' });
 
@@ -285,7 +282,6 @@ const PRIMARY_ELIGIBLE: ReadonlySet<LcosNodeCommandId> = new Set([
   'convert-note',
   'auto-height',
   'open-large',
-  'move-space',
   'fit',
   'delete',
 ]);

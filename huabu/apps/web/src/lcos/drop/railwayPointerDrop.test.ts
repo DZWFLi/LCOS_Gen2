@@ -69,7 +69,7 @@ type AdvanceResult = { readonly state: SemanticDropState; readonly resolution: D
 function harness(advanceResults: readonly AdvanceResult[] = []) {
   let state: SemanticDropState = { status: 'idle' };
   let resolution: DropResolution | null = null;
-  let projectId = 'project-1';
+  let projectId: string | null = 'project-1';
   let index = 0;
   const begin = vi.fn((value: Extract<DropPayload, { kind: 'assembly' }>) => { state = { status: 'tracking', payload: value }; return true; });
   const advance = vi.fn(() => {
@@ -89,7 +89,7 @@ function harness(advanceResults: readonly AdvanceResult[] = []) {
   });
   const cancel = vi.fn(() => { if (state.status === 'tracking' || state.status === 'dwell' || state.status === 'preview') state = { status: 'idle' }; });
   const port: RailwayPointerDropPort = { read: () => ({ state, resolution }), begin, advance, commit, cancel, currentProjectId: () => projectId };
-  return { port, begin, advance, commit, cancel, read: () => ({ state, resolution }), setProject: (next: string) => { projectId = next; } };
+  return { port, begin, advance, commit, cancel, read: () => ({ state, resolution }), setProject: (next: string | null) => { projectId = next; } };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -98,14 +98,17 @@ describe('Railway pointer transport reuses Semantic Drop ownership', () => {
   it.each([
     [{ button: 2, buttons: 2 }, 'secondary-pointer'],
     [{ button: 0, buttons: 1, altKey: true }, 'modifier-primary'],
-  ] as const)('starts a frozen aggregate source for trigger %s', (input, _trigger) => {
+  ] as const)('arms a frozen aggregate source and acquires only after movement for trigger %s', (input, _trigger) => {
     const fixture = harness();
     const event = pointerEvent(input);
     const events = new EventTarget();
     const controller = createRailwayPointerDropController(fixture.port, events);
     expect(controller.onPointerDown(event.event, destination, 'project-1')).toBe(true);
+    expect(fixture.begin).not.toHaveBeenCalled();
+    expect(fixture.read().state.status).toBe('idle');
+    events.dispatchEvent(pointerMove({ buttons: input.buttons }));
     const state = fixture.read().state;
-    expect(state).toMatchObject({ status: 'tracking', payload: { sourceRef: { kind: 'scene', id: 'workspace-target' } } });
+    expect(state).toMatchObject({ status: 'preview', payload: { sourceRef: { kind: 'scene', id: 'workspace-target' } } });
     if (!('payload' in state)) throw new Error('Expected the existing Drop store payload');
     expect(Object.isFrozen(state.payload)).toBe(true);
     expect(fixture.begin).toHaveBeenCalledOnce();
@@ -125,6 +128,8 @@ describe('Railway pointer transport reuses Semantic Drop ownership', () => {
     handle.dataset.semanticDropHandle = '';
     const explicit = pointerEvent({ button: 0, buttons: 1, target: handle });
     expect(controller.onPointerDown(explicit.event, destination, 'project-1')).toBe(true);
+    expect(fixture.begin).not.toHaveBeenCalled();
+    events.dispatchEvent(pointerMove({ buttons: 1 }));
     expect(fixture.begin).toHaveBeenCalledOnce();
     controller.dispose();
   });
@@ -138,8 +143,10 @@ describe('Railway pointer transport reuses Semantic Drop ownership', () => {
     const source: RailwayAggregateSourceSnapshot = { projectId: 'project-1', sourceRef,
       entityRef: { type: entityType, id: sourceRef.id }, label: sourceRef.id, available: true };
     expect(controller.onPointerDown(pointerEvent({ button: 0, buttons: 1, altKey: true }).event, source, 'project-1')).toBe(true);
+    expect(fixture.begin).not.toHaveBeenCalled();
+    events.dispatchEvent(pointerMove({ buttons: 1 }));
     const current = fixture.read().state;
-    expect(current).toMatchObject({ status: 'tracking', payload: { sourceRef } });
+    expect(current).toMatchObject({ status: 'preview', payload: { sourceRef } });
     if (!('payload' in current)) throw new Error('Expected aggregate payload');
     expect(Object.isFrozen(current.payload)).toBe(true);
     controller.dispose();
@@ -202,6 +209,7 @@ describe('Railway pointer transport reuses Semantic Drop ownership', () => {
     const events = new EventTarget();
     const controller = createRailwayPointerDropController(fixture.port, events);
     controller.onPointerDown(pointerEvent({ button: 2, buttons: 2 }).event, destination, 'project-1');
+    events.dispatchEvent(pointerMove({ buttons: 2 }));
     if (reason === 'pointercancel') events.dispatchEvent(pointerCancel());
     else if (reason === 'Escape') {
       const escape = new Event('keydown', { cancelable: true }); Object.defineProperty(escape, 'key', { value: 'Escape' });
@@ -213,4 +221,83 @@ describe('Railway pointer transport reuses Semantic Drop ownership', () => {
     expect(fixture.cancel).toHaveBeenCalledOnce();
     controller.dispose();
   });
+  it('keeps a stationary right click and a movement of at most four pixels outside the Drop owner', () => {
+    const fixture = harness();
+    const events = new EventTarget();
+    const controller = createRailwayPointerDropController(fixture.port, events);
+    const down = pointerEvent({ button: 2, buttons: 2 });
+    controller.onPointerDown(down.event, destination, 'project-1');
+    events.dispatchEvent(pointerMove({ buttons: 2, x: 14, y: 10 }));
+    const menu = new Event('contextmenu', { cancelable: true });
+    events.dispatchEvent(menu);
+    events.dispatchEvent(pointerUp({ button: 2, x: 14, y: 10 }));
+    expect(menu.defaultPrevented).toBe(false);
+    expect(down.currentTarget.setPointerCapture).not.toHaveBeenCalled();
+    expect(fixture.begin).not.toHaveBeenCalled();
+    expect(fixture.cancel).not.toHaveBeenCalled();
+    expect(fixture.commit).not.toHaveBeenCalled();
+    expect(fixture.read().state.status).toBe('idle');
+    controller.dispose();
+  });
+
+  it('does not cancel an unrelated gesture that acquired the owner while this source was only armed', () => {
+    const fixture = harness();
+    const events = new EventTarget();
+    const controller = createRailwayPointerDropController(fixture.port, events);
+    controller.onPointerDown(pointerEvent({ button: 2, buttons: 2 }).event, destination, 'project-1');
+    const other = payload('collection') as Extract<DropPayload, {kind:'assembly'}>;
+    fixture.port.begin(other);
+    events.dispatchEvent(pointerMove({ buttons: 2 }));
+    expect(fixture.begin).toHaveBeenCalledOnce();
+    expect(fixture.cancel).not.toHaveBeenCalled();
+    expect(fixture.read().state).toMatchObject({status:'tracking',payload:other});
+    controller.dispose();
+  });
+
+  it('suppresses only the compatibility click after a drag and leaves the next deliberate click alone', () => {
+    const fixture = harness();
+    const events = new EventTarget();
+    const controller = createRailwayPointerDropController(fixture.port, events);
+    controller.onPointerDown(pointerEvent({ button: 0, buttons: 1, altKey:true }).event, destination, 'project-1');
+    events.dispatchEvent(pointerMove({ buttons:1 }));
+    events.dispatchEvent(pointerUp({ button:0 }));
+    const click = new MouseEvent('click', {detail:1,cancelable:true});
+    Object.defineProperty(click,'pointerId',{value:7});
+    events.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    const next = new MouseEvent('click', {detail:1,cancelable:true});
+    Object.defineProperty(next,'pointerId',{value:7});
+    events.dispatchEvent(new Event('pointerdown'));
+    events.dispatchEvent(next);
+    expect(next.defaultPrevented).toBe(false);
+    controller.dispose();
+  });
+
+});
+
+
+it('cancels when the current project becomes unavailable before a release', () => {
+  const fixture = harness();
+  const events = new EventTarget();
+  const controller = createRailwayPointerDropController(fixture.port, events);
+  controller.onPointerDown(pointerEvent({button:2,buttons:2}).event, destination, 'project-1');
+  events.dispatchEvent(pointerMove({buttons:2}));
+  fixture.setProject(null);
+  events.dispatchEvent(pointerUp({button:2}));
+  expect(fixture.commit).not.toHaveBeenCalled();
+  expect(fixture.cancel).toHaveBeenCalledOnce();
+  controller.dispose();
+});
+
+it('retains keyboard activation while suppressing the pointer compatibility click', () => {
+  const fixture = harness();
+  const events = new EventTarget();
+  const controller = createRailwayPointerDropController(fixture.port, events);
+  controller.onPointerDown(pointerEvent({button:0,buttons:1,altKey:true}).event, destination, 'project-1');
+  events.dispatchEvent(pointerMove({buttons:1}));
+  events.dispatchEvent(pointerUp({button:0}));
+  const keyboardClick = new MouseEvent('click', {detail:0,cancelable:true});
+  events.dispatchEvent(keyboardClick);
+  expect(keyboardClick.defaultPrevented).toBe(false);
+  controller.dispose();
 });

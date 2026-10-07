@@ -3,7 +3,9 @@
 
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+
+import { toast } from '@/components/Common/Toast';
 
 import { APP_NAME } from '../../config/app';
 import { openUserHandbook } from '../../config/handbook';
@@ -49,6 +51,7 @@ export function NativeMenuBridge() {
 
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const canChangeWorkspace = useWorkspaceStore(
     (s) => s.capabilities?.canChangeWorkspace ?? true,
   );
@@ -113,11 +116,22 @@ export function NativeMenuBridge() {
   useEffect(() => {
     if (!enabled) return;
     return menu.onCommand((command) => {
+      const lcosRoute = location.pathname === '/projects'
+        || location.pathname === '/spaces'
+        || location.pathname.startsWith('/projects/');
       switch (command) {
         case 'new-canvas':
+          if (lcosRoute) {
+            toast('LCOS 项目不创建游离画布；请在当前项目建立或进入工作现场。');
+            break;
+          }
           void create();
           break;
         case 'import-canvas':
+          if (lcosRoute) {
+            toast('LCOS 项目中的材料导入请走收件与来源；未创建独立 Huabu 画布。');
+            break;
+          }
           openImportDialog();
           break;
         case 'switch-workspace':
@@ -159,6 +173,7 @@ export function NativeMenuBridge() {
     openShortcuts,
     runDiagnostic,
     t,
+    location.pathname,
   ]);
 
   if (!enabled) return null;

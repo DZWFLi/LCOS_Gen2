@@ -43,8 +43,8 @@ const render = () => act(() => root.render(
   <NodeBodyResolverContext.Provider value={bodySeam}><LcosMultiSelectToolbar /></NodeBodyResolverContext.Provider>,
 ));
 const clickAll = () => act(() => host.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.click()));
-it('keeps native selection move and touch delete operational', () => {
-  render(); clickAll(); expect(mocks.move).toHaveBeenCalledWith(true); expect(mocks.deleteNodes).toHaveBeenCalledWith(['a', 'b']);
+it('keeps LCOS cross-space move out of the Huabu modal while touch delete stays operational', () => {
+  render(); clickAll(); expect(mocks.move).not.toHaveBeenCalled(); expect(mocks.deleteNodes).toHaveBeenCalledWith(['a', 'b']);
 });
 it('prevents mixed selection from moving or partially deleting bound objects', () => {
   useLcosReferenceStore.setState({ nodeEntityRefs: new Map([['a', { entityType: 'artifact', entityId: 'artifact-a' }]]) });
@@ -82,7 +82,7 @@ it('keeps LCOS formatting and layout in More while hiding numeric geometry contr
   expect(host.querySelector('[data-testid="font-size-picker"]')).toBeNull();
   expect(host.querySelector('[data-testid="accent-picker"]')).not.toBeNull();
   expect(host.querySelector('[data-testid="align-picker"]')?.getAttribute('data-can-distribute')).toBe('true');
-  expect(host.querySelector<HTMLButtonElement>('button[title="moveSelection.action"]')?.disabled).toBe(false);
+  expect(host.querySelector<HTMLButtonElement>('button[title="moveSelection.action"]')).toBeNull();
   expect(host.querySelector<HTMLButtonElement>('button[title="toolbar.deleteSelected"]')?.disabled).toBe(false);
   expect(host.querySelector('[data-lcos-selection-more]')).not.toBeNull();
 });

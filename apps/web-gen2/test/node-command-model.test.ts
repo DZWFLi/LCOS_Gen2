@@ -118,9 +118,10 @@ test('R2 命令模型：image 只有旧工具条真有的控件（无文本/笔�
   assert.equal(ids.includes('convert-text'), false);
   assert.equal(ids.includes('auto-height'), false);
   assert.equal(ids.includes('convert-note'), false);
-  for (const id of ['size', 'accent', 'open-large', 'move-space', 'fit']) {
+  for (const id of ['size', 'accent', 'open-large', 'fit']) {
     assert.ok(ids.includes(id), `image 缺少 ${id}`);
   }
+  assert.equal(ids.includes('move-space'), false);
   assert.equal(byId(commands, 'open'), undefined, 'image 无 Core 就无法出现 open');
   assert.equal(byId(commands, 'delete')?.disabledReason, undefined);
 });
@@ -216,8 +217,8 @@ test('Glyth management preserves conversation actions without native note conver
     assert.equal(byId(commands, id), undefined, `Glyth must not expose native note handler ${id}`);
   }
   for (const id of ['open', 'color-pin', 'size', 'fit']) assert.ok(byId(commands, id));
-  assert.equal(byId(commands, 'move-space')?.disabledReason, '当前对象还不能跨现场移动');
+  assert.equal(byId(commands, 'move-space'), undefined);
   const native = buildLcosNodeCommands(base);
   for (const id of ['convert-text', 'auto-height', 'accent', 'open-large']) assert.ok(byId(native, id));
-  assert.equal(byId(native, 'move-space')?.disabledReason, undefined);
+  assert.equal(byId(native, 'move-space'), undefined);
 });

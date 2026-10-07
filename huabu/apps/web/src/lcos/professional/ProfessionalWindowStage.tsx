@@ -17,7 +17,9 @@ import { useCanvasAttentionStore } from '@/store/canvasAttentionStore';
 import { ArchiveBody } from './ArchiveBody';
 import { ArtifactReaderBody } from './ArtifactReaderBody';
 import { AssemblyBody } from './AssemblyBody';
+import { CollectionWorkViewBody } from './CollectionWorkViewBody';
 import { ConversationWorkViewBody } from './ConversationWorkViewBody';
+import { NativeNodePreviewBody } from './NativeNodePreviewBody';
 import { PortalPreviewBody, type PortalTargetResolution } from './PortalPreviewBody';
 import { clampProfessionalSplitRatio, professionalSplitLimits, professionalSplitRatioAtPoint, sameProfessionalRegionLayout } from './professionalGestureGeometry';
 import { beginProfessionalPointerGesture } from './professionalPointerGesture';
@@ -92,7 +94,10 @@ interface WindowGestureStyle {
 }
 
 function preferredWidthFor(window: LcosWindow): number {
-  return window.bodyKey === 'reader' ? 1120 : window.bodyKey === 'assembly' ? (window.composerOriginKey ? 1000 : 420) : window.bodyKey === 'portal-preview' ? 472 : 520;
+  return window.bodyKey === 'reader' ? 1120
+    : window.bodyKey === 'native-preview' ? 980
+    : window.bodyKey === 'collection' ? 720
+    : window.bodyKey === 'assembly' ? (window.composerOriginKey ? 1000 : 420) : window.bodyKey === 'portal-preview' ? 472 : 520;
 }
 
 const currentViewport = currentProfessionalViewport;
@@ -874,6 +879,10 @@ function ProfessionalBody({
       return <ArchiveBody projectId={projectId} />;
     case 'conversation':
       return <ConversationWorkViewBody projectId={projectId} connectedConversationId={target} />;
+    case 'collection':
+      return <CollectionWorkViewBody projectId={projectId} collectionId={target} />;
+    case 'native-preview':
+      return <NativeNodePreviewBody nodeId={target} onClose={onClose} />;
     case 'portal-preview':
       return (
         <PortalPreviewBody

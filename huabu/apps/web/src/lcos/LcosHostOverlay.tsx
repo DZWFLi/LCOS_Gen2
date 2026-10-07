@@ -372,12 +372,14 @@ export const LcosHostOverlay: React.FC = () => {
     dropStatus === 'tracking' ||
     dropStatus === 'dwell' ||
     dropStatus === 'preview';
+  const dropCommitting = dropStatus === 'committing';
   // The same feedback layer first outlines the resolver-approved live targets
-  // while a payload is in transit, then switches to the exact hovered target.
-  const dropPreview = dropActive;
+  // while a payload is in transit, then keeps the accepted target visible until
+  // the canonical receipt settles. This is the Gen1 carry -> accept continuity.
+  const dropPreview = dropActive || dropCommitting;
 
   const visible = visibleOverlays({
-    dragging: isNodeDragging || dropActive,
+    dragging: isNodeDragging || dropActive || dropCommitting,
     resizing: false,
     selected: hasSelection,
     hovered: false,

@@ -34,6 +34,7 @@ import useCanvasStore from '@/store/canvasStore';
 
 import { cameraFitInsets } from './hudWindowGeometry';
 import { LcosPersistentLocatorOverlay } from './LcosPersistentLocatorOverlay';
+import { LcosSpatialCursorMark } from './LcosSpatialCursorMark';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { lcosTokens } from '../ui/lcosTokens';
@@ -511,16 +512,19 @@ function LcosLocatorCue({
         data-lcos-arrival-node-id={arrivalTarget.nodeId}
         role="status"
         aria-label="已抵达目标"
-        className="lcos-static-pulse pointer-events-none fixed z-[65] rounded-xl"
+        className="pointer-events-none fixed z-[65]"
         style={{
           left: targetRect.x,
           top: targetRect.y,
           width: targetRect.width,
           height: targetRect.height,
-          border: `2px solid ${lcosTokens.color.accent}`,
-          boxShadow: `0 0 0 6px color-mix(in srgb, ${lcosTokens.color.accent} 18%, transparent)`,
         }}
-      />
+      >
+        <span data-lcos-arrival-frame />
+        <span data-lcos-arrival-cursor>
+          <LcosSpatialCursorMark surface={activeSurface} phase="arrival" accent={lcosTokens.color.accent} />
+        </span>
+      </div>
     );
   }
 
@@ -539,29 +543,19 @@ function LcosLocatorCue({
       data-lcos-locator={geometry.state}
       role="status"
       aria-label={geometry.state === 'edge' ? '目标在画外，正在抵达' : '目标接近画布边缘'}
-      className="pointer-events-none fixed z-[65] flex items-center gap-2 rounded-full px-3 py-2 text-xs font-medium"
+      className="pointer-events-none fixed z-[65] grid h-11 w-11 place-items-center"
       style={{
         left: anchor.x,
         top: anchor.y,
         transform: 'translate(-50%, -50%)',
-          background: 'rgba(255,255,255,.88)',
-          color: lcosTokens.color.accent,
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255,255,255,.8)',
-          boxShadow: lcosTokens.glass.shadow,
       }}
     >
-      <span
-        aria-hidden
-        style={{
-          display: 'inline-block',
-          width: 0,
-          height: 0,
-          borderTop: '4px solid transparent',
-          borderBottom: '4px solid transparent',
-          borderLeft: '6px solid currentColor',
-          transform: `rotate(${angle}deg)`,
-        }}
+      <LcosSpatialCursorMark
+        surface={activeSurface}
+        phase={geometry.state}
+        angleDeg={angle}
+        progress={geometry.progress}
+        accent={lcosTokens.color.accent}
       />
       <span className="sr-only">{geometry.state === 'edge' ? '正在定位' : '目标在边缘'}</span>
     </div>

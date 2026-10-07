@@ -1838,10 +1838,14 @@ export const Canvas: React.FC<CanvasProps> = ({
         )}
         {!isBoxSelecting && <MultiSelectResizer />}
         {!isBoxSelecting && <SelectionOutlines />}
-        {!isBoxSelecting && !hasStrokeSelection && (hostExtension?.multiSelectionToolbar ?? <MultiSelectToolbar />)}
+        {!isBoxSelecting && !hasStrokeSelection && (
+          chromeMode === 'lcos'
+            ? (hostExtension?.multiSelectionToolbar ?? null)
+            : (hostExtension?.multiSelectionToolbar ?? <MultiSelectToolbar />)
+        )}
         {!isBoxSelecting && <StrokeSelectionRegion />}
         {!isBoxSelecting && <StrokeSelectionToolbar />}
-        <MoveSelectionModal />
+        {chromeMode !== 'lcos' && <MoveSelectionModal />}
         {!isBoxSelecting && chromeMode !== 'lcos' && <EdgeStyleToolbar />}
         <ConnectedNodePicker
           anchor={connectPicker?.anchor ?? null}

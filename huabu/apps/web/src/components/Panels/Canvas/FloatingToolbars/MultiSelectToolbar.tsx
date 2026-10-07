@@ -186,7 +186,12 @@ export const MultiSelectToolbar = ({ deleteDisabledReason, moveDisabledReason, s
   const hasAccentColorControl = showAccentColor && !hasPortalSelection;
   const hasMoveControl = !hasNonMovableSelection;
   const hasDeleteControl = isNotMouse || presentation === 'lcos';
-  const showMoveControl = hasMoveControl && (!hideDisabledActions || moveDisabledReason === undefined);
+  // LCOS cross-space manipulation is owned by Semantic Drop / Rail / Portal.
+  // Huabu's MoveSelectionModal physically moves native canvas nodes to another
+  // canvas and therefore must stay a Huabu-only product action.
+  const showMoveControl = presentation !== 'lcos'
+    && hasMoveControl
+    && (!hideDisabledActions || moveDisabledReason === undefined);
   const showDeleteControl = hasDeleteControl && (!hideDisabledActions || deleteDisabledReason === undefined);
   const hasVisibleDetailControls = hasGeometrySizeControl || hasFontSizeControl || hasAccentColorControl
     || showMoveControl || showDeleteControl;

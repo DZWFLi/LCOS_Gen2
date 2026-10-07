@@ -119,4 +119,42 @@ describe('Railway aggregate source reuses the existing Assembly drop owner', () 
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(useLcosDropStore.getState().state.status).toBe('idle');
   });
+  it.each(['collection', 'context', 'workflow'] as const)('clears a cancelled native %s carrier even after it becomes unavailable', (kind) => {
+    const id = `source-${kind}`;
+    const destination: RailwayDestinationV1 = {
+      key: id, ref: {kind:'spatial',projectId:'project-1',entityType:kind==='collection'?'collection':'scope',entityId:id},
+      sourceRef:{kind,id},label:id,role:'spatial',available:true,accepts:[],
+    };
+    expect(beginRailwayAssemblyDrop(dragStartEvent(),destination,'project-1')).toBe(true);
+    expect(cancelRailwayAssemblyDrop({...destination,available:false},'other-project')).toBe(false);
+    expect(useLcosDropStore.getState().state.status).toBe('tracking');
+    expect(cancelRailwayAssemblyDrop({...destination,available:false},'project-1')).toBe(true);
+    expect(useLcosDropStore.getState().state.status).toBe('idle');
+  });
+
+  it('does not overwrite a pending pointer or native source with another native drag', () => {
+    expect(beginRailwayAssemblyDrop(dragStartEvent(),worksite,'project-1')).toBe(true);
+    const first = useLcosDropStore.getState().state;
+    const second = dragStartEvent();
+    expect(beginRailwayAssemblyDrop(second,worksite,'project-1')).toBe(false);
+    expect(second.dataTransfer.setData).not.toHaveBeenCalled();
+    expect(useLcosDropStore.getState().state).toBe(first);
+  });
+
+  it('does not cancel a committing spatial carrier or another entity family with the same id', () => {
+    const destination: RailwayDestinationV1 = {
+      key:'collection:ws-1',ref:{kind:'spatial',projectId:'project-1',entityType:'collection',entityId:'ws-1'},
+      sourceRef:{kind:'collection',id:'ws-1'},label:'collection',role:'spatial',available:true,accepts:[],
+    };
+    expect(beginRailwayAssemblyDrop(dragStartEvent(),destination,'project-1')).toBe(true);
+    expect(cancelRailwayAssemblyDrop(worksite,'project-1')).toBe(false);
+    const state=useLcosDropStore.getState().state;
+    if(!('payload' in state))throw new Error('Expected captured payload');
+    useLcosDropStore.setState({state:{status:'committing',payload:state.payload,
+      destination:{targetId:'canvas:main',previewPoint:{x:1,y:1}},carryAnchor:'left',
+      intent:{kind:'assembly-apply',targetId:'canvas:main'},transactionId:'tx-spatial'}});
+    expect(cancelRailwayAssemblyDrop(destination,'project-1')).toBe(false);
+    expect(useLcosDropStore.getState().state.status).toBe('committing');
+  });
+
 });

@@ -125,7 +125,12 @@ export interface LcosComposerTarget {
   readonly receiverBlockedReason?: string;
 }
 
-/** Professional body 键（body registry）。 */
+/**
+ * Professional body registry. `capture-inbox` / `connector-source` are
+ * compatibility-only keys retained for old saved window state. Their former
+ * standalone product surfaces are not implemented in the current shell;
+ * Capture and external Sources are exposed through Assembly tabs instead.
+ */
 export type LcosProfessionalBodyKey =
   | 'run-review'
   | 'assembly'
@@ -135,6 +140,8 @@ export type LcosProfessionalBodyKey =
   | 'runtime-doctor'
   | 'capture-inbox'
   | 'connector-source'
+  | 'collection'
+  | 'native-preview'
   | 'archive';
 
 export interface LcosWindow {

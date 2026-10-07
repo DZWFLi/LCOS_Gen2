@@ -120,3 +120,38 @@ it('does not expose a disabled destination as a drag source', () => {
   render(undefined, true, vi.fn(), [{ key: 'worksite:p:busy', label: '处理中', description: '', draggable: true }]);
   expect(host.querySelector<HTMLButtonElement>('[data-lcos-railway-destination-key="worksite:p:busy"]')?.getAttribute('draggable')).toBe('false');
 });
+
+
+it('offers one sibling handle that forwards the shared pointer gesture without selecting', () => {
+  const onSelect = vi.fn();
+  const onPointerDown = vi.fn();
+  render(undefined, false, onSelect, [{...items[0]!, onPointerDown}]);
+  const target = host.querySelector<HTMLButtonElement>('[data-lcos-railway-destination-key]')!;
+  const handle = host.querySelector<HTMLButtonElement>('[data-semantic-drop-handle]')!;
+  expect(handle).not.toBeNull();
+  expect(target.contains(handle)).toBe(false);
+  act(() => handle.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true,button:0,buttons:1})));
+  expect(onPointerDown).toHaveBeenCalledOnce();
+  act(() => handle.click());
+  expect(onSelect).not.toHaveBeenCalled();
+});
+
+it('keeps busy sources without handles and does not forward their pointer transport', () => {
+  const onPointerDown = vi.fn();
+  render(undefined, true, vi.fn(), [{...items[0]!, onPointerDown}]);
+  expect(host.querySelector('[data-semantic-drop-handle]')).toBeNull();
+  const row = host.querySelector('.lcos-railway-destination-row');
+  act(() => row?.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true,button:2,buttons:2})));
+  expect(onPointerDown).not.toHaveBeenCalled();
+});
+
+it('retains the secondary management action while the primary action stays direct', () => {
+  const onManage = vi.fn();
+  const onSelect = render(undefined, false, vi.fn(), [{...items[0]!, onManage}]);
+  const target = host.querySelector<HTMLButtonElement>('[data-lcos-railway-destination-key]')!;
+  const contextMenu = new MouseEvent('contextmenu', {bubbles:true,cancelable:true});
+  act(() => target.dispatchEvent(contextMenu));
+  expect(contextMenu.defaultPrevented).toBe(true);
+  expect(onManage).toHaveBeenCalledOnce();
+  expect(onSelect).not.toHaveBeenCalled();
+});

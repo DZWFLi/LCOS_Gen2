@@ -76,7 +76,7 @@ describe('LcosDropPreview (A06)', () => {
     expect(container.querySelector('[data-lcos-drop-preview]')).toBeNull();
   });
 
-  it('outlines resolver-approved receiver bounds while tracking and names the receiver', () => {
+  it('shows only nearby resolver-approved receivers while carrying', () => {
     const target: DropTargetRegistration = {
       targetId: 'capture:main', kind: 'external-import', label: '资料收集区', priority: 30, enabled: true,
       rect: { left: 24, top: 36, width: 180, height: 96 },
@@ -88,16 +88,16 @@ describe('LcosDropPreview (A06)', () => {
     };
     useLcosDropStore.getState().registerTarget(target);
     useLcosDropStore.getState().registerTarget(rejected);
-    useLcosDropStore.setState({ state: { status: 'tracking', payload: { kind: 'text', value: '仅为测试' } } });
+    useLcosDropStore.setState({ state: { status: 'tracking', payload: { kind: 'text', value: '仅为测试' } }, pointerScreenPoint: { x: 210, y: 70 } });
 
     const container = render(<LcosDropPreview />);
     const receivers = container.querySelectorAll('[data-lcos-drop-receptor]');
     expect(receivers).toHaveLength(1);
     expect(receivers[0]?.getAttribute('data-target-label')).toBe('资料收集区');
-    expect(receivers[0]?.getAttribute('data-state')).toBe('candidate');
+    expect(receivers[0]?.getAttribute('data-state')).toBe('approaching');
     expect((receivers[0] as HTMLElement).style.left).toBe('24px');
     expect((receivers[0] as HTMLElement).style.width).toBe('180px');
-    expect(container.querySelector('[data-presentation="candidates"]')?.textContent).toContain('拖到高亮位置');
+    expect(container.querySelector('[data-presentation="carrying"]')?.textContent).toContain('拖到接收空间');
   });
 
   it('keeps the exact rejected receiver visible with its reason and real bounds', () => {
@@ -131,10 +131,52 @@ describe('LcosDropPreview (A06)', () => {
       status: 'tracking',
       payload: { kind: 'assembly', itemId: 'item-1', sourceRef: { kind: 'note', id: 'note-1' },
         reference: { entityType: 'note', entityId: 'note-1', displayLabel: '施工说明' } },
-    } });
+    }, pointerScreenPoint: { x: 120, y: 40 } });
 
     const container = render(<LcosDropPreview />);
-    expect(container.querySelector('[data-presentation="candidates"]')?.textContent).toContain('施工说明');
+    expect(container.querySelector('[data-presentation="carrying"]')?.textContent).toContain('施工说明');
+  });
+
+
+  it('keeps a carry proxy at the screen pointer even when there are no receivers', () => {
+    useLcosDropStore.setState({ state: { status: 'tracking', payload: { kind: 'text', value: '测试' } },
+      pointerScreenPoint: { x: 320, y: 240 } });
+    const container = render(<LcosDropPreview />);
+    expect(container.querySelector('[data-lcos-carry-proxy]')).not.toBeNull();
+    expect(container.querySelector('[data-presentation="carrying"]')).not.toBeNull();
+    expect(container.querySelector('[data-lcos-drop-receptor]')).toBeNull();
+    expect(useLcosDropStore.getState().resolution).toBeNull();
+  });
+
+  it('does not invent a position before the transport supplies its first sample', () => {
+    useLcosDropStore.setState({ state: { status: 'tracking', payload: { kind: 'text', value: '测试' } },
+      pointerScreenPoint: null });
+    expect(render(<LcosDropPreview />).querySelector('[data-lcos-drop-preview]')).toBeNull();
+  });
+
+  it('carries all selected objects with their count rather than rendering a single unnamed material', () => {
+    useLcosDropStore.setState({ state: { status: 'tracking', payload: { kind: 'objects', objects: [
+      { entityType: 'note', entityId: 'note-a', displayLabel: '创意草稿' },
+      { entityType: 'note', entityId: 'note-b', displayLabel: '参考资料' },
+    ] } }, pointerScreenPoint: { x: 320, y: 240 } });
+    const container = render(<LcosDropPreview />);
+    expect(container.querySelector('[data-lcos-drop-count]')?.textContent).toBe('2');
+    expect(container.querySelector('[data-lcos-drop-preview]')?.textContent).toContain('创意草稿 等 2 项');
+  });
+
+  it('does not light a distant or occluded receiver just because it can accept the payload', () => {
+    const target: DropTargetRegistration = { targetId: 'capture:far', kind: 'external-import',
+      label: '资料收集区', priority: 30, enabled: true, rect: { left: 600, top: 400, width: 120, height: 90 },
+      semantic: { kind: 'external-import', owner: 'capture' } };
+    const store = useLcosDropStore.getState();
+    store.registerTarget(target);
+    store.registerTarget({ ...target, targetId: 'capture:covered', rect: { left: 350, top: 240, width: 100, height: 80 },
+      acceptsPoint: () => false });
+    useLcosDropStore.setState({ state: { status: 'tracking', payload: { kind: 'text', value: '测试' } },
+      pointerScreenPoint: { x: 320, y: 260 } });
+    const container = render(<LcosDropPreview />);
+    expect(container.querySelector('[data-lcos-carry-proxy]')).not.toBeNull();
+    expect(container.querySelector('[data-lcos-drop-receptor]')).toBeNull();
   });
 
   it.each([
@@ -143,7 +185,7 @@ describe('LcosDropPreview (A06)', () => {
     [{ targetId: 'composer:one', kind: 'composer-reference', label: '本次草稿', priority: 20, enabled: true,
       semantic: { kind: 'composer-reference' } }, '仅加入本次草稿引用'],
     [{ targetId: 'railway:context-a', kind: 'railway-receive', label: '上下文现场', priority: 20, enabled: true,
-      semantic: { kind: 'railway-receive', targetRef: { kind: 'workspace', id: 'workspace-a' }, destinationRef: { kind: 'context', viewId: 'context-a' } } }, '投递到 Railway · 上下文现场'],
+      semantic: { kind: 'railway-receive', targetRef: { kind: 'workspace', id: 'workspace-a' }, destinationRef: { kind: 'context', viewId: 'context-a' } } }, '投递到「上下文现场」'],
     [{ targetId: 'portal:node-a', kind: 'portal-receive', label: '入口 · 资料现场', priority: 20, enabled: true,
       semantic: { kind: 'portal-receive', targetRef: { kind: 'workspace', id: 'workspace-a' },
         destinationRef: { kind: 'worksite', projectId: 'project-a', worksiteId: 'workspace-a' }, canvasId: 'canvas-a' } }, '投递到「入口 · 资料现场」'],
@@ -155,4 +197,26 @@ describe('LcosDropPreview (A06)', () => {
     const container = render(<LcosDropPreview />);
     expect(container.querySelector('[data-lcos-drop-preview]')?.textContent).toContain(expected);
   });
+
+  it('keeps the exact receiver and carry feedback visible through canonical commit', () => {
+    const target: DropTargetRegistration = {
+      targetId: 'collection:target', kind: 'collection-membership', label: '参考集合', priority: 30, enabled: true,
+      rect: { left: 180, top: 120, width: 110, height: 80 },
+      semantic: { kind: 'collection-membership', collectionId: 'collection-b' },
+    };
+    const store = useLcosDropStore.getState();
+    store.registerTarget(target);
+    const payload = { kind: 'object' as const, entityType: 'note', entityId: 'note-a', displayLabel: '创意草稿' };
+    store.begin(payload);
+    store.setBounds({ left: 0, top: 0, right: 900, bottom: 700 });
+    const resolution = resolveDropIntent(payload, target);
+    store.advance({ x: 220, y: 150 }, true, 100, { targetId: target.targetId, previewPoint: { x: 220, y: 150 } },
+      resolution, undefined, { x: 220, y: 150 });
+    store.commitAt('commit-visual');
+    const container = render(<LcosDropPreview />);
+    expect(container.querySelector('[data-presentation="committing"]')).not.toBeNull();
+    expect(container.querySelector('[data-lcos-drop-receptor][data-state="committing"]')).not.toBeNull();
+    expect(container.querySelector('[data-lcos-drop-preview]')?.textContent).toContain('正在写入「参考集合」');
+  });
+
 });

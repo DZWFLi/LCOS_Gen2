@@ -52,3 +52,83 @@
 [data-lcos-railway-footer] {position:absolute;top:100%;margin-top:8px;left:0;max-width:min(220px,calc(100vw - 48px));width:max-content;font:400 11px/1.5 var(--lcos-hud-font,sans-serif);overflow-wrap:anywhere;}
 @media (max-width:480px) {.lcos-railway-popover {padding:12px;}.lcos-railway-row-actions {flex-direction:column;}.lcos-railway-popover .lcos-railway-row-target {padding:4px;}}
 @media (prefers-reduced-motion:reduce) {[data-lcos-family='railway'],[data-lcos-railway-item],.lcos-railway-destination-sidebar-item {transition:none;}}
+
+/* Reuse the existing semantic handle. Reveal on approach/focus, not as permanent chrome. */
+[data-lcos-railway-entry], .lcos-railway-destination-row { position:relative; }
+.lcos-railway-drag-handle {
+  position:absolute;right:-14px;top:50%;transform:translateY(-50%);display:grid;place-items:center;
+  width:20px;height:24px;padding:0;border:0;border-radius:6px;background:var(--lcos-hud-surface);
+  color:var(--gen2-muted);cursor:grab;touch-action:none;opacity:0;pointer-events:none;
+  transition:opacity 140ms ease,color 140ms ease;
+}
+[data-lcos-railway-entry]:hover>.lcos-railway-drag-handle,
+[data-lcos-railway-entry]:focus-within>.lcos-railway-drag-handle,
+.lcos-railway-destination-row:hover>.lcos-railway-drag-handle,
+.lcos-railway-destination-row:focus-within>.lcos-railway-drag-handle {
+  opacity:1;pointer-events:auto;
+}
+.lcos-railway-drag-handle:active {cursor:grabbing;color:var(--gen2-text);}
+.lcos-railway-drag-handle:focus-visible {outline:2px solid var(--lcos-pin-violet,#7165dc);outline-offset:2px;}
+.lcos-railway-destination-row>.lcos-railway-drag-handle {right:4px;}
+.lcos-railway-destination-row:has(>.lcos-railway-drag-handle)>.lcos-railway-destination-sidebar-item {padding-right:30px;}
+@media (hover:none) {.lcos-railway-drag-handle {opacity:1;pointer-events:auto;}}
+@media (prefers-reduced-motion:reduce) {.lcos-railway-drag-handle {transition:none;}}
+
+/* GEN1 WorkspaceRailVNext handfeel + current Figma tokens. Geometry remains 52 / 36px. */
+[data-lcos-railway-entry] > [data-lcos-railway-item] {
+  transform:translateZ(0);
+  transition:transform 140ms cubic-bezier(.22,1,.36,1),opacity 120ms ease,background-color 120ms ease,box-shadow 140ms ease,color 120ms ease;
+}
+[data-lcos-railway-entry]:hover > [data-lcos-railway-item]:not(:disabled),
+[data-lcos-railway-entry]:focus-within > [data-lcos-railway-item]:not(:disabled) {
+  transform:scale(1.045);
+  color:var(--gen2-text);
+  background:color-mix(in srgb,var(--gen2-raised) 82%,transparent);
+}
+[data-lcos-railway-entry][data-lcos-railway-active='true']::before {
+  content:'';position:absolute;left:-6px;top:8px;bottom:8px;width:2px;border-radius:999px;pointer-events:none;
+  background:linear-gradient(180deg,var(--lcos-pin-violet,var(--gen2-accent)),var(--lcos-pin-teal,var(--gen2-accent)));
+  box-shadow:0 0 8px color-mix(in srgb,var(--gen2-accent) 20%,transparent);
+}
+[data-lcos-railway-entry][data-lcos-railway-active='true'] > [data-lcos-railway-item] {
+  color:var(--gen2-text);
+  background:color-mix(in srgb,var(--gen2-surface) 92%,transparent);
+  box-shadow:inset 0 0 0 .5px var(--lcos-rail-selected-border),0 4px 12px rgb(40 48 58 / 8%);
+}
+[data-lcos-railway-entry][data-lcos-receive-state='receive-hot'] > [data-lcos-railway-item] {
+  transform:scale(1.075);
+}
+[data-lcos-railway-entry][data-lcos-receive-state='committing'] > [data-lcos-railway-item] {
+  transform:scale(.97);
+}
+[data-lcos-family='railway'] {
+  background:color-mix(in srgb,var(--lcos-hud-surface) 88%,transparent);
+  box-shadow:inset 0 0 0 .6px var(--lcos-hud-border),0 8px 24px rgb(40 48 58 / 7%);
+}
+[data-lcos-family='railway'][data-lcos-variant-count='0'] {background:transparent;box-shadow:none;}
+[data-lcos-railway-overflow-trigger], [data-lcos-railway-receiver] {
+  transition:transform 120ms ease,background-color 120ms ease,color 120ms ease,box-shadow 120ms ease;
+}
+[data-lcos-railway-overflow-trigger]:hover,[data-lcos-railway-receiver]:hover {transform:translateY(-1px);}
+.lcos-railway-popover {
+  border:1px solid color-mix(in srgb,var(--lcos-color-border-subtle) 84%,transparent);
+  background:color-mix(in srgb,var(--lcos-surface-elevated) 94%,transparent);
+  box-shadow:0 18px 52px rgb(40 48 58 / 12%),inset 0 1px 0 color-mix(in srgb,var(--gen2-surface) 74%,transparent);
+  backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+}
+.lcos-railway-manage-row {border-bottom:0;padding:4px 0;}
+.lcos-railway-popover .lcos-railway-row-target {padding:8px;border-radius:11px;transition:background-color 120ms ease,transform 120ms ease;}
+.lcos-railway-popover .lcos-railway-row-target:hover:not([aria-disabled='true']) {background:var(--gen2-raised);transform:translateX(1px);}
+.lcos-railway-row-actions {opacity:.45;transition:opacity 120ms ease;}
+.lcos-railway-manage-row:hover .lcos-railway-row-actions,.lcos-railway-manage-row:focus-within .lcos-railway-row-actions {opacity:1;}
+.lcos-railway-peek-actions button {transition:transform 120ms ease,background-color 120ms ease;}
+.lcos-railway-peek-actions button:hover:not(:disabled) {transform:translateY(-1px);background:var(--gen2-raised);}
+@media(prefers-reduced-motion:reduce){[data-lcos-railway-entry] > [data-lcos-railway-item],[data-lcos-railway-overflow-trigger],[data-lcos-railway-receiver],.lcos-railway-popover .lcos-railway-row-target{transition:none;transform:none!important}}
+
+
+/* Real scene Peek: keep the Rail itself tiny; detail grows only in the near-field preview. */
+.lcos-railway-mini-scene{display:grid;gap:7px;min-width:0;}
+.lcos-railway-mini-scene-canvas{display:block;max-width:100%;border:1px solid color-mix(in srgb,var(--lcos-color-border-subtle) 86%,transparent);border-radius:11px;background:color-mix(in srgb,var(--gen2-raised) 86%,transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--gen2-surface) 74%,transparent),0 5px 16px rgb(40 48 58 / 6%);pointer-events:none;}
+.lcos-railway-mini-scene-copy{height:100%;overflow:hidden;color:var(--gen2-text);line-height:1.25;}
+[data-lcos-railway-preview-status],[data-lcos-railway-preview-empty]{display:block;color:var(--gen2-muted);font-size:10.5px;line-height:1.45;}
+[data-lcos-railway-preview-status] button{margin-left:4px;padding:2px 5px;border-radius:6px;background:var(--gen2-raised);}

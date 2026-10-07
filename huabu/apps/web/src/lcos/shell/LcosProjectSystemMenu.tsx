@@ -2,6 +2,10 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Popover } from '@/components/Common/Popover';
+import { openUserHandbook } from '@/config/handbook';
+import { getElectronBridge } from '@/hooks/useElectron';
+import { useSettingsUiStore } from '@/store/settingsUiStore';
+import { useShortcutsUiStore } from '@/store/shortcutsUiStore';
 
 import { useLcosShellStore } from './lcosShellStore';
 import { LcosProjectIdentityView } from '../ui/families/LcosProjectIdentityView';
@@ -14,6 +18,9 @@ import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
 export function LcosProjectSystemMenu({ name, worksiteName, target, assemblyTitle }: {
   readonly name: string; readonly worksiteName?: string; readonly target?: AssemblyTargetRefV1; readonly assemblyTitle: string;
 }): React.JSX.Element {
+  const desktopPlatform = getElectronBridge()?.platform;
+  const showSettingsAndHandbook = desktopPlatform === undefined;
+  const showShortcuts = desktopPlatform !== 'darwin';
   const resolvedWorksiteName = worksiteName?.trim() || undefined;
   const identityName = resolvedWorksiteName === undefined ? name : `${name} / ${resolvedWorksiteName}`;
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -42,6 +49,18 @@ export function LcosProjectSystemMenu({ name, worksiteName, target, assemblyTitl
         <button type="button" className="lcos-system-row" onClick={() => { close(); useLcosShellStore.getState().openWindow('runtime-doctor', '运行诊断'); }}>
           <span>运行诊断</span><small>连接、兼容性与恢复</small>
         </button>
+        {showSettingsAndHandbook && <button type="button" className="lcos-system-row" data-lcos-project-system-action="settings"
+          onClick={() => { close(); useSettingsUiStore.getState().open(); }}>
+          <span>设置</span><small>应用、Agent 与连接配置</small>
+        </button>}
+        {showShortcuts && <button type="button" className="lcos-system-row" data-lcos-project-system-action="shortcuts"
+          onClick={() => { close(); useShortcutsUiStore.getState().open(); }}>
+          <span>快捷键</span><small>查看当前键鼠操作</small>
+        </button>}
+        {showSettingsAndHandbook && <button type="button" className="lcos-system-row" data-lcos-project-system-action="handbook"
+          onClick={() => { close(); openUserHandbook(); }}>
+          <span>使用手册</span><small>打开用户手册</small>
+        </button>}
       </div>
     </Popover>}
   </>;

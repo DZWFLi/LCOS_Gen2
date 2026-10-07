@@ -3,6 +3,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
+vi.mock('@/hooks/useElectron', () => ({ getElectronBridge: () => undefined }));
+
 vi.mock('@/components/Common/Popover', () => ({
   Popover: ({ children, className }: { children: ReactNode; className?: string }) =>
     <div data-test-popover className={className}>{children}</div>,
@@ -54,5 +56,17 @@ describe('LcosProjectSystemMenu project identity', () => {
     expect(identity.textContent).toBe('品牌项目');
     expect(identity.getAttribute('aria-label')).toBe('品牌项目 · 项目菜单');
     expect(identity.title).toBe('品牌项目');
+  });
+
+  it('exposes browser global tools from the LCOS project menu without duplicating desktop chrome', async () => {
+    await act(async () => root.render(
+      <MemoryRouter>
+        <LcosProjectSystemMenu name="品牌项目" assemblyTitle="收件与来源" />
+      </MemoryRouter>,
+    ));
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-project-identity]')?.click());
+    expect(host.querySelector('[data-lcos-project-system-action="settings"]')).not.toBeNull();
+    expect(host.querySelector('[data-lcos-project-system-action="shortcuts"]')).not.toBeNull();
+    expect(host.querySelector('[data-lcos-project-system-action="handbook"]')).not.toBeNull();
   });
 });

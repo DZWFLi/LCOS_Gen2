@@ -1,3 +1,4 @@
+import type { RailwayDestinationV1 } from '@local-creative-os/contracts';
 import type { DropResolution } from '../drop/dropTypes';
 import type { SemanticDropState } from '@local-creative-os/web-gen2';
 import { resolveDropIntent } from '../drop/dropIntentResolver';
@@ -10,6 +11,27 @@ export type RailwayReceivePresentation =
   | 'receive-hot'
   | 'ineligible'
   | 'committing';
+
+/** Present the existing Core source identity; labels never determine a space's kind. */
+export function railwayDestinationGlyph(
+  destination: RailwayDestinationV1,
+): 'normal' | 'collection' | 'context' | 'workflow' | 'project' {
+  if (destination.role === 'receiver') return 'normal';
+  const kind = destination.sourceRef?.kind;
+  if (kind === 'collection' || kind === 'context' || kind === 'workflow') return kind;
+  if (destination.surface === 'context' || destination.surface === 'workflow') return destination.surface;
+  return 'project';
+}
+
+/** Same admission predicate for the live target and its visible feedback.
+ * Spatial carriers use their original membership owner; no canvas is required. */
+export function railwayDestinationCanReceive(
+  destination: RailwayDestinationV1,
+  currentCanvasId: string | null | undefined,
+): boolean {
+  return destination.available && (destination.receiveTarget !== undefined
+    || (destination.accepts.length > 0 && destination.canvasId !== currentCanvasId));
+}
 
 export interface RailwayReceivePresentationInput {
   readonly targetId: string;

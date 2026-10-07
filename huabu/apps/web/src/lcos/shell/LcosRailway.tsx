@@ -24,7 +24,7 @@ import { isDropPointExposed } from '../drop/dropOcclusion';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
 import { useLcosDropStore } from '../lcosDropState';
 import { RailwayPeek } from '../navigation/RailwayPeek';
-import { railwayReceiveLabel, railwayReceivePresentation } from '../navigation/railwayReceivePresentation';
+import { railwayDestinationCanReceive, railwayDestinationGlyph, railwayReceiveLabel, railwayReceivePresentation } from '../navigation/railwayReceivePresentation';
 import { railwayDropGestureActive, railwayDynamicCapacity, railwayHiddenDestinations, railwayVisibleDestinations } from '../navigation/railwayDynamicLayout';
 import { useAvoidingHudPosition } from '../navigation/useAvoidingHudPosition';
 import { useHudViewport } from '../navigation/useHudViewport';
@@ -124,6 +124,7 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
   };
   const alive = useRef(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const overflowHideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mutedFocus = useRef<string | undefined>(undefined);
   const drag = useRef<string | undefined>(undefined);
   const [reorderTarget,setReorderTarget] = useState<{readonly key:string;readonly where:'before'|'after'}>();
@@ -161,10 +162,11 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
   const hostHeight = Math.max(52,primaryHeight) + (hidden.length ? 36 : 0) + (receiver ? 36 : 0) + 88;
   const placement = useAvoidingHudPosition({x:offsets.left,y:lcosHudSafeCenterY(environment,viewport.height),width:52,height:hostHeight},{y:'center'});
   const cancelHide = useCallback(() => { if (hideTimer.current) clearTimeout(hideTimer.current); },[]);
+  const cancelOverflowHide = useCallback(() => { if (overflowHideTimer.current) clearTimeout(overflowHideTimer.current); },[]);
   const dismiss = useCallback((restore = false) => {
-    cancelHide(); setManage(false); setPeek(undefined); setOverflowPeek(false);
+    cancelHide(); cancelOverflowHide(); setManage(false); setPeek(undefined); setOverflowPeek(false);
     if (restore) { mutedFocus.current = peek; (peek ? elements.current.get(`rail:${peek}`) : addRef.current)?.focus(); }
-  },[cancelHide,peek]);
+  },[cancelHide,cancelOverflowHide,peek]);
   const enterPeek = (key: string) => {
     if (mutedFocus.current === key) { mutedFocus.current = undefined; return; }
     if (manage || drag.current) return;
@@ -173,9 +175,9 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
   const leavePeek = () => {
     cancelHide(); hideTimer.current = setTimeout(() => {
       if (!panelRef.current?.contains(document.activeElement)) setPeek(undefined);
-    },180);
+    },220);
   };
-  useEffect(() => { alive.current = true; return () => { alive.current = false; cancelHide(); }; },[cancelHide]);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; cancelHide(); cancelOverflowHide(); }; },[cancelHide,cancelOverflowHide]);
   const refresh = useCallback(() => { void reload(); setReceiverRefresh((n) => n+1); },[reload]);
   useEffect(() => watch(projectId,refresh),[watch,projectId,refresh]);
   useEffect(() => {
@@ -211,8 +213,7 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
       const key = elementKey.slice(elementKey.indexOf(':')+1);
       const destination = snapshot?.destinations.find((d) => d.key === key);
       if (!destination) continue;
-      const enabled = status === 'ready' && !busy && destination.available && (destination.receiveTarget!==undefined
-        || (destination.accepts.length > 0 && destination.canvasId !== canvasId));
+      const enabled = status === 'ready' && !busy && railwayDestinationCanReceive(destination, canvasId);
       const reason = destination.reason ?? (destination.role === 'receiver' ? '这里只打开会话；请把材料拖到画布上的会话本体。'
         : destination.canvasId === canvasId ? '已经在当前现场，请直接在画布整理。' : '目的地暂不能接收材料。');
       const receiver=destination.receiveTarget;
@@ -252,8 +253,20 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
       const target = [...fresh.destinations,...fresh.candidates].find((d) => d.key === item.key);
       if (!target?.available) throw new Error(target?.reason ?? '目的地已被移出导航。');
       if (target.canvasId !== item.canvasId) { void reload(); throw new Error('目标画布已变化，请重新预览后进入。'); }
-      if (target.ref.kind === 'receiver_conversation') openWindow('conversation',`会话窗口 · ${target.label}`,target.ref.connectedConversationId);
-      else if (target.workspaceId !== activeWorkspaceId) await activateDestination(target);
+      if (target.ref.kind === 'receiver_conversation') {
+        openWindow('conversation',`会话窗口 · ${target.label}`,target.ref.connectedConversationId);
+      } else if (target.ref.kind === 'spatial') {
+        const shell = useLcosShellStore.getState();
+        if (target.ref.entityType === 'collection') {
+          shell.openWindow('collection', `集合 · ${target.label}`, target.ref.entityId);
+        } else if (target.receiveTarget?.owner === 'assembly') {
+          shell.openAssembly(target.receiveTarget.targetRef, `空间 · ${target.label}`, false);
+        } else {
+          throw new Error('这个空间书签还没有可打开的真实宿主。');
+        }
+      } else if (target.workspaceId !== activeWorkspaceId) {
+        await activateDestination(target);
+      }
       if (alive.current) dismiss();
     } catch (error) { if (alive.current) setNotice(error instanceof Error ? error.message : '进入失败，仍保留当前现场。'); }
     finally {activateLock.current=false;if(alive.current)setActivating(undefined);}
@@ -306,12 +319,12 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
       setCreateWorksiteBusy(false);
     }
   };
-  const remove = (key: string) => update((s) => s.order.orderedRefs.filter((ref) => railwayStableKeyV1(ref)!==key),'已取消优先排列，真实现场仍保留。');
-  const move = (key: string,target: string,where:'before'|'after') => update((s) => {
-    const refs=[...s.order.orderedRefs];
-    for(const item of s.candidates) if(item.role==='worksite'&&item.available&&!refs.some(ref=>railwayStableKeyV1(ref)===item.key)) refs.push(item.ref);
-    return moveRailwayDestination(refs,key,target,where);
-  },'现场顺序已保存。');
+  const remove = (key: string) => update((s) => s.order.orderedRefs.filter((ref) => railwayStableKeyV1(ref)!==key),'已取消固定，原空间与内容保留。');
+  const move = (key: string,target: string,where:'before'|'after') => update(
+    // Reordering bookmarks must not pin unrelated candidate spaces.
+    (s) => moveRailwayDestination(s.order.orderedRefs,key,target,where),
+    '空间顺序已保存。',
+  );
   const dragHandlers = (item: RailwayDestinationV1) => {
     const reorderable = (item.role === 'worksite'||item.role==='spatial') && item.available && !snapshot?.migrationRequired;
     return ({
@@ -340,29 +353,39 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
     },
     onDragEnd:() => {cancelRailwayAssemblyDrop(item,projectId);drag.current=undefined;setReorderTarget(undefined);},
   });};
-  const receiveState = (item:RailwayDestinationV1,elementKey:string) => railwayReceivePresentation({targetId:targetId(projectId,elementKey),enabled:status==='ready' && !busy && item.available && item.accepts.length>0 && item.canvasId!==canvasId,dropState:drop,resolution,candidate:useLcosDropStore.getState().targets().find(target=>target.targetId===targetId(projectId,elementKey))});
+  const receiveState = (item:RailwayDestinationV1,elementKey:string) => railwayReceivePresentation({targetId:targetId(projectId,elementKey),enabled:status==='ready' && !busy && railwayDestinationCanReceive(item, canvasId),dropState:drop,resolution,candidate:useLcosDropStore.getState().targets().find(target=>target.targetId===targetId(projectId,elementKey))});
   const openManager = () => {
-    cancelHide();setOverflowPeek(false);setPeek(undefined);setManage(true);
+    cancelHide();cancelOverflowHide();setOverflowPeek(false);setPeek(undefined);setManage(true);
   };
-  const showOverflow = () => { if (!manage && !dropActive) setOverflowPeek(true); };
+  const showOverflow = () => {
+    cancelOverflowHide();
+    if (!manage && !dropActive) setOverflowPeek(true);
+  };
+  const hideOverflow = () => {
+    if (dropActive) return;
+    cancelOverflowHide();
+    overflowHideTimer.current = setTimeout(() => setOverflowPeek(false), 220);
+  };
   const items: LcosRailwayViewItem[] = primary.map((item) => ({key:item.key,label:item.label,icon:Eye,
     onPointerDown:item.sourceRef||item.role==='worksite' ? event=>{pointerDrop.current?.onPointerDown(event,item,projectId);} : undefined,
-    glyph:item.role==='receiver'?'normal':item.surface==='context'?'context':item.surface==='workflow'?'workflow':'project',
+    glyph:railwayDestinationGlyph(item),
     selected:item.canvasId===canvasId,disabled:!item.available||busy||!!activating||status!=='ready',
     ...dragHandlers(item),reorderDropTarget:reorderTarget?.key===item.key,reorderDropPosition:reorderTarget?.key===item.key?reorderTarget.where:undefined,receivePresentation:receiveState(item,`rail:${item.key}`),
     onElement:elementRef(`rail:${item.key}`),onPeekEnter:()=>enterPeek(item.key),onPeekLeave:leavePeek,onManage:openManager}));
   const managed=destinations.filter(item=>item.role!=='surface');
   const row = (item:RailwayDestinationV1,index:number) => <div key={item.key} className="lcos-railway-manage-row" data-railway-row={item.key}>
     <button type="button" className="lcos-railway-row-target" aria-disabled={!item.available||busy||status!=='ready'}
-      ref={elementRef(`manager:${item.key}`)} {...dragHandlers(item)} onClick={()=>void activate(item)}
+      ref={elementRef(`manager:${item.key}`)} {...dragHandlers(item)}
+      onPointerDown={item.available&&!busy&&status==='ready' ? event=>{pointerDrop.current?.onPointerDown(event,item,projectId);} : undefined}
+      onClick={()=>void activate(item)}
       data-lcos-receive-state={receiveState(item,`manager:${item.key}`)}>
-      <FigmaShellGlyph name={item.role==='receiver'?'normal':item.surface==='context'?'context':item.surface==='workflow'?'workflow':'project'} size={20}/>
+      <FigmaShellGlyph name={railwayDestinationGlyph(item)} size={20}/>
       <span><strong>{item.label}</strong><small>{item.reason ?? (item.role==='receiver'?'打开原会话，不更改接收者':item.workspaceId===activeWorkspaceId?'当前现场':'进入现场 · 拖入材料可接收')}</small></span>
     </button>
     <div className="lcos-railway-row-actions">
       <button type="button" aria-label={`上移 ${item.label}`} disabled={busy||status!=='ready'||index===0} onClick={()=>{const prev=managed[index-1];if(prev)void move(item.key,prev.key,'before');}}><ArrowUp size={15}/></button>
       <button type="button" aria-label={`下移 ${item.label}`} disabled={busy||status!=='ready'||index===managed.length-1} onClick={()=>{const next=managed[index+1];if(next)void move(item.key,next.key,'after');}}><ArrowDown size={15}/></button>
-      <button type="button" aria-label={`取消优先排列 ${item.label}`} disabled={busy||status!=='ready'||!snapshot?.order.orderedRefs.some(ref=>railwayStableKeyV1(ref)===item.key)} onClick={()=>void remove(item.key)}><Trash2 size={15}/></button>
+      <button type="button" aria-label={`取消固定 ${item.label}`} disabled={busy||status!=='ready'||!snapshot?.order.orderedRefs.some(ref=>railwayStableKeyV1(ref)===item.key)} onClick={()=>void remove(item.key)}><Trash2 size={15}/></button>
     </div>
   </div>;
   const anchor = focused ? elements.current.get(`rail:${focused.key}`)?.getBoundingClientRect() : addRef.current?.getBoundingClientRect();
@@ -374,15 +397,17 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
     className="lcos-railway-host" style={{left:placement.rect.x,top:placement.rect.y}}>
     <LcosRailwayView items={items} onSelect={(key)=>{const item=destinations.find((d)=>d.key===key);if(item)void activate(item);}}
       canonicalTotal={destinations.length} overflowCount={hidden.length} overflowOpen={receiveOverflowOpen||overflowPeek} onOverflowToggle={showOverflow}
-      onOverflowEnter={()=>{if(!manage&&!dropActive)setOverflowPeek(true);}} onOverflowLeave={()=>{if(!dropActive)setOverflowPeek(false);}}
-      overflow={receiveOverflowOpen||overflowPeek ? <div data-lcos-railway-overflow data-lcos-railway-receive-map={receiveOverflowOpen||undefined} role="dialog" aria-label={receiveOverflowOpen?'更多可接收目的地':'更多现场目的地'}>
-        <span data-lcos-railway-overflow-summary>{receiveOverflowOpen?'继续拖动到具体现场；不会打开管理页。':'选择一个现场直接进入。'}</span>
+      onOverflowEnter={showOverflow} onOverflowLeave={hideOverflow}
+      overflow={receiveOverflowOpen||overflowPeek ? <div data-lcos-railway-overflow data-lcos-railway-receive-map={receiveOverflowOpen||undefined} role="dialog" aria-label={receiveOverflowOpen?'更多可接收空间':'更多项目空间'}>
+        <span data-lcos-railway-overflow-summary>{receiveOverflowOpen?'继续拖动到具体现场；不会打开管理页。':'选择已固定的空间。'}</span>
         <div data-lcos-railway-overflow-list>
           <RailwayDestinationSidebar
             activeKey={hidden.find((item)=>item.workspaceId===activeWorkspaceId)?.key}
             busy={busy||!!activating||status!=='ready'}
             onSelect={(key)=>{const item=hidden.find((destination)=>destination.key===key);if(item)void activate(item);}}
             items={hidden.map((item)=>({key:item.key,label:item.label,...dragHandlers(item),
+              onPointerDown:item.sourceRef||item.role==='worksite' ? event=>{pointerDrop.current?.onPointerDown(event,item,projectId);} : undefined,
+              onManage:openManager,
               reorderDropTarget:reorderTarget?.key===item.key,reorderDropPosition:reorderTarget?.key===item.key?reorderTarget.where:undefined,
               description:railwayReceiveLabel(receiveState(item,`overflow:${item.key}`),item.reason),
               disabled:!item.available,receivePresentation:receiveState(item,`overflow:${item.key}`),
@@ -399,13 +424,13 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
     <LcosIconButton ref={bookmarkRef} appearance="oreo" variant="secondary" shape="circle" size="md" floating
       aria-label="固定空间到 Rail" title="把具有空间属性的对象拖到这里" onClick={openManager}><Plus size={19}/></LcosIconButton>
     <LcosIconButton ref={addRef} appearance="oreo" variant="secondary" shape="circle" size="md" floating data-railway-add
-      aria-label="管理现场目的地" title="管理已有现场目的地" aria-expanded={manage} onClick={()=>manage?dismiss():openManager()}><MoreHorizontal size={19}/></LcosIconButton>
+      aria-label="管理空间书签" title="管理已固定的空间" aria-expanded={manage} onClick={()=>manage?dismiss():openManager()}><MoreHorizontal size={19}/></LcosIconButton>
     {(manage||focused) && <Popover position={{x:anchor?.right??placement.rect.x+52,y:anchor?.top??placement.rect.y}}
       offset={{x:10,y:0}} style={{...lcosGlassStyle,width:manage?Math.min(360,viewport.width-24):Math.min(300,viewport.width-24),maxHeight:viewport.height-24}}
       className="lcos-railway-popover" contentRef={panelRef} onDismiss={()=>dismiss(true)} zIndex={80}>
-      <section role="dialog" aria-label={manage?'管理现场目的地':`${focused?.label} 目的地预览`}
+      <section role="dialog" aria-label={manage?'管理空间书签':`${focused?.label} 目的地预览`}
         onMouseEnter={cancelHide} onMouseLeave={manage?undefined:leavePeek} onFocusCapture={cancelHide}>
-        <header><strong>{manage?'现场管理':focused?.label}</strong><button type="button" aria-label="关闭目的地面板" onClick={()=>dismiss(true)}><X size={17}/></button></header>
+        <header><strong>{manage?'空间书签':focused?.label}</strong><button type="button" aria-label="关闭目的地面板" onClick={()=>dismiss(true)}><X size={17}/></button></header>
         {manage ? <>
           {status==='loading' && !snapshot && <p role="status">正在读取目的地…</p>}
           {snapshot?.migrationRequired && <div className="lcos-railway-migration"><p>旧导航已按原身份列出，未识别的记录保留。确认后使用新版顺序。</p>
@@ -421,7 +446,11 @@ function ProjectRailway({projectId,ensureWorkspaceCanvas,activateDestination}: L
             </button>;
           })}</div>
         </> : focused && <>
-          {focused.canvasId&&focused.available ? <RailwayPeek canvasId={focused.canvasId}/> : <p>{focused.reason??'这是原会话入口；内容在会话窗口中读取。'}</p>}
+          {focused.canvasId&&focused.available ? <RailwayPeek canvasId={focused.canvasId}/>
+            : focused.ref.kind === 'spatial' ? <p>{focused.ref.entityType === 'collection'
+              ? '这是一个集合空间书签；打开后读取 Core 成员，不创建第二张画布。'
+              : '这是一个上下文/工作流空间书签；打开后复用现有目标视图。'}</p>
+            : <p>{focused.reason??'这是原会话入口；内容在会话窗口中读取。'}</p>}
           <p>{focused.role==='receiver'?'这里只打开原会话，不更改当前接收者。':railwayReceiveLabel(receiveState(focused,`rail:${focused.key}`),focused.reason)}</p>
           <div className="lcos-railway-peek-actions"><button type="button" disabled={!focused.available||busy||!!activating||status!=='ready'} onClick={()=>void activate(focused)}><Eye size={15}/>打开</button>
             {focused.ref.kind === 'worksite' && focused.canvasId !== canvasId && <button type="button" disabled={placing||busy||!!activating||!focused.available||status!=='ready'} onClick={()=>void placePortal(focused)}><Plus size={15}/>{placing ? '保存入口…' : '放置入口'}</button>}

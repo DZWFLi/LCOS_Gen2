@@ -3,7 +3,7 @@ import type { LcosReaderSourceV1, LcosWindow } from '../shell/lcosShellStore';
 import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
 
 const PREFIX = 'lcos.professional-window-layout.v1.';
-const BODY_KEYS = new Set(['run-review', 'assembly', 'reader', 'conversation', 'portal-preview', 'runtime-doctor', 'capture-inbox', 'connector-source', 'archive']);
+const BODY_KEYS = new Set(['run-review', 'assembly', 'reader', 'conversation', 'portal-preview', 'runtime-doctor', 'capture-inbox', 'connector-source', 'collection', 'native-preview', 'archive']);
 const object = (value: unknown): Record<string, unknown> | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
 function parseWindow(value: unknown): LcosWindow | undefined {

@@ -32,7 +32,6 @@ import {
   Maximize2,
   MessageSquarePlus,
   MessageSquareReply,
-  Move,
   PanelTop,
   Sparkles,
   TextCursorInput,
@@ -54,12 +53,12 @@ import { shouldStandDownLegacyNodeToolbar } from '@/lcos-seam/chromeModeSlot';
 import { isNativeAccentSurfaceEnabled, useResolvedNodeHostPresentation } from '@/lcos-seam/nodeBodySlot';
 import { useCanvasAttentionStore } from '@/store/canvasAttentionStore';
 import useCanvasStore from '@/store/canvasStore';
-import { openPreviewNode } from '@/store/previewWorkspace/actions';
 
 import { ACTION_ARC_HIT_INSET, ACTION_ARC_HIT_SIZE, resolveActionArcGeometry } from './actionArcGeometry';
 import { focusConversationSection } from './focusConversationSection';
 import { useCollaborationSession } from '../collaboration/useCollaborationSession';
 import { draftReferenceUnavailableReason, snapshotDraftReference } from '../composer/referenceSnapshot';
+import { useLcosDropStore } from '../lcosDropState';
 import { portalDropTargetForCanvas, usePortalDropWorkspaceContext } from '../drop/PortalDropWorkspaceContext';
 import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useOptionalLcosColorPins } from '../pin/LcosColorPinProvider';
@@ -128,8 +127,6 @@ function primaryCommandIcon(command: LcosNodeCommand): React.JSX.Element {
       return <FileText size={17} strokeWidth={1.8} aria-hidden />;
     case 'open-large':
       return <Expand size={17} strokeWidth={1.8} aria-hidden />;
-    case 'move-space':
-      return <Move size={17} strokeWidth={1.8} aria-hidden />;
     case 'fit':
       return <Maximize2 size={17} strokeWidth={1.8} aria-hidden />;
     case 'delete':
@@ -152,6 +149,9 @@ export function LcosActionArc(): React.JSX.Element | null {
   const [inspector, setInspector] = useState<'size' | 'accent' | null>(null);
   const [sizeDraft, setSizeDraft] = useState<{ width: number; height: number } | null>(null);
   const canvasEngaged = useCanvasAttentionStore((state) => state.isCanvasEngaged);
+  const dropStatus = useLcosDropStore((state) => state.state.status);
+  const spatialGestureActive = dropStatus === 'tracking' || dropStatus === 'dwell'
+    || dropStatus === 'preview' || dropStatus === 'committing';
   const colorPins = useOptionalLcosColorPins();
   const projectId = useLcosReferenceStore((state) => state.projectId);
   const cancelSectionFocus = useRef<(() => void) | undefined>(undefined);
@@ -256,8 +256,10 @@ export function LcosActionArc(): React.JSX.Element | null {
   }, [nodes, identitiesReady]);
 
   // Canvas attention is the shared visibility owner. Reader/Assembly focus
-  // steps the Arc aside; returning focus to the canvas restores it.
-  if (!node || !nodeId || (!canvasEngaged && !moreOpen)) return <AnimatePresence />;
+  // steps the Arc aside; direct manipulation / Semantic Drop owns the pointer
+  // while in flight, so the command orbit must not chase the carried object.
+  if (!node || !nodeId || node.dragging || node.resizing || spatialGestureActive
+    || (!canvasEngaged && !moreOpen)) return <AnimatePresence />;
 
   const box = flowBoxOf(node);
   const absolutePosition = useCanvasStore.getState().rfInstance?.getInternalNode(nodeId)?.internals.positionAbsolute ?? node.position;
@@ -346,10 +348,7 @@ export function LcosActionArc(): React.JSX.Element | null {
         canvas.convertNodeType(nodeId, 'note');
         break;
       case 'open-large':
-        openPreviewNode(nodeId);
-        break;
-      case 'move-space':
-        canvas.setMoveSelectionDialogOpen(true);
+        shell.openWindow('native-preview', `大视图 · ${title}`, nodeId);
         break;
       case 'fit':
         shell.requestCamera('fit');
@@ -387,9 +386,10 @@ export function LcosActionArc(): React.JSX.Element | null {
     || conversation?.userState === 'unavailable'
     || (conversation?.recovery?.state !== undefined && conversation.recovery.state !== 'none');
   const menuCommands = grouped.flatMap(({ items }) => items).filter((command) => {
-    // Unsupported native document deletion / relocation is not a Core action.
-    // Keep the original command guards, without exposing dead choices here.
-    if ((command.id === 'delete' || command.id === 'move-space') && command.disabledReason !== undefined) return false;
+    // Physical Move Space is a Huabu-only product action. Keep a defensive
+    // fail-close here even though the Gen2 command model no longer generates it.
+    if (command.id === 'move-space') return false;
+    if (command.id === 'delete' && command.disabledReason !== undefined) return false;
     // Canvas framing already lives in the spatial navigator / camera island.
     if (command.id === 'fit') return false;
     // Healthy sessions reach diagnostics from Conversation Work View only.
