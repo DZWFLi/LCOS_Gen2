@@ -40,6 +40,7 @@ vi.mock('@/lcos-seam/nodePresentation', () => ({ useLcosNodePresentation: () => 
 vi.mock('../nodes/useLcosDensity', () => ({ useLcosDensity: () => 'reading' }));
 vi.mock('../nodes/NodeColorPinMarkers', () => ({ NodeColorPinMarkers: () => null }));
 vi.mock('../nodes/NodeReferenceMarker', () => ({ NodeReferenceMarker: () => null }));
+vi.mock('../ui/glyth/GlythThoughtBubble', () => ({ GlythThoughtBubble: () => null }));
 vi.mock('../ui/glyth/GlythBodyView', () => ({ GlythBodyView: ({ pose }: { pose: string }) => <div data-real-donor-pose={pose} /> }));
 vi.mock('../lcosDropState', () => ({ useLcosDropStore: (select: (value: Record<string, unknown>) => unknown) => select({ ...mocks.drop, registerTarget: mocks.registerTarget, unregisterTarget: mocks.unregisterTarget }) }));
 

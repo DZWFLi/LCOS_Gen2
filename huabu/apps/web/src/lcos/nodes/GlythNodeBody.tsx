@@ -16,6 +16,7 @@ import { NodeColorPinMarkers } from './NodeColorPinMarkers';
 import { NodeReferenceMarker } from './NodeReferenceMarker';
 import { useLcosDensity } from './useLcosDensity';
 import { glythDropFeedback, glythSessionLabel, isGlythDropTarget, mayOpenGlythFromKeyboard } from '../collaboration/glythInteraction';
+import { resolveGlythThought } from '../collaboration/glythThought';
 import { useCollaborationSession } from '../collaboration/useCollaborationSession';
 import { isDropPointExposed } from '../drop/dropOcclusion';
 import { rectFromDomRect } from '../drop/dropTargetRegistry';
@@ -24,6 +25,7 @@ import { useLcosReferenceStore } from '../lcosReferenceState';
 import { useLcosShellStore } from '../shell/lcosShellStore';
 import { glythBodyLayout } from '../ui/glyth/glythBodyLayout';
 import { GlythBodyView } from '../ui/glyth/GlythBodyView';
+import { GlythThoughtBubble } from '../ui/glyth/GlythThoughtBubble';
 import { lcosTokens } from '../ui/lcosTokens';
 
 import type { DropTargetRegistration } from '../drop/dropTypes';
@@ -37,6 +39,8 @@ function titleOf(data: Readonly<Record<string, unknown>>): string {
 
 export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [thoughtEngaged, setThoughtEngaged] = useState(false);
+  const nearComposer = useLcosShellStore((state) => state.composerOpen && state.composerTarget?.nodeId === input.nodeId);
   const selected = useCanvasStore((state) => state.nodes.find((node) => node.id === input.nodeId)?.selected === true);
   const density = useLcosDensity();
   const presentation = useLcosNodePresentation();
@@ -80,6 +84,7 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
     : committing ? '正在保存会话上下文'
       : receiving ? '松手保存到会话上下文'
         : feedback?.label ?? glythSessionLabel(projection, collaborationEntry?.status);
+  const thought = resolveGlythThought(projection, collaborationEntry?.timeline, collaborationEntry?.timelineStatus);
   const isMark = density === 'mark';
   const layout = glythBodyLayout(presentation?.worldWidth, presentation?.worldHeight, presentation?.zoom);
   const stateFontSize = Math.max(10, layout.labelSize - 0.75);
@@ -144,6 +149,10 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
       data-lcos-species-body
       data-lcos-species="glyth"
       data-lcos-glyth-body
+      onPointerEnter={() => setThoughtEngaged(true)}
+      onPointerLeave={() => setThoughtEngaged(false)}
+      onFocus={(event) => { if (event.target === event.currentTarget) setThoughtEngaged(true); }}
+      onBlur={() => setThoughtEngaged(false)}
       data-lcos-glyth-shape="blob"
       data-lcos-glyth-tone="ink"
       data-lcos-glyth-pose={pose}
@@ -186,6 +195,10 @@ export function GlythNodeBody(input: CanvasNodeBodySlotInput): JSX.Element {
       />
       {!isMark && (
         <>
+          <GlythThoughtBubble thought={thought} nodeId={input.nodeId} referenceElement={bodyRef}
+            body={layout} engaged={thoughtEngaged}
+            suppressed={receiving || committing || nearComposer || presentation?.phase === 'dragging' || presentation?.phase === 'resizing'}
+            onOpen={openWorkView} />
           <span
             data-lcos-glyth-label
             className="truncate"

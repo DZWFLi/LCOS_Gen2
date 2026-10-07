@@ -1,0 +1,67 @@
+@import '../materials/soft-underlight.css';
+
+/* R2.3: retain the existing interaction geometry, use video-A bottom light. */
+.lcos-glyth-whisper {
+  --whisper-ink: var(--underlight-ink);
+  --whisper-muted: #74777c;
+  --whisper-state: #737680;
+  --whisper-hairline: rgba(80,82,90,.09);
+  position: relative; isolation: isolate; width: 304px;
+  max-width: min(344px, calc(100vw - 36px)); border-radius: 23px;
+  font-family: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  color: var(--whisper-ink); opacity: 0; transform: translateY(5px) scale(.966);
+  transform-origin: 20px 90%;
+  transition: opacity 190ms ease, transform 280ms cubic-bezier(.2,.8,.2,1);
+  pointer-events: auto; contain: layout style;
+}
+.lcos-glyth-whisper[hidden] { display: none !important; }
+.lcos-glyth-whisper[data-open='true'] { opacity: 1; transform: translateY(0) scale(1); }
+.lcos-glyth-whisper *, .lcos-glyth-whisper *::before, .lcos-glyth-whisper *::after { box-sizing: border-box; }
+[data-theme='dark'] .lcos-glyth-whisper, .dark .lcos-glyth-whisper {
+  --whisper-muted: #abacb6; --whisper-state: #c2bbc9; --whisper-hairline: rgba(235,234,245,.11);
+}
+.lcos-glyth-whisper[data-stale='true'] .glyth-whisper-signal i,
+.lcos-glyth-whisper[data-tone='attention'] .glyth-whisper-signal i,
+.lcos-glyth-whisper[data-tone='done'] .glyth-whisper-signal i,
+.lcos-glyth-whisper[data-tone='error'] .glyth-whisper-signal i { animation: none; }
+.glyth-whisper-main {
+  display: block; width: 100%; padding: 16px 19px 22px; appearance: none; border: 0; background: transparent;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; position: relative;
+}
+.glyth-whisper-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; height: 14px; }
+.glyth-whisper-label { font-size: 10.5px; font-weight: 500; letter-spacing: .06em; color: var(--whisper-muted); }
+.glyth-whisper-arrow { font-size: 15px; margin-left: auto; opacity: 0; color: var(--whisper-muted); transform: translate(-2px,2px); transition: opacity 160ms, transform 160ms; }
+.lcos-glyth-whisper[data-expanded='true'] .glyth-whisper-arrow { opacity: .8; transform: none; }
+.glyth-whisper-copy {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  font-size: 13px; font-weight: 450; line-height: 1.72; letter-spacing: .015em;
+  overflow-wrap: anywhere; text-wrap: pretty;
+}
+.glyth-whisper-signal { display: flex; align-items: center; gap: 2px; color: var(--whisper-state); height: 10px; }
+.glyth-whisper-signal i { display: block; height: 5px; width: 2px; border-radius: 3px; background: currentColor; animation: glyth-whisper-signal 2.8s ease-in-out infinite; }
+.glyth-whisper-signal i:nth-child(2) { height: 9px; animation-delay: -.7s; }
+.glyth-whisper-signal i:nth-child(3) { height: 6px; animation-delay: -1.4s; }
+.glyth-whisper-detail { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 260ms cubic-bezier(.2,.8,.2,1), opacity 200ms; }
+.glyth-whisper-detail-inner { overflow: hidden; min-height: 0; padding: 0 19px; }
+.lcos-glyth-whisper[data-expanded='true'] .glyth-whisper-detail { grid-template-rows: 1fr; opacity: 1; }
+.glyth-whisper-history { list-style: none; margin: 0; padding: 3px 0 6px; border-top: 1px solid var(--whisper-hairline); }
+.glyth-whisper-history li { position: relative; padding: 8px 0 2px 12px; font-size: 11px; line-height: 1.65; color: var(--whisper-muted); overflow-wrap: anywhere; }
+.glyth-whisper-history li::before { content: ''; width: 3px; height: 3px; position: absolute; left: 0; top: 16px; background: currentColor; border-radius: 50%; opacity: .5; }
+.glyth-whisper-full { margin: 0 0 8px; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.glyth-whisper-foot { padding: 9px 0 13px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.glyth-whisper-hint { font-size: 9px; color: var(--whisper-muted); line-height: 1.5; }
+.glyth-whisper-open { padding: 5px 0 5px 6px; white-space: nowrap; border: 0; background: none; color: var(--whisper-state); font: inherit; font-size: 10px; cursor: pointer; }
+.glyth-whisper-main:focus-visible, .glyth-whisper-open:focus-visible { outline: 2px solid var(--gen2-accent, #6cb5a0); outline-offset: -4px; border-radius: 17px; }
+.glyth-whisper-live { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@keyframes glyth-whisper-breathe { from { opacity: .20; transform: translate(-3px,1px) scale(.98); } to { opacity: .37; transform: translate(3px,2px) scale(1.015); } }
+@keyframes glyth-whisper-signal { 0%,100% { transform: scaleY(.72); opacity: .55; } 50% { transform: scaleY(1); opacity: 1; } }
+.lcos-glyth-whisper[data-document-hidden='true'] *, .lcos-glyth-whisper[data-open='false'] * { animation-play-state: paused; }
+.lcos-glyth-whisper[data-reduced='true'], .lcos-glyth-whisper[data-reduced='true'] * { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .lcos-glyth-whisper, .lcos-glyth-whisper * { animation: none !important; transition: none !important; }
+}
+@media (forced-colors: active) {
+  .lcos-glyth-whisper { color: CanvasText; --whisper-muted: CanvasText; --whisper-state: LinkText; }
+  .glyth-whisper-shell { background: Canvas; border: 1px solid CanvasText; box-shadow: none; }
+  .glyth-whisper-glow, .glyth-whisper-shell::before { display: none; }
+}

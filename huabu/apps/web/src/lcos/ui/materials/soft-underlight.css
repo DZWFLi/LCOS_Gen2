@@ -1,0 +1,109 @@
+/* Shared optical material for the existing thought and voice surfaces.
+ * Color rises from the lower edge; no colored outline and no layout ownership.
+ * All decoration is inert. No amplitude, completion or other runtime is invented.
+ */
+.lcos-soft-underlight {
+  --underlight-paper: rgba(240, 240, 242, .94);
+  --underlight-ink: #303235;
+  --underlight-line: rgba(70, 73, 80, .055);
+  --underlight-shadow: rgba(50, 55, 65, .08);
+  --underlight-highlight: rgba(255, 255, 255, .56);
+  --underlight-pink: rgba(246, 153, 232, .78);
+  --underlight-warm: rgba(255, 228, 144, .75);
+  --underlight-blue: rgba(164, 216, 255, .76);
+  --underlight-white: rgba(255, 255, 255, .96);
+  --underlight-strength: .74;
+  --underlight-core-strength: .65;
+  isolation: isolate;
+}
+@supports (color: light-dark(white, black)) {
+  .lcos-soft-underlight {
+    --underlight-paper: light-dark(rgba(240,240,242,.94), rgba(34,35,40,.95));
+    --underlight-ink: light-dark(#303235, #eeedf1);
+    --underlight-line: light-dark(rgba(70,73,80,.055), rgba(255,255,255,.075));
+    --underlight-shadow: light-dark(rgba(50,55,65,.08), rgba(0,0,0,.23));
+    --underlight-highlight: light-dark(rgba(255,255,255,.56), rgba(255,255,255,.07));
+  }
+}
+/* App-selected theme wins over system theme. Numeric strengths stay CSS numbers. */
+[data-theme='dark'] .lcos-soft-underlight, .dark .lcos-soft-underlight {
+  --underlight-paper: rgba(34,35,40,.95); --underlight-ink: #eeedf1;
+  --underlight-line: rgba(255,255,255,.075); --underlight-shadow: rgba(0,0,0,.23);
+  --underlight-highlight: rgba(255,255,255,.07); --underlight-strength: .52;
+  --underlight-white: rgba(255,244,255,.8); --underlight-core-strength: .28;
+}
+[data-theme='light'] .lcos-soft-underlight {
+  --underlight-paper: rgba(240,240,242,.94); --underlight-ink: #303235;
+  --underlight-line: rgba(70,73,80,.055); --underlight-shadow: rgba(50,55,65,.08);
+  --underlight-highlight: rgba(255,255,255,.56); --underlight-strength: .74;
+  --underlight-white: rgba(255,255,255,.96); --underlight-core-strength: .65;
+}
+.lcos-soft-underlight-field {
+  position: absolute; z-index: 0; pointer-events: none;
+  left: 7%; right: 7%; bottom: -19px; height: 38px; border-radius: 50%;
+  opacity: var(--underlight-strength);
+  background:
+    radial-gradient(ellipse 40% 61% at 49% 42%, var(--underlight-pink), transparent 96%),
+    radial-gradient(ellipse 28% 52% at 19% 56%, var(--underlight-warm), transparent 95%),
+    radial-gradient(ellipse 31% 57% at 83% 59%, var(--underlight-blue), transparent 96%);
+  filter: blur(13px);
+  transform-origin: 50% 50%;
+  animation: lcos-underlight-drift 4.8s ease-in-out infinite alternate;
+}
+.lcos-soft-underlight-surface {
+  position: relative; z-index: 1; border-radius: inherit; overflow: hidden;
+  background: var(--underlight-paper);
+  border: 1px solid var(--underlight-line);
+  box-shadow: inset 0 1px var(--underlight-highlight), 0 5px 15px -8px var(--underlight-shadow);
+  backdrop-filter: blur(18px) saturate(1.04);
+  -webkit-backdrop-filter: blur(18px) saturate(1.04);
+}
+/* Light transmitted through the lowest part of the frosted shell. It never rings the top. */
+.lcos-soft-underlight-surface::after {
+  content: ''; position: absolute; z-index: 0; pointer-events: none;
+  left: 9%; right: 9%; bottom: -14px; height: 45px; border-radius: 50%;
+  background:
+    radial-gradient(ellipse 45% 65% at 49% 88%, var(--underlight-white) 18%, transparent 90%),
+    radial-gradient(ellipse 40% 71% at 49% 78%, var(--underlight-pink), transparent 98%),
+    radial-gradient(ellipse 25% 55% at 20% 85%, var(--underlight-warm), transparent 96%),
+    radial-gradient(ellipse 25% 61% at 80% 76%, var(--underlight-blue), transparent 96%);
+  filter: blur(7px); opacity: var(--underlight-core-strength);
+  animation: lcos-underlight-core-drift 5.4s ease-in-out infinite alternate;
+}
+.lcos-soft-underlight[data-tone='working'] { --underlight-strength: .55; --underlight-core-strength: .46; }
+.lcos-soft-underlight[data-tone='transcribing'] { --underlight-strength: .52; }
+.lcos-soft-underlight[data-tone='attention'] { --underlight-warm: rgba(255,206,126,.78); }
+.lcos-soft-underlight[data-tone='error'], .lcos-soft-underlight[data-stale='true'],
+.lcos-soft-underlight[data-source='task'] { --underlight-strength: .24; --underlight-core-strength: .22; }
+.lcos-soft-underlight[data-tone='error'] .lcos-soft-underlight-field,
+.lcos-soft-underlight[data-tone='done'] .lcos-soft-underlight-field,
+.lcos-soft-underlight[data-tone='attention'] .lcos-soft-underlight-field,
+.lcos-soft-underlight[data-stale='true'] .lcos-soft-underlight-field,
+.lcos-soft-underlight[data-source='task'] .lcos-soft-underlight-field,
+.lcos-soft-underlight[data-tone='error'] .lcos-soft-underlight-surface::after,
+.lcos-soft-underlight[data-tone='done'] .lcos-soft-underlight-surface::after,
+.lcos-soft-underlight[data-tone='attention'] .lcos-soft-underlight-surface::after,
+.lcos-soft-underlight[data-stale='true'] .lcos-soft-underlight-surface::after,
+.lcos-soft-underlight[data-source='task'] .lcos-soft-underlight-surface::after { animation: none; }
+@keyframes lcos-underlight-drift {
+  from { transform: translate(-3px, 1px) scaleX(.97); }
+  to { transform: translate(4px, -1px) scaleX(1.025); }
+}
+@keyframes lcos-underlight-core-drift {
+  from { transform: translate(-2px, 2px) scaleX(.98); }
+  to { transform: translate(3px, 0) scaleX(1.02); }
+}
+/* Pause decoration on lifecycle transitions without affecting input or task state. */
+.lcos-soft-underlight[data-document-hidden='true'] *,
+.lcos-soft-underlight[data-document-hidden='true'] *::after,
+.lcos-soft-underlight[data-open='false'] *, .lcos-soft-underlight[data-open='false'] *::after { animation-play-state: paused; }
+.lcos-soft-underlight[data-reduced='true'] *,
+.lcos-soft-underlight[data-reduced='true'] *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .lcos-soft-underlight-field, .lcos-soft-underlight-surface::after { animation: none !important; }
+}
+@media (forced-colors: active) {
+  .lcos-soft-underlight { --underlight-ink: CanvasText; }
+  .lcos-soft-underlight-field, .lcos-soft-underlight-surface::after { display: none; }
+  .lcos-soft-underlight-surface { background: Canvas; border: 1px solid CanvasText; box-shadow: none; }
+}

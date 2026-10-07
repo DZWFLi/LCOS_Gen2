@@ -37,6 +37,7 @@ import { LcosComposerView } from '../ui/nearfield/LcosComposerView';
 import { LcosNearfieldGlyph } from '../ui/nearfield/LcosNearfieldGlyph';
 import { LcosIconButton } from '../ui/primitives/LcosIconButton';
 import { createVoiceInput, isVoiceInputSupported, mergeVoiceText } from '../voiceInput';
+import '../ui/nearfield/voice-capsule.css';
 
 import type { DropTargetRegistration } from '../drop/dropTypes';
 import type { CoreEntityRefLike } from '../referenceBridge';
@@ -606,8 +607,8 @@ export function LcosComposerHost({
           ? (
             <>
               {picking && <div role="status" data-lcos-reference-pick-hint>点选画布对象 · 再点取消引用 · Esc 结束</div>}
-              {voiceState === 'recording' && <div role="status">录音中 · 再点“停止”完成转写</div>}
-              {voiceState === 'transcribing' && <div role="status">语音转写中…</div>}
+              {voiceState === 'recording' && <div role="status" className="lcos-voice-capsule lcos-soft-underlight" data-lcos-voice-capsule data-tone="recording"><span className="lcos-soft-underlight-field" aria-hidden="true" /><span className="lcos-soft-underlight-surface"><span className="lcos-voice-capsule-copy">录音中 · 再点“停止”完成转写</span></span></div>}
+              {voiceState === 'transcribing' && <div role="status" className="lcos-voice-capsule lcos-soft-underlight" data-lcos-voice-capsule data-tone="transcribing"><span className="lcos-soft-underlight-field" aria-hidden="true" /><span className="lcos-soft-underlight-surface"><span className="lcos-voice-capsule-copy">语音转写中…</span></span></div>}
               {voiceError !== null && <div role="alert" data-feedback-tone="error">语音输入失败 · {voiceError}（草稿未改动）</div>}
               {!isContinuation && workspaceId === undefined && (
                 <div data-lcos-composer-blocked data-feedback-tone="error">
