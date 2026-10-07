@@ -224,16 +224,16 @@ describe('Arc hit surface and More lifecycle', () => {
     expect(panel.querySelector('[data-lcos-command="delete"]')).toBeNull();
     expect(panel.querySelector('[data-lcos-command="move-space"]')).toBeNull();
     expect(model(projection()).find(command => command.id === 'delete')?.disabledReason).toBe('这是 Core 投影，删除后会重新投影出现；请在 Core 侧移除');
-    expect(model(projection()).find(command => command.id === 'move-space')?.disabledReason).toBe('当前对象还不能跨现场移动');
+    expect(model(projection()).find(command => command.id === 'move-space')).toBeUndefined();
   });
-  it('keeps usable native deletion and relocation available for an unbound image', async () => {
+  it('keeps usable native deletion while LCOS no longer offers Huabu physical relocation', async () => {
     mocks.nodes = [{ id: 'free-image', type: 'image', selected: true, position: { x: 20, y: 20 }, width: 160, height: 120, data: { label: '素材' } }];
     useLcosReferenceStore.getState().reset(); useLcosReferenceStore.getState().setProject('p-actions');
     useLcosReferenceStore.setState({ bindingCanvasId: 'canvas-actions', bindingIdentitiesReady: true });
     await renderArc();
     expect(host.querySelector<HTMLButtonElement>('[data-lcos-arc-primary="delete"]')?.disabled).toBe(false);
     await act(async () => host.querySelector<HTMLButtonElement>('[data-lcos-arc-more]')!.click());
-    expect(document.querySelector<HTMLButtonElement>('[data-lcos-arc-panel] [data-lcos-command="move-space"]')?.disabled).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('[data-lcos-arc-panel] [data-lcos-command="move-space"]')).toBeNull();
   });
   it('keeps continuation fallback and diagnostics visible when the main action cannot serve the state', async () => {
     ready(projection({

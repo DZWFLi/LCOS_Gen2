@@ -60,17 +60,21 @@ export function LcosPersistentLocatorOverlay(): React.JSX.Element | null {
     const geometry = computeLocatorGeometry({ targetRect, safeRect, edgeInset: 26, nearEdgeDistance: 72 });
     // Local marks belong to the node agent. Locator only takes over as the target approaches the edge.
     if (geometry.state === 'local') return [];
+    // `geometry.state` is narrowed to 'near-edge' | 'edge' after the guard above,
+    // but storing the whole `geometry` object widens it back to LocatorStateKind.
+    // Capture the narrowed phase so the cursor mark gets a truthful discriminant.
+    const phase = geometry.state;
     const edge = geometry.edgeAnchor ?? geometry.directionAnchor ?? geometry.targetCenter;
     const progress = geometry.progress;
     const origin = { x: targetRect.right - 10, y: targetRect.top + 10 };
     const anchor = { x: origin.x + (edge.x - origin.x) * progress,
       y: origin.y + (edge.y - origin.y) * progress };
-    return [{ target, geometry, progress, anchor, edge }];
+    return [{ target, geometry, phase, progress, anchor, edge }];
   });
-  const positions = layoutLocatorMarkers(candidates.map(({ target, progress, anchor, edge }) => ({
+  const positions = layoutLocatorMarkers(candidates.map(({ target, anchor, edge }) => ({
     id: target.nodeId, ...anchor, edgeX: edge.x, edgeY: edge.y, width: 44, height: 44,
   })), safeRect, occupied);
-  const markers = candidates.map(({ target, geometry, progress }, index) => {
+  const markers = candidates.map(({ target, phase, geometry, progress }, index) => {
     const anchor = positions[index]!;
     const color = target.colors[0] ?? lcosTokens.color.accent;
     const pinSummary = target.colors.length === 0 ? '' : ` · ${target.colors.length} 个颜色组`;
@@ -89,8 +93,8 @@ export function LcosPersistentLocatorOverlay(): React.JSX.Element | null {
           nodeId: target.nodeId, status: 'projected', preserveSelection: true }); }}
         className="pointer-events-auto fixed z-[64] grid h-11 w-11 place-items-center rounded-full border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2"
         style={{ left: anchor.x, top: anchor.y, transform: 'translate(-50%, -50%)' }}>
-        <LcosSpatialCursorMark surface={surface} phase={geometry.state} angleDeg={angle} progress={progress}
-          accent={color} badge={target.colors.length}
+        <LcosSpatialCursorMark surface={surface} phase={phase} angleDeg={angle} progress={progress}
+          accent={color} badge={target.colors.length} labelPlacement={labelPlacement}
           label={geometry.state === 'edge' ? target.label : undefined} />
       </button>
     </Tooltip>;
