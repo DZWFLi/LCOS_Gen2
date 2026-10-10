@@ -33,6 +33,8 @@ import { WorkflowHandOverlay, WorkflowWorksite } from '../surfaces/workflow/Work
 import { FigmaShellGlyph } from '../ui/FigmaShellGlyph';
 import { LcosSurfaceFeedback } from '../ui/LcosSurfaceFeedback';
 import { lcosGlassStyle, lcosTokens } from '../ui/lcosTokens';
+import { mountObjectFeedback } from '../ui/materials/objectFeedback';
+import '../ui/materials/object-feedback.css';
 
 import type { PortalTargetResolution } from '../professional/PortalPreviewBody';
 import type { AssemblyTargetRefV1 } from '@local-creative-os/contracts';
@@ -72,6 +74,10 @@ export function LcosProjectShell({
   onRetry,
 }: LcosProjectShellProps): React.JSX.Element {
   const navigate = useNavigate();
+  useEffect(() => {
+    const feedback = mountObjectFeedback(document);
+    return () => feedback.destroy();
+  }, [projectId]);
   const hudViewport = useHudViewport();
   const projectPlacement = useAvoidingHudPosition({ x: 24, y: 24, width: childWorkspaceId ? 308 : 256, height: 44 });
   const mainToolsPlacement = useAvoidingHudPosition({

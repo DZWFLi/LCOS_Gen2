@@ -1,0 +1,154 @@
+/* W1: optical skin for the existing ProfessionalWindowStage and LcosWindowChrome.
+ * No position/size/overflow changes; body content and gesture owners remain intact.
+ * The only !important overrides Stage's existing inline background on the shell.
+ * Scope is deliberately not a generic dialog selector: legacy popovers stay unchanged.
+ */
+:where(.lcos-professional-region, [data-lcos-window-material='frost']) {
+  --lcos-window-material-surface: rgb(241 243 246 / .86);
+  --lcos-window-material-opaque: #f1f3f6;
+  --lcos-window-material-head: rgb(247 248 250 / .54);
+  --lcos-window-material-ink: #30343c;
+  --lcos-window-material-muted: #737b87;
+  --lcos-window-material-seam: rgb(57 68 85 / .10);
+  --lcos-window-material-edge: rgb(255 255 255 / .82);
+  --lcos-window-material-shine: rgb(255 255 255 / .83);
+  --lcos-window-material-tab: rgb(255 255 255 / .76);
+  --lcos-window-material-hover: rgb(255 255 255 / .63);
+  --lcos-window-material-shadow: 0 18px 52px -22px rgb(26 38 62 / .26), 0 3px 12px -5px rgb(26 38 62 / .14);
+  --lcos-window-material-elevated: 0 24px 66px -24px rgb(26 38 62 / .30), 0 4px 16px -6px rgb(26 38 62 / .16);
+  --lcos-window-material-pink: rgb(246 153 232 / .25);
+  --lcos-window-material-warm: rgb(255 228 144 / .28);
+  --lcos-window-material-blue: rgb(164 216 255 / .36);
+  --lcos-window-material-focus: var(--gen2-accent, #568b80);
+  --lcos-window-material-ease: cubic-bezier(.22,.78,.2,1);
+}
+/* App theme, not system inference, owns the final palette. */
+:where(.dark, [data-theme='dark']) :where(.lcos-professional-region, [data-lcos-window-material='frost']) {
+  --lcos-window-material-surface: rgb(33 36 43 / .88);
+  --lcos-window-material-opaque: #21242b;
+  --lcos-window-material-head: rgb(38 42 51 / .58);
+  --lcos-window-material-ink: #ebedf3;
+  --lcos-window-material-muted: #a0a8b6;
+  --lcos-window-material-seam: rgb(226 234 255 / .095);
+  --lcos-window-material-edge: rgb(255 255 255 / .14);
+  --lcos-window-material-shine: rgb(229 239 255 / .075);
+  --lcos-window-material-tab: rgb(245 247 255 / .085);
+  --lcos-window-material-hover: rgb(245 247 255 / .07);
+  --lcos-window-material-shadow: 0 20px 58px -20px rgb(0 0 0 / .60), 0 3px 10px -4px rgb(0 0 0 / .38);
+  --lcos-window-material-elevated: 0 26px 66px -18px rgb(0 0 0 / .72), 0 4px 18px -4px rgb(0 0 0 / .38);
+  --lcos-window-material-pink: rgb(229 137 218 / .17);
+  --lcos-window-material-warm: rgb(237 204 121 / .15);
+  --lcos-window-material-blue: rgb(145 200 255 / .23);
+}
+:where([data-theme='light']) :where(.lcos-professional-region, [data-lcos-window-material='frost']) {
+  --lcos-window-material-surface: rgb(241 243 246 / .86);
+  --lcos-window-material-opaque: #f1f3f6;
+  --lcos-window-material-head: rgb(247 248 250 / .54);
+  --lcos-window-material-ink: #30343c;
+  --lcos-window-material-muted: #737b87;
+  --lcos-window-material-seam: rgb(57 68 85 / .10);
+  --lcos-window-material-edge: rgb(255 255 255 / .82);
+  --lcos-window-material-shine: rgb(255 255 255 / .83);
+  --lcos-window-material-tab: rgb(255 255 255 / .76);
+  --lcos-window-material-hover: rgb(255 255 255 / .63);
+  --lcos-window-material-shadow: 0 18px 52px -22px rgb(26 38 62 / .26), 0 3px 12px -5px rgb(26 38 62 / .14);
+  --lcos-window-material-elevated: 0 24px 66px -24px rgb(26 38 62 / .30), 0 4px 16px -6px rgb(26 38 62 / .16);
+  --lcos-window-material-pink: rgb(246 153 232 / .25);
+  --lcos-window-material-warm: rgb(255 228 144 / .28);
+  --lcos-window-material-blue: rgb(164 216 255 / .36);
+}
+:root .lcos-professional-region:has([data-lcos-window-material='frost']) {
+  background: var(--lcos-window-material-surface) !important;
+  border-color: var(--lcos-window-material-seam);
+  box-shadow: inset 0 1px 0 var(--lcos-window-material-edge), var(--lcos-window-material-shadow);
+  backdrop-filter: blur(22px) saturate(1.10);
+  -webkit-backdrop-filter: blur(22px) saturate(1.10);
+  transition: box-shadow 210ms var(--lcos-window-material-ease), border-color 180ms ease;
+}
+:root .lcos-professional-region:has([data-lcos-window-material-hover='true']),
+:root .lcos-professional-region:has([data-lcos-window-material='frost']):focus-within {
+  box-shadow: inset 0 1px 0 var(--lcos-window-material-edge), var(--lcos-window-material-elevated);
+}
+:root .lcos-professional-region[data-lcos-window-layout='docked-right']:has([data-lcos-window-material='frost']) {
+  box-shadow: -12px 0 34px -26px rgb(21 33 55 / .25), inset 1px 0 0 var(--lcos-window-material-edge);
+}
+:root [data-lcos-family='window-chrome'][data-lcos-window-material='frost'] {
+  position: relative;
+  isolation: isolate;
+  color: var(--lcos-window-material-ink);
+  background: linear-gradient(180deg, var(--lcos-window-material-shine) 0, transparent 42%), var(--lcos-window-material-head);
+  box-shadow: inset 0 1px 0 var(--lcos-window-material-edge), inset 0 -1px 0 var(--lcos-window-material-seam);
+  /* Preserve the original 48px strip, padding, tab widths and hit regions. */
+}
+:root [data-lcos-window-material='frost'] > [data-lcos-window-material-light] {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse 27% 72% at var(--lcos-window-light-x, 50%) 110%, var(--lcos-window-material-shine), transparent 100%),
+    radial-gradient(ellipse 24% 60% at calc(var(--lcos-window-light-x, 50%) - 16%) 108%, var(--lcos-window-material-warm), transparent 100%),
+    radial-gradient(ellipse 22% 68% at var(--lcos-window-light-x, 50%) 112%, var(--lcos-window-material-pink), transparent 100%),
+    radial-gradient(ellipse 29% 78% at calc(var(--lcos-window-light-x, 50%) + 18%) 109%, var(--lcos-window-material-blue), transparent 100%);
+  transition: opacity 210ms var(--lcos-window-material-ease);
+}
+:root [data-lcos-window-material-hover='true'] > [data-lcos-window-material-light] { opacity: 1; }
+:root [data-lcos-window-material='frost']:focus-within > [data-lcos-window-material-light] { opacity: .55; }
+:root [data-lcos-window-material='frost'] [data-lcos-window-title] { color: var(--lcos-window-material-ink); }
+:root [data-lcos-window-material='frost'] [data-lcos-window-tab] {
+  color: var(--lcos-window-material-muted);
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+:root [data-lcos-window-material='frost'] [data-lcos-window-tab]:hover:not(:disabled) {
+  background: var(--lcos-window-material-hover);
+  color: var(--lcos-window-material-ink);
+}
+:root [data-lcos-window-material='frost'] [data-lcos-window-tab][aria-current='true'] {
+  background: var(--lcos-window-material-tab);
+  color: var(--lcos-window-material-ink);
+  box-shadow: inset 0 1px 0 var(--lcos-window-material-edge), 0 1px 3px rgb(17 31 48 / .06);
+}
+:root [data-lcos-window-material='frost'] [data-lcos-window-icon-button] { color: var(--lcos-window-material-muted); }
+:root [data-lcos-window-material='frost'] [data-lcos-window-icon-button]:hover:not(:disabled) {
+  background: var(--lcos-window-material-hover);
+  color: var(--lcos-window-material-ink);
+  box-shadow: inset 0 1px 0 var(--lcos-window-material-edge), 0 1px 4px rgb(17 31 48 / .04);
+}
+:root [data-lcos-window-material='frost'] [data-lcos-window-icon-button][aria-label='关闭窗口']:hover:not(:disabled) {
+  background: rgb(206 73 84 / .095);
+  color: #c04a55;
+}
+:root [data-lcos-window-material='frost'] :is([data-lcos-window-icon-button], [data-lcos-window-tab]):focus-visible {
+  outline: 2px solid var(--lcos-window-material-focus);
+  outline-offset: -2px;
+}
+/* No dependency on perpetual keyframes or fabricated task progress. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root .lcos-professional-region:has([data-lcos-window-material='frost']) { background: var(--lcos-window-material-opaque) !important; }
+  :root [data-lcos-family='window-chrome'][data-lcos-window-material='frost'] { background: var(--lcos-window-material-opaque); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root .lcos-professional-region:has([data-lcos-window-material='frost']) {
+    background: var(--lcos-window-material-opaque) !important;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .lcos-professional-region:has([data-lcos-window-material='frost']),
+  :root [data-lcos-window-material='frost'],
+  :root [data-lcos-window-material='frost'] * { transition: none; animation: none; }
+  :root [data-lcos-window-material='frost'] > [data-lcos-window-material-light] { display: none; }
+}
+@media (forced-colors: active) {
+  :root .lcos-professional-region:has([data-lcos-window-material='frost']) {
+    background: Canvas !important; border-color: CanvasText; box-shadow: none;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  :root [data-lcos-family='window-chrome'][data-lcos-window-material='frost'] { background: Canvas; color: CanvasText; box-shadow: none; }
+  :root [data-lcos-window-material='frost'] > [data-lcos-window-material-light] { display: none; }
+  :root [data-lcos-window-material='frost'] :is([data-lcos-window-title],[data-lcos-window-tab],[data-lcos-window-icon-button]) { color: CanvasText; background: Canvas; box-shadow: none; }
+  :root [data-lcos-window-material='frost'] [data-lcos-window-tab][aria-current='true'] { color: HighlightText; background: Highlight; }
+  :root [data-lcos-window-material='frost'] :focus-visible { outline-color: Highlight; }
+}

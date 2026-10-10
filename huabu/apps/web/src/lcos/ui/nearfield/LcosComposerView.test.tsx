@@ -57,14 +57,20 @@ describe('controlled Composer presentation', () => {
     expect(element.querySelector('[data-lcos-nearfield-glyph="at"]')).toBeNull();
     expect(element.querySelector('.lcos-composer-receiver')).toBeNull();
   });
-  it('labels the current receiver and keeps the empty reference target visible for Drop', async () => {
+  it('labels the receiver and keeps the Drop target without idle empty-reference prose', async () => {
     const { element } = await render({
       contextLabel: '当前接收者', identity: <span>Glyth</span>, title: '设计会话',
     });
     expect(element.querySelector('[data-lcos-composer-context-label]')?.textContent).toBe('当前接收者');
     expect(element.querySelector('.lcos-composer-title')?.textContent).toBe('设计会话');
-    expect(element.querySelector('[data-lcos-composer-reference-empty]')?.textContent).toContain('拖入材料');
+    expect(element.querySelector('[data-lcos-composer-reference-surface]')).not.toBeNull();
+    expect(element.querySelector('[data-lcos-composer-reference-empty]')).toBeNull();
     expect(element.querySelector('.lcos-composer-reference-heading')?.textContent).toContain('本次引用');
+  });
+  it('reveals the empty-reference instruction only while its real Drop target is active', async () => {
+    const { element } = await render({ referenceDropActive: true });
+    expect(element.querySelector('[data-lcos-composer-reference-empty]')?.textContent).toContain('拖入材料');
+    expect(element.querySelector('[data-lcos-composer-input]')).not.toBeNull();
   });
   it('preserves explicit reference order and calls the supplied remover exactly once', async () => {
     const remove = vi.fn();

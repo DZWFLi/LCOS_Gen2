@@ -1,0 +1,37 @@
+/* W1's header hover uses a background shorthand. Match its explicit control scope
+ * so local feedback survives the cascade without changing the control's base color. */
+/* Paint only on explicit active affordances. No panel chrome, layout, padding, font or global button override. */
+html .lcos-optic-live[data-lcos-optic-mode],
+html:root [data-lcos-window-material='frost'] [data-lcos-window-icon-button][aria-label].lcos-optic-live[data-lcos-optic-mode] {
+  --lcos-optic-x: 50%; --lcos-optic-y: 55%;
+  --lcos-optic-a: 242 170 216;
+  --lcos-optic-b: 131 213 206;
+  --lcos-optic-c: 246 218 143;
+  background-image:
+    radial-gradient(ellipse 52px 26px at var(--lcos-optic-x) var(--lcos-optic-y), rgb(var(--lcos-optic-a) / .24), transparent 85%),
+    radial-gradient(ellipse 68px 27px at calc(var(--lcos-optic-x) + 20%) calc(var(--lcos-optic-y) + 10%), rgb(var(--lcos-optic-b) / .23), transparent 88%),
+    radial-gradient(ellipse 43px 26px at calc(var(--lcos-optic-x) - 23%) 82%, rgb(var(--lcos-optic-c) / .17), transparent 90%);
+  background-repeat: no-repeat;
+}
+html .lcos-optic-live[data-lcos-optic-mode='press'],
+html:root [data-lcos-window-material='frost'] [data-lcos-window-icon-button][aria-label].lcos-optic-live[data-lcos-optic-mode='press'] {
+  background-image: radial-gradient(ellipse 55px 28px at var(--lcos-optic-x) var(--lcos-optic-y), rgb(var(--lcos-optic-b) / .34), transparent 90%);
+}
+html .lcos-optic-live[data-lcos-optic-mode='focus'],
+html:root [data-lcos-window-material='frost'] [data-lcos-window-icon-button][aria-label].lcos-optic-live[data-lcos-optic-mode='focus'] {
+  background-image: radial-gradient(ellipse at 50% 80%, rgb(var(--lcos-optic-b) / .16), transparent 78%);
+}
+/* Local geometry belongs to each component. Do not transform React Flow's outer node. */
+[data-lcos-optic='source']:is(:hover,:focus-visible) .folder-glyph { transform:skew(-4deg) translateY(-1px) rotate(-4deg); }
+[data-lcos-optic='result']:is(:hover,:focus-visible) .paper-glyph { transform:rotate(0deg) translateY(-1px); }
+[data-lcos-optic='source'] .folder-glyph,[data-lcos-optic='result'] .paper-glyph { transition: transform 200ms cubic-bezier(.2,.78,.2,1); }
+.dark .lcos-optic-live,[data-theme='dark'] .lcos-optic-live[data-lcos-optic-mode] { --lcos-optic-a: 190 142 184; --lcos-optic-b: 110 182 178; --lcos-optic-c: 177 157 112; }
+@media(prefers-reduced-motion:reduce) {
+  [data-lcos-optic] .folder-glyph,[data-lcos-optic] .paper-glyph { transition:none!important; transform:none!important; }
+}
+@media(forced-colors:active) { html .lcos-optic-live[data-lcos-optic-mode],
+html:root [data-lcos-window-material='frost'] [data-lcos-window-icon-button][aria-label].lcos-optic-live[data-lcos-optic-mode] { background-image:none; } }
+/* Oreo and Arc already own their opaque faces. Transfer paint to that existing face,
+ * not a second wrapper: otherwise the real production button hides the new response. */
+html .lcos-optic-live[data-lcos-optic-mode] > .lcos-oreo-face,
+html .lcos-optic-live[data-lcos-optic-mode] > .lcos-action-orb-face { background-image:inherit; background-repeat:no-repeat; }

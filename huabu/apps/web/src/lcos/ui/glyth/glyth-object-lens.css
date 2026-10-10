@@ -1,0 +1,25 @@
+/* O1 overrides only the existing near-field thought view. Full Reader / WorkView remain readable. */
+:root .lcos-glyth-whisper[data-lcos-density='object'] {
+  width:228px; max-width:min(254px,calc(100vw - 28px)); border-radius:15px;
+}
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-main { padding:10px 12px 13px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-head { height:12px; margin-bottom:4px; gap:5px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-label { font-size:10px; letter-spacing:0; line-height:12px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-copy { font-size:12.5px; line-height:19px; letter-spacing:0; font-weight:450; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-detail-inner { padding:0 12px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-history { padding:2px 0 0; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-history li { font-size:11px; line-height:17px; padding:6px 0 0 9px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-history li::before { top:13px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-full { font-size:12px;line-height:18px;max-height:96px;overflow:auto;margin-bottom:2px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-foot { padding:2px 0 5px;min-height:30px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-open {
+  margin-left:auto; min-width:30px; min-height:30px; padding:0; border-radius:9px;
+  font-size:0; display:grid; place-items:center;
+}
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-open::before { content:'↗'; font-size:16px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-hint { font-size:10px; }
+/* Preserve installed M2 rather than replacing moving curves with a static glow. */
+:root .lcos-glyth-whisper[data-lcos-density='object'].lcos-ripple-enabled .glyth-whisper-main { padding-bottom:20px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'].lcos-ripple-enabled > .lcos-soft-underlight-field { height:43px;bottom:-8px; }
+:root .lcos-glyth-whisper[data-lcos-density='object'] > .lcos-soft-underlight-field { opacity:.64; }
+@media(pointer:coarse) { :root .lcos-glyth-whisper[data-lcos-density='object'] .glyth-whisper-open{ min-width:40px;min-height:40px; } }

@@ -88,7 +88,7 @@ export function LcosComposerView(props: LcosComposerViewProps): JSX.Element {
           <span>本次引用</span>
           {props.references.length > 0 && <span className="lcos-composer-reference-count">{props.references.length}</span>}
         </div>
-        <ComposerReferenceStrip items={props.references} emptyLabel={emptyReferenceLabel} />
+        <ComposerReferenceStrip items={props.references} emptyLabel={props.referenceDropActive ? emptyReferenceLabel : undefined} />
 
         <div className="lcos-composer-editor">
           <textarea

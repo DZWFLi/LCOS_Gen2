@@ -1,0 +1,340 @@
+/* LCOS W2 / Work Information Grammar
+ * Source-of-truth remains the existing Conversation / Run / Collection / Assembly
+ * and Reader components. W2 is presentation only, not a second event/state owner.
+ * This file is imported once by professional-window-stage.css.
+ */
+.lcos-professional-region {
+  --lcos-info-ink: var(--gen2-text, #29323a);
+  --lcos-info-muted: var(--gen2-muted, #74818c);
+  --lcos-info-rail: color-mix(in srgb, var(--gen2-text, #29323a) 9%, transparent);
+  --lcos-info-raised: color-mix(in srgb, var(--gen2-surface, #fff) 72%, transparent);
+  --lcos-info-breath: var(--gen2-accent, #65c9b3);
+  --lcos-info-pink: rgb(246 153 232 / 15%);
+  --lcos-info-warm: rgb(255 228 144 / 17%);
+  --lcos-info-blue: rgb(164 216 255 / 21%);
+  --lcos-info-shadow: 0 6px 22px -15px rgb(21 34 53 / 24%);
+  --lcos-info-ease: cubic-bezier(.22,.78,.2,1);
+}
+:where(.dark, [data-theme='dark']) .lcos-professional-region {
+  --lcos-info-ink: var(--gen2-text, #e8edf4);
+  --lcos-info-muted: var(--gen2-muted, #a1acbb);
+  --lcos-info-rail: rgb(223 235 250 / 10%);
+  --lcos-info-raised: rgb(255 255 255 / 4%);
+  --lcos-info-pink: rgb(237 153 224 / 8%);
+  --lcos-info-warm: rgb(255 228 144 / 8%);
+  --lcos-info-blue: rgb(164 216 255 / 10%);
+  --lcos-info-shadow: 0 8px 20px -14px rgb(0 0 0 / 58%);
+}
+
+/* 1 / Conversation. A full message, a process line and contextual metadata
+ * must never be given the same weight. Do not truncate provenance or errors.
+ */
+.lcos-professional-region .lcos-conversation-body {
+  --lcos-info-main-measure: 780px;
+  gap: 16px;
+  padding: 18px clamp(16px, 3.2cqi, 30px) 28px;
+}
+.lcos-professional-region .lcos-conversation-body > :is(
+  [data-lcos-conversation-header],
+  [data-lcos-conversation-timeline],
+  [data-lcos-conversation-context],
+  [data-lcos-conversation-composer],
+  [data-lcos-artifact-return]
+) {
+  width: 100%;
+  max-width: var(--lcos-info-main-measure);
+  margin-inline: auto;
+}
+.lcos-professional-region .lcos-conversation-identity {
+  padding-block: 8px 12px;
+  border-bottom: 1px solid var(--lcos-info-rail);
+}
+.lcos-professional-region .lcos-conversation-identity-copy h3 {
+  font-size: 17px;
+  line-height: 1.45;
+  font-weight: 600;
+  letter-spacing: -.012em;
+}
+.lcos-professional-region .lcos-conversation-identity-copy p {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.lcos-professional-region .lcos-conversation-state-label {
+  color: var(--lcos-info-muted);
+  font-size: 11px;
+  font-weight: 450;
+}
+.lcos-professional-region .lcos-conversation-event {
+  transition: background-color 200ms ease, box-shadow 220ms var(--lcos-info-ease), border-color 200ms ease;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='message'] {
+  padding: 13px 10px 16px;
+  border-bottom: 1px solid var(--lcos-info-rail);
+  border-radius: 0;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='message'][data-lcos-timeline-item='user_message'] {
+  border: 1px solid var(--lcos-info-rail);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--gen2-raised, #eef1f4) 58%, transparent);
+  padding: 14px 16px;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='message'] .lcos-conversation-event-title {
+  font-size: 14px;
+  line-height: 1.65;
+  font-weight: 540;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='message'] .lcos-conversation-event-body {
+  font-size: 14px;
+  line-height: 1.8;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='message'] .lcos-conversation-event-label {
+  font-size: 11px;
+  letter-spacing: .015em;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='activity'] {
+  margin-inline: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  color: var(--lcos-info-muted);
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='activity'] .lcos-conversation-event-icon {
+  opacity: .66;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='activity'] .lcos-conversation-event-title {
+  font-size: 12px;
+  line-height: 1.65;
+  font-weight: 450;
+}
+.lcos-professional-region .lcos-conversation-event[data-event-presentation='activity']:is(:hover,:focus-within) {
+  background: var(--lcos-info-raised);
+  box-shadow: inset 0 1px 0 var(--lcos-info-rail);
+}
+.lcos-professional-region .lcos-conversation-event[data-event-tone='attention'] {
+  background: color-mix(in srgb, var(--lcos-info-warm) 42%, transparent);
+}
+.lcos-professional-region .lcos-conversation-event[data-event-tone='danger'] {
+  background: color-mix(in srgb, var(--lcos-status-danger, #d75656) 5%, transparent);
+}
+/* The work composer and context stay separate from the reading stream. */
+.lcos-professional-region .lcos-conversation-body [data-lcos-conversation-composer] {
+  border-top: 1px solid var(--lcos-info-rail);
+  padding-top: 20px !important;
+}
+.lcos-professional-region .lcos-conversation-body [data-lcos-conversation-context] {
+  color: var(--lcos-info-muted);
+  font-size: 12px;
+}
+
+/* 2 / Run. Primary state/task -> factual result -> detailed recipe -> diagnostics.
+ * Existing document order, action capabilities and readable error text stay.
+ */
+.lcos-professional-region .lcos-run-work {
+  padding: 25px clamp(17px, 4%, 34px) 34px;
+  gap: 18px;
+  max-width: 900px;
+  margin-inline: auto;
+}
+.lcos-professional-region .lcos-run-work-header {
+  position: relative;
+  padding-bottom: 19px;
+  border-bottom: 1px solid var(--lcos-info-rail);
+  flex-wrap: wrap;
+}
+.lcos-professional-region .lcos-run-work-state {
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .018em;
+  line-height: 1.65;
+}
+.lcos-professional-region .lcos-run-work h2 {
+  margin-top: 6px;
+  font-size: clamp(18px, 2.1vw, 22px);
+  font-weight: 620;
+  line-height: 1.44;
+  letter-spacing: -.015em;
+}
+.lcos-professional-region .lcos-run-work h3 {
+  color: var(--lcos-info-ink);
+  margin: 0 0 9px;
+  font-weight: 590;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.lcos-professional-region .lcos-run-work > .lcos-run-work-actions {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--lcos-info-rail);
+}
+.lcos-professional-region .lcos-run-work > section:not(.lcos-run-attention) {
+  min-width: 0;
+  padding: 6px 1px 10px;
+}
+.lcos-professional-region .lcos-run-instruction {
+  color: var(--lcos-info-muted);
+}
+.lcos-professional-region .lcos-run-instruction > p {font-size: 12.5px;line-height: 1.78;}
+.lcos-professional-region .lcos-run-work > section:has(> .lcos-run-return) {
+  border-top: 1px solid var(--lcos-info-rail);
+  padding-top: 20px;
+}
+.lcos-professional-region .lcos-run-return {
+  margin: 0 0 8px;
+  border: 1px solid var(--lcos-info-rail);
+  border-radius: 15px;
+  padding: 14px 16px;
+  background: var(--lcos-info-raised);
+  transition: box-shadow 210ms var(--lcos-info-ease), border-color 210ms ease;
+}
+.lcos-professional-region .lcos-run-return:is(:hover,:focus-within) {
+  border-color: color-mix(in srgb, var(--lcos-info-breath) 22%, var(--lcos-info-rail));
+  box-shadow: var(--lcos-info-shadow);
+}
+.lcos-professional-region .lcos-run-return > strong {font-size: 14px;font-weight: 580;}
+.lcos-professional-region .lcos-run-return > span {font-size: 11px;}
+.lcos-professional-region .lcos-run-details {
+  color: var(--lcos-info-muted);
+  border-top: 1px solid var(--lcos-info-rail);
+  padding-top: 8px;
+}
+.lcos-professional-region .lcos-run-details > summary {
+  border-radius: 10px;
+  padding: 7px 10px;
+  min-height: 34px;
+  transition: background-color 160ms ease;
+}
+.lcos-professional-region .lcos-run-details > summary:is(:hover,:focus-visible) {
+  background: var(--lcos-info-raised);
+}
+.lcos-professional-region .lcos-run-details[open] {color: var(--lcos-info-ink);}
+.lcos-professional-region .lcos-run-attention,
+.lcos-professional-region .lcos-run-confirm {
+  padding: 17px 18px;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--lcos-pin-amber, #d8a34f) 18%, var(--lcos-info-rail));
+  border-inline-start: 3px solid var(--lcos-pin-amber, #d8a34f);
+  background: color-mix(in srgb, var(--lcos-info-warm) 45%, transparent);
+}
+/* Only a real in-flight Run action breathes. Historical progress is inert. */
+.lcos-professional-region .lcos-run-work[aria-busy='true'] .lcos-run-work-header::after {
+  content: '';
+  position: absolute;
+  width: 96px;
+  height: 2px;
+  inset-inline-start: 0;
+  bottom: -1px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--lcos-info-breath), transparent);
+  transform-origin: left center;
+  animation: lcos-info-realtime-breath 2.4s ease-in-out infinite;
+}
+
+/* 3 / Collection. Keep true labels, availability and open controls visible. */
+.lcos-professional-region [data-lcos-collection-work-view] > header {
+  padding: 20px 25px 15px;
+  border-color: var(--lcos-info-rail);
+}
+.lcos-professional-region [data-lcos-collection-work-view] > header strong {
+  font-size: 17px;
+  line-height: 1.5;
+  font-weight: 590;
+}
+.lcos-professional-region [data-lcos-collection-work-view] > header small {
+  display: block;
+  font-size: 11px;
+  margin-top: 4px;
+}
+.lcos-professional-region [data-lcos-collection-member] {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  transition: transform 180ms var(--lcos-info-ease), border-color 180ms, box-shadow 180ms;
+}
+.lcos-professional-region [data-lcos-collection-member] strong {
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: -.007em;
+}
+.lcos-professional-region [data-lcos-collection-member] small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.lcos-professional-region [data-lcos-collection-member]:is(:hover,:focus-within) {
+  border-color: color-mix(in srgb, var(--lcos-info-breath) 18%, var(--lcos-info-rail));
+  box-shadow: var(--lcos-info-shadow), inset 0 1px 0 rgb(255 255 255 / 18%);
+  transform: translateY(-1px);
+}
+
+/* 4 / Assembly. Keep the masonry, thumbnail species and Source Bay layout.
+ * Local focus reveals tools; avoid a global card/glass replacement. */
+.lcos-professional-region .lcos-assembly-result-meta {
+  font-size: 11px;
+  color: var(--lcos-info-muted);
+}
+.lcos-professional-region .lcos-assembly-item {
+  border-color: transparent;
+  transition: border-color 200ms ease, background-color 200ms ease, box-shadow 210ms var(--lcos-info-ease);
+}
+.lcos-professional-region .lcos-assembly-item:is(:hover,:focus-within,[data-visual-active='true']) {
+  border-color: color-mix(in srgb, var(--lcos-info-breath) 16%, var(--lcos-info-rail));
+  background: var(--lcos-info-raised);
+  box-shadow: var(--lcos-info-shadow);
+}
+.lcos-professional-region .lcos-assembly-item-caption > strong {font-size: 13.5px;font-weight: 570;line-height: 1.6;}
+.lcos-professional-region .lcos-assembly-item-caption > span {font-size: 11px;line-height: 1.5;}
+.lcos-professional-region .lcos-assembly-preview-heading h2 {font-size: 22px;font-weight: 590;letter-spacing: -.012em;}
+.lcos-professional-region .lcos-assembly-search-field:is(:hover,:focus-within) {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lcos-info-breath) 17%, transparent), var(--lcos-info-shadow);
+}
+/* A true Assembly loading state is the only place a loading shimmer can appear. */
+.lcos-professional-region .lcos-assembly-loading {
+  position: relative;
+  color: var(--lcos-info-muted);
+}
+.lcos-professional-region .lcos-assembly-loading::after {
+  content: '';
+  display: block;
+  inline-size: 84px;
+  block-size: 2px;
+  margin-top: 10px;
+  background: linear-gradient(90deg, transparent, var(--lcos-info-breath), transparent);
+  transform-origin: left center;
+  animation: lcos-info-realtime-breath 2.4s ease-in-out infinite;
+}
+
+/* 5 / Reader remains intentionally quiet. Improve metadata, not prose. */
+.lcos-professional-region .lcos-reader-heading {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--lcos-info-rail);
+}
+.lcos-professional-region .lcos-reader-title {
+  letter-spacing: -.012em;
+}
+
+@keyframes lcos-info-realtime-breath {
+  0%,100% {opacity: .28; transform: scaleX(.74);}
+  50% {opacity: .9; transform: scaleX(1.14);}
+}
+@media (prefers-reduced-motion: reduce) {
+  .lcos-professional-region .lcos-conversation-event,
+  .lcos-professional-region .lcos-assembly-item,
+  .lcos-professional-region [data-lcos-collection-member] {
+    transition: none;
+    transform: none;
+  }
+  .lcos-professional-region .lcos-run-work[aria-busy='true'] .lcos-run-work-header::after,
+  .lcos-professional-region .lcos-assembly-loading::after {animation: none;opacity: .65;transform: none;}
+}
+@media (forced-colors: active) {
+  .lcos-professional-region .lcos-run-return,
+  .lcos-professional-region .lcos-run-attention,
+  .lcos-professional-region [data-lcos-collection-member]:focus-within {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .lcos-professional-region .lcos-run-work[aria-busy='true'] .lcos-run-work-header::after,
+  .lcos-professional-region .lcos-assembly-loading::after {background: Highlight;}
+}

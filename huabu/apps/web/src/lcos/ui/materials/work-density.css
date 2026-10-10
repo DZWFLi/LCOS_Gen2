@@ -1,0 +1,100 @@
+/* W3-01: density and hierarchy, not another skin or window owner.
+ * Scoped to existing body selectors; keeps W1 optics and W2 state-driven motion.
+ * The extra :root scope wins over earlier W2 imports without broad !important.
+ */
+:root .lcos-professional-region {
+  --lcos-density-body: 14px;
+  --lcos-density-leading: 22px;
+  --lcos-density-meta: 12px;
+  --lcos-density-meta-leading: 18px;
+  --lcos-density-ink: var(--gen2-text, #30343c);
+  --lcos-density-muted: var(--gen2-muted, #737b87);
+  --lcos-density-seam: var(--lcos-window-material-seam, color-mix(in srgb,currentColor 10%,transparent));
+  --lcos-density-ease: cubic-bezier(.22,.78,.2,1);
+}
+/* Compact does not mean small type. Remove duplicate bands and excess padding. */
+:root .lcos-professional-region .lcos-conversation-body {
+  gap: 10px; padding: 14px 18px 18px;
+}
+:root .lcos-professional-region .lcos-conversation-identity { padding: 2px 0 10px; }
+:root .lcos-professional-region .lcos-conversation-identity-row { gap: 8px; }
+:root .lcos-professional-region .lcos-conversation-identity-copy h3 {
+  font-size: 16px; line-height: 23px; font-weight: 600; letter-spacing: 0;
+}
+:root .lcos-professional-region .lcos-conversation-identity-copy p {
+  font-size: 12px; line-height: 18px; margin-top: 2px;
+}
+:root .lcos-professional-region .lcos-conversation-state-label {
+  font-size: 12px; line-height: 18px; letter-spacing: 0;
+}
+:root .lcos-professional-region .lcos-conversation-identity-notices:empty { display:none; }
+:root .lcos-professional-region [data-lcos-conversation-timeline] { gap: 6px; }
+:root .lcos-professional-region .lcos-conversation-event[data-event-presentation='message'] {
+  padding: 10px 0 12px; gap: 8px; border-bottom:0;
+}
+:root .lcos-professional-region .lcos-conversation-event[data-event-presentation='message'][data-lcos-timeline-item='user_message'] {
+  padding: 10px 12px; border-radius: 12px; border: 0;
+  background: color-mix(in srgb, var(--gen2-raised, #edf1f4) 70%, transparent);
+}
+:root .lcos-professional-region .lcos-conversation-event[data-event-presentation='message'] .lcos-conversation-event-title {
+  font-size: 15px; line-height: 23px; font-weight: 550; letter-spacing: 0;
+}
+:root .lcos-professional-region .lcos-conversation-event[data-event-presentation='message'] .lcos-conversation-event-body {
+  font-size: 14px; line-height: 23px; margin-top: 4px;
+}
+:root .lcos-professional-region .lcos-conversation-event-label {
+  font-size:12px; line-height:18px; margin-bottom:4px; letter-spacing:0;
+}
+:root .lcos-professional-region .lcos-conversation-event[data-event-presentation='activity'] {
+  margin-inline: 0; padding: 4px 8px; border-radius:10px;
+}
+:root .lcos-professional-region .lcos-conversation-event[data-event-presentation='activity'] .lcos-conversation-event-title {
+  font-size:13px; line-height:20px; font-weight:400;
+}
+:root .lcos-professional-region .lcos-conversation-event[data-event-presentation='activity'] .lcos-conversation-event-body {
+  font-size:13px; line-height:21px;
+}
+/* Alerts and their controls always stay visible, regardless of current hover. */
+:root .lcos-professional-region .lcos-conversation-event[data-event-tone='attention'],
+:root .lcos-professional-region .lcos-conversation-event[data-event-tone='danger'] {
+  padding:10px 12px; border-inline-start-width:2px;
+}
+:root .lcos-professional-region .lcos-conversation-body [data-lcos-conversation-composer] {
+  padding-top:12px !important; /* Existing owned section already uses !important. */
+}
+/* Task / result / source use one spacing ladder, with no new maximum heights. */
+:root .lcos-professional-region .lcos-run-work { padding:18px 20px 22px; gap:12px; }
+:root .lcos-professional-region .lcos-run-work-header { padding-bottom:12px; gap:8px; }
+:root .lcos-professional-region .lcos-run-work-state { font-size:12px; line-height:18px; }
+:root .lcos-professional-region .lcos-run-work h2 { font-size:18px; line-height:26px; margin-top:3px; }
+:root .lcos-professional-region .lcos-run-work h3 { font-size:13px; line-height:20px; margin-bottom:6px; }
+:root .lcos-professional-region .lcos-run-work p { font-size:14px; line-height:23px; }
+:root .lcos-professional-region .lcos-run-work > .lcos-run-work-actions { padding-bottom:10px; gap:6px; }
+:root .lcos-professional-region .lcos-run-work > section:not(.lcos-run-attention) { padding:2px 0 6px; }
+:root .lcos-professional-region .lcos-run-return { padding:10px 12px; margin-bottom:6px; border-radius:12px; gap:8px; }
+:root .lcos-professional-region .lcos-run-return > span,
+:root .lcos-professional-region .lcos-run-details { font-size:12px; line-height:19px; }
+:root .lcos-professional-region .lcos-run-attention,
+:root .lcos-professional-region .lcos-run-confirm { padding:12px 14px; }
+:root .lcos-professional-region .lcos-run-details > summary { padding:6px 8px; min-height:32px; }
+/* Collection heading has one count, not an implementation explanation. */
+:root .lcos-professional-region [data-lcos-collection-work-view] > header { padding:14px 18px 10px; }
+:root .lcos-professional-region [data-lcos-collection-work-view] > header strong { font-size:16px; line-height:23px; }
+:root .lcos-professional-region [data-lcos-collection-work-view] > header small { font-size:12px; line-height:18px; margin-top:2px; }
+:root .lcos-professional-region [data-lcos-collection-member] { margin-bottom:4px; }
+:root .lcos-professional-region [data-lcos-collection-member] strong { font-size:14px; line-height:21px; letter-spacing:0; }
+:root .lcos-professional-region [data-lcos-collection-member] small { font-size:12px; line-height:18px; margin-top:2px; }
+/* Assembly: don't touch masonry positions, image ratios, species or drag hit boxes. */
+:root .lcos-professional-region .lcos-assembly-item-caption { gap:2px; }
+:root .lcos-professional-region .lcos-assembly-item-caption > strong { font-size:14px; line-height:21px; }
+:root .lcos-professional-region .lcos-assembly-item-caption > span { font-size:12px; line-height:18px; }
+:root .lcos-professional-region .lcos-assembly-result-meta { font-size:12px; line-height:18px; }
+:root .lcos-professional-region .lcos-assembly-preview-heading { padding-block:6px 8px; }
+:root .lcos-professional-region .lcos-assembly-preview-heading h2 { font-size:20px; line-height:28px; }
+:root .lcos-professional-region .lcos-assembly-preview-heading p { font-size:12px; line-height:18px; margin-top:3px; }
+/* Reader: retain the document renderer, its 16px text, measure and editing geometry. */
+:root .lcos-professional-region .lcos-reader-heading { padding-bottom:8px; }
+@media (max-width:480px) {
+  :root .lcos-professional-region .lcos-conversation-body { padding-inline:12px; }
+  :root .lcos-professional-region .lcos-run-work { padding-inline:14px; }
+}

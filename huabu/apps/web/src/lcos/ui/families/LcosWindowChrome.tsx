@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 
 import { LcosButton } from '../primitives/LcosButton';
+import { mountWindowMaterialInteraction } from '../materials/windowMaterialInteraction';
+import '../materials/window-surfaces.css';
 // LcosWindowChrome — 共享组件族 ProfessionalWindowChrome（Figma 5387:331，布局 浮动/停靠/分组）。
 // 几何取自 structures/window-chrome：h48 · pad 8/24 · gap 8 · 标题 12px / 18px（22px 内容框） · 图标键 32×32 r999。
 // body 不拥有窗口位置：拓扑（浮动/停靠/分组）由 ProfessionalWindowStage 决定，本组件只呈现顶栏。
@@ -44,7 +46,12 @@ export function LcosWindowChrome({
   overflowTrigger,
   busy = false,
 }: LcosWindowChromeProps): React.JSX.Element {
+  const materialRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const host = materialRef.current;
+    return host ? mountWindowMaterialInteraction(host) : undefined;
+  }, []);
   const selectedTab = tabs.find((tab) => tab.selected)?.value ?? tabs.find((tab) => tab.selected)?.key;
   useEffect(() => {
     const strip = tabsRef.current;
@@ -66,12 +73,15 @@ export function LcosWindowChrome({
     && overflowTrigger !== undefined && overflowTrigger !== null;
   return (
     <div
+      ref={materialRef}
+      data-lcos-window-material="frost"
       data-lcos-window-managed-overflow={managedOverflow ? 'true' : undefined}
       data-lcos-family="window-chrome"
       data-lcos-variant={layout}
       data-lcos-window-busy={busy ? 'true' : undefined}
       aria-busy={busy || undefined}
     >
+      <span data-lcos-window-material-light aria-hidden="true" />
       {tabs.length > 0 ? (
         <div ref={tabsRef} data-lcos-window-tabs aria-label={title}>{tabs.map((tab) => (
           <LcosButton

@@ -27,6 +27,7 @@ export function mountGlythThoughtView(host: HTMLElement, options: ThoughtViewOpt
   };
   const root = make('div', 'lcos-glyth-whisper lcos-soft-underlight');
   root.dataset.lcosGlythThought = '';
+  root.dataset.lcosDensity = 'object';
   root.setAttribute('role', 'group'); root.setAttribute('aria-label', '当前进展');
   const glow = make('span', 'glyth-whisper-glow lcos-soft-underlight-field'); glow.setAttribute('aria-hidden', 'true');
   const shell = make('div', 'glyth-whisper-shell lcos-soft-underlight-surface');
@@ -82,7 +83,8 @@ export function mountGlythThoughtView(host: HTMLElement, options: ThoughtViewOpt
     for (const row of previous) { const li = make('li', ''); li.textContent = row.text; history.append(li); }
     history.hidden = previous.length === 0;
     full.textContent = current?.detail ?? ''; full.hidden = !current?.detail;
-    hint.textContent = pending ? '有新进展，移开后更新' : current?.source === 'task' ? '等待新的进展摘要' : '来自当前会话';
+    hint.textContent = pending ? '有新进展，移开后更新' : current?.source === 'task' ? '等待进展' : '';
+    hint.hidden = !hint.textContent;
   };
   const scheduleHide = () => {
     win.clearTimeout(timer);

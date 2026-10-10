@@ -113,7 +113,7 @@ export function CollectionWorkViewBody({
         <div className="min-w-0">
           <strong className="block truncate text-sm">{title}</strong>
           <small style={{ color: lcosTokens.color.muted }}>
-            {status === 'ready' ? `${rows.length} 个成员 · Core 集合` : '读取 Core 集合…'}
+            {status === 'ready' ? `${rows.length} 个成员` : status === 'loading' ? '正在读取…' : '暂时无法读取'}
           </small>
         </div>
       </header>

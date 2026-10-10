@@ -1,3 +1,6 @@
+@import '../ui/materials/work-information.css';
+@import '../ui/materials/work-density.css';
+
 /* Figma 5388:27475: one outer 48px chrome, independent content tabs and panes.
    Existing window/group state owns every action; this stylesheet owns no layout truth. */
 .lcos-professional-region {
